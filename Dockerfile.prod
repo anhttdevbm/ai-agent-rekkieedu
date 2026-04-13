@@ -1,0 +1,68 @@
+# Agent Edu — Production image (FastAPI + Uvicorn)
+#
+# Goals:
+# - Multi-stage build (wheel) for smaller, more reproducible runtime image
+# - Reasonable pip timeouts/retries for flaky networks
+# - Non-root runtime user
+#
+# Build:
+#   docker build -f Dockerfile.prod -t agent-edu:prod .
+
+FROM python:3.12-slim-bookworm AS builder
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_DEFAULT_TIMEOUT=180 \
+    PIP_RETRIES=12
+
+WORKDIR /build
+
+# Build deps for wheels (lxml, httptools, uvloop, etc.)
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        gcc \
+        libxml2-dev \
+        libxslt1-dev \
+        zlib1g-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml README.md ./
+COPY cham_bai ./cham_bai/
+
+RUN python -m pip install --upgrade pip \
+    && pip wheel --prefer-binary --timeout 180 --retries 12 --wheel-dir /wheels .
+
+
+FROM python:3.12-slim-bookworm AS runtime
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /app
+
+# Runtime libs (Pillow / lxml)
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        libjpeg62-turbo \
+        libpng16-16 \
+        zlib1g \
+        libxml2 \
+        libxslt1.1 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /wheels /wheels
+
+RUN python -m pip install --no-cache-dir --no-index --find-links=/wheels agent-edu \
+    && rm -rf /wheels
+
+RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin appuser \
+    && chown -R appuser:appuser /app
+
+EXPOSE 8765
+USER appuser
+
+CMD ["uvicorn", "cham_bai.web_app:app", "--host", "0.0.0.0", "--port", "8765"]
+
