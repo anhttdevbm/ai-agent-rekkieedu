@@ -32,3 +32,11 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["cham_bai*"]
+
+[tool.setuptools.package-data]
+# Include static web UI, bundled templates and examples in wheels.
+cham_bai = [
+  "web/static/*",
+  "templates/*.xlsx",
+  "example/*.xlsx",
+]
