@@ -37,9 +37,8 @@ services:
         max-file: "4"
 
   web:
-    build:
-      context: .
-      dockerfile: Dockerfile.prod
+    # Production should pull a prebuilt image (CI builds + pushes to registry).
+    # Set AGENT_EDU_IMAGE + AGENT_EDU_TAG in server env (or via CI deploy step).
     image: ${AGENT_EDU_IMAGE:-agent-edu}:${AGENT_EDU_TAG:-latest}
     container_name: ${AGENT_EDU_CONTAINER:-agent-edu-web}
     init: true

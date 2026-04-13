@@ -60,11 +60,17 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT || 22 }}
+          envs: GHCR_USERNAME,GHCR_TOKEN,AGENT_EDU_IMAGE,AGENT_EDU_TAG
+        env:
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          AGENT_EDU_IMAGE: ghcr.io/${{ github.repository_owner }}/agent-edu
+          AGENT_EDU_TAG: ${{ github.sha }}
           script: |
             set -euo pipefail
             cd "${{ secrets.DEPLOY_PATH }}"
 
-            # Optional: update repo if it's a git checkout
+            # Pull latest code from main (nginx config/compose/scripts)
             if [ -d .git ]; then
               git fetch --all --prune
               git reset --hard origin/main
@@ -73,12 +79,11 @@ jobs:
             # Ensure env file exists
             test -f .env
 
-            # Use the freshly pushed image (compose still has build; this forces image tag)
-            export AGENT_EDU_IMAGE="ghcr.io/${{ github.repository_owner }}/agent-edu"
-            export AGENT_EDU_TAG="${{ github.sha }}"
+            # Login to GHCR on the server (required for private repos)
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
 
-            docker compose -f docker-compose.prod.yml --env-file .env pull || true
-            docker compose -f docker-compose.prod.yml --env-file .env up -d --build
+            docker compose -f docker-compose.prod.yml --env-file .env pull web
+            docker compose -f docker-compose.prod.yml --env-file .env up -d
 
             # Basic health probe via nginx
             curl -fsS http://127.0.0.1/api/meta >/dev/null
