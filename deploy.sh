@@ -64,11 +64,11 @@ docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" pull --ignore-pull-fail
 echo "[deploy] Building + starting services…"
 docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d --build
 
-echo "[deploy] Waiting for healthcheck (/api/meta)…"
+echo "[deploy] Waiting for healthcheck (localhost:8765/api/meta)…"
 set +e
 for i in $(seq 1 30); do
-  if curl -fsS "http://127.0.0.1/api/meta" >/dev/null 2>&1; then
-    echo "[deploy] OK: service is responding locally (via nginx)."
+  if curl -fsS "http://127.0.0.1:8765/api/meta" >/dev/null 2>&1; then
+    echo "[deploy] OK: service is responding locally (web)."
     set -e
     echo "[deploy] Public URL: https://$DOMAIN"
     docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" ps
