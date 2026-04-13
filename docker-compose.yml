@@ -1,0 +1,28 @@
+# Một lệnh build + chạy toàn bộ:
+#   docker compose up --build -d
+# Trình duyệt: http://localhost:8765
+#
+# Chuẩn bị: copy .env.example → .env và điền OPENROUTER_API_KEY (bắt buộc).
+# Compose tự đọc file .env ở thư mục này để thay ${...} — không cần env_file.
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: agent-edu:latest
+    container_name: agent-edu-web
+    ports:
+      - "8765:8765"
+    environment:
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-anthropic/claude-sonnet-4.6}
+      OPENROUTER_HTTP_REFERER: ${OPENROUTER_HTTP_REFERER:-http://localhost:8765}
+      OPENROUTER_APP_TITLE: ${OPENROUTER_APP_TITLE:-Agent Edu}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/api/meta', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s

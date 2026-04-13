@@ -1,0 +1,71 @@
+# Agent Edu — Docker Compose PRODUCTION
+#
+# Chuẩn bị:
+#   - File .env (hoặc .env.prod) có OPENROUTER_API_KEY và (tuỳ chọn) URL public cho OpenRouter.
+#
+# Build + chạy:
+#   docker compose -f docker-compose.prod.yml --env-file .env up --build -d
+#
+# Chỉ chạy (đã có image):
+#   docker compose -f docker-compose.prod.yml --env-file .env up -d
+#
+# Đặt sau reverse proxy (Nginx / Traefik / Caddy): bật proxy-headers bên dưới;
+# publish cổng chỉ nội bộ (127.0.0.1:8765:8765) hoặc bỏ ports và chỉ dùng mạng Docker.
+
+name: agent-edu-prod
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${AGENT_EDU_IMAGE:-agent-edu}:${AGENT_EDU_TAG:-latest}
+    container_name: ${AGENT_EDU_CONTAINER:-agent-edu-web}
+    init: true
+    restart: always
+    ports:
+      - "${AGENT_EDU_PUBLISH:-8765}:8765"
+    environment:
+      # Bắt buộc khi chạy thật — đặt trong .env (không commit)
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?missing_OPENROUTER_API_KEY_in_env}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-anthropic/claude-sonnet-4.6}
+      OPENROUTER_HTTP_REFERER: ${OPENROUTER_HTTP_REFERER:-https://localhost}
+      OPENROUTER_APP_TITLE: ${OPENROUTER_APP_TITLE:-Agent Edu}
+    command:
+      - uvicorn
+      - cham_bai.web_app:app
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8765"
+      - --workers
+      - "${UVICORN_WORKERS:-2}"
+      - --proxy-headers
+      - --forwarded-allow-ips
+      - "*"
+    deploy:
+      resources:
+        limits:
+          cpus: "${AGENT_EDU_CPU_LIMIT:-2}"
+          memory: ${AGENT_EDU_MEM_LIMIT:-2G}
+        reservations:
+          cpus: "${AGENT_EDU_CPU_RESERVE:-0.25}"
+          memory: ${AGENT_EDU_MEM_RESERVE:-256M}
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "4"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/api/meta', timeout=5)",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    stop_grace_period: 45s

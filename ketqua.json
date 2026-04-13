@@ -1,0 +1,91 @@
+{
+  "final_score": 68,
+  "final_comment": "Bài làm theo đúng template danh bạ, có đầy đủ chức năng sửa và xóa hoạt động được, validate cơ bản cho tên/phone/email. Tuy nhiên có một số điểm yếu: nút sau khi cập nhật đổi thành 'cập nhật' thay vì 'Thêm' (logic reset nút bị sai), validate phone dùng isNaN và length < 9 thay vì regex chuẩn, không kiểm tra trùng email khi thêm mới, và file contact1.html vẫn để dữ liệu tĩnh trong HTML (dù JS sẽ render lại). Nhìn chung bài chạy được và đáp ứng ý chính của đề.",
+  "model_score": 68,
+  "model_comment": "Bài làm theo đúng template danh bạ, có đầy đủ chức năng sửa và xóa hoạt động được, validate cơ bản cho tên/phone/email. Tuy nhiên có một số điểm yếu: nút sau khi cập nhật đổi thành 'cập nhật' thay vì 'Thêm' (logic reset nút bị sai), validate phone dùng isNaN và length < 9 thay vì regex chuẩn, không kiểm tra trùng email khi thêm mới, và file contact1.html vẫn để dữ liệu tĩnh trong HTML (dù JS sẽ render lại). Nhìn chung bài chạy được và đáp ứng ý chính của đề.",
+  "integrity_verdict": "suspicious",
+  "integrity_confidence_0_100": 55,
+  "integrity_notes": [
+    "File CONTACT_ASSIGNMENT.md rất chi tiết, có cấu trúc giống tài liệu hướng dẫn do AI tạo ra, bao gồm cả bảng rubric và code snippet mẫu đầy đủ.",
+    "Code trong data.js ngắn gọn, tự nhiên hơn so với file .md, có thể do sinh viên tự viết dựa trên hướng dẫn.",
+    "Sự chênh lệch lớn giữa chất lượng file .md (rất hoàn chỉnh, văn phong AI) và code thực tế (còn lỗi nhỏ) gợi ý .md có thể được tạo bởi AI."
+  ],
+  "rubric": {
+    "chuc_nang_sua": 20,
+    "chuc_nang_xoa": 20,
+    "validation": 15,
+    "alert_thong_bao": 8,
+    "render_danh_sach": 5
+  },
+  "applied_ai_penalty": false,
+  "model": "anthropic/claude-4.6-sonnet-20260217",
+  "usage": {
+    "prompt_tokens": 16052,
+    "completion_tokens": 552,
+    "total_tokens": 16604,
+    "cost": 0.056436,
+    "is_byok": false,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0,
+      "video_tokens": 0
+    },
+    "cost_details": {
+      "upstream_inference_cost": 0.056436,
+      "upstream_inference_prompt_cost": 0.048156,
+      "upstream_inference_completions_cost": 0.00828
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "image_tokens": 0,
+      "audio_tokens": 0
+    }
+  },
+  "raw_model_text": "```json\n{\n  \"score\": 68,\n  \"comment\": \"Bài làm theo đúng template danh bạ, có đầy đủ chức năng sửa và xóa hoạt động được, validate cơ bản cho tên/phone/email. Tuy nhiên có một số điểm yếu: nút sau khi cập nhật đổi thành 'cập nhật' thay vì 'Thêm' (logic reset nút bị sai), validate phone dùng isNaN và length < 9 thay vì regex chuẩn, không kiểm tra trùng email khi thêm mới, và file contact1.html vẫn để dữ liệu tĩnh trong HTML (dù JS sẽ render lại). Nhìn chung bài chạy được và đáp ứng ý chính của đề.\",\n  \"integrity_verdict\": \"suspicious\",\n  \"integrity_confidence_0_100\": 55,\n  \"integrity_notes\": [\n    \"File CONTACT_ASSIGNMENT.md rất chi tiết, có cấu trúc giống tài liệu hướng dẫn do AI tạo ra, bao gồm cả bảng rubric và code snippet mẫu đầy đủ.\",\n    \"Code trong data.js ngắn gọn, tự nhiên hơn so với file .md, có thể do sinh viên tự viết dựa trên hướng dẫn.\",\n    \"Sự chênh lệch lớn giữa chất lượng file .md (rất hoàn chỉnh, văn phong AI) và code thực tế (còn lỗi nhỏ) gợi ý .md có thể được tạo bởi AI.\"\n  ],\n  \"rubric\": {\n    \"chuc_nang_sua\": 20,\n    \"chuc_nang_xoa\": 20,\n    \"validation\": 15,\n    \"alert_thong_bao\": 8,\n    \"render_danh_sach\": 5\n  }\n}\n```",
+  "openrouter_response": {
+    "id": "gen-1775138216-Jxj4iy9Cjwg1ya09AjPr",
+    "object": "chat.completion",
+    "created": 1775138216,
+    "model": "anthropic/claude-4.6-sonnet-20260217",
+    "provider": "Amazon Bedrock",
+    "system_fingerprint": null,
+    "choices": [
+      {
+        "index": 0,
+        "logprobs": null,
+        "finish_reason": "stop",
+        "native_finish_reason": "end_turn",
+        "message": {
+          "role": "assistant",
+          "content": "```json\n{\n  \"score\": 68,\n  \"comment\": \"Bài làm theo đúng template danh bạ, có đầy đủ chức năng sửa và xóa hoạt động được, validate cơ bản cho tên/phone/email. Tuy nhiên có một số điểm yếu: nút sau khi cập nhật đổi thành 'cập nhật' thay vì 'Thêm' (logic reset nút bị sai), validate phone dùng isNaN và length < 9 thay vì regex chuẩn, không kiểm tra trùng email khi thêm mới, và file contact1.html vẫn để dữ liệu tĩnh trong HTML (dù JS sẽ render lại). Nhìn chung bài chạy được và đáp ứng ý chính của đề.\",\n  \"integrity_verdict\": \"suspicious\",\n  \"integrity_confidence_0_100\": 55,\n  \"integrity_notes\": [\n    \"File CONTACT_ASSIGNMENT.md rất chi tiết, có cấu trúc giống tài liệu hướng dẫn do AI tạo ra, bao gồm cả bảng rubric và code snippet mẫu đầy đủ.\",\n    \"Code trong data.js ngắn gọn, tự nhiên hơn so với file .md, có thể do sinh viên tự viết dựa trên hướng dẫn.\",\n    \"Sự chênh lệch lớn giữa chất lượng file .md (rất hoàn chỉnh, văn phong AI) và code thực tế (còn lỗi nhỏ) gợi ý .md có thể được tạo bởi AI.\"\n  ],\n  \"rubric\": {\n    \"chuc_nang_sua\": 20,\n    \"chuc_nang_xoa\": 20,\n    \"validation\": 15,\n    \"alert_thong_bao\": 8,\n    \"render_danh_sach\": 5\n  }\n}\n```",
+          "refusal": null,
+          "reasoning": null
+        }
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 16052,
+      "completion_tokens": 552,
+      "total_tokens": 16604,
+      "cost": 0.056436,
+      "is_byok": false,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "cache_write_tokens": 0,
+        "audio_tokens": 0,
+        "video_tokens": 0
+      },
+      "cost_details": {
+        "upstream_inference_cost": 0.056436,
+        "upstream_inference_prompt_cost": 0.048156,
+        "upstream_inference_completions_cost": 0.00828
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 0,
+        "image_tokens": 0,
+        "audio_tokens": 0
+      }
+    }
+  }
+}

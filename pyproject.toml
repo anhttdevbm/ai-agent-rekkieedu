@@ -1,0 +1,34 @@
+[project]
+name = "agent-edu"
+version = "1.0.0"
+description = "Agent Edu — chấm bài, quiz, bài đọc (OpenRouter)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "python-docx>=1.1.2",
+  "httpx>=0.27.0",
+  "python-dotenv>=1.0.1",
+  "openpyxl>=3.1.2",
+  "youtube-transcript-api>=0.6.2",
+  "pillow>=10.2.0",
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.32.0",
+  "python-multipart>=0.0.9",
+]
+
+[project.scripts]
+agent-edu = "cham_bai.cli:main"
+agent-edu-gui = "cham_bai.gui:main"
+agent-edu-quiz = "cham_bai.quiz_cli:main"
+agent-edu-web = "cham_bai.web_app:main"
+
+[project.optional-dependencies]
+build = ["pyinstaller>=6.3.0"]
+
+[build-system]
+requires = ["setuptools>=69.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["cham_bai*"]

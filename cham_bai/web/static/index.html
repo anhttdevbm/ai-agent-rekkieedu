@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Agent Edu</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="hero">
+        <div class="brand">
+          <h1>Agent Edu</h1>
+          <p>Chấm bài · Quiz · Bài đọc — gọn, nhanh, một tab là đủ.</p>
+        </div>
+        <span class="pill" id="ver-pill">đang tải…</span>
+      </header>
+
+      <nav class="tabs" id="main-tabs">
+        <button type="button" class="active" data-tab="grade">Chấm bài</button>
+        <button type="button" data-tab="quiz">Quiz</button>
+        <button type="button" data-tab="reading">Bài đọc</button>
+      </nav>
+
+      <!-- Chấm bài -->
+      <section class="panel visible" id="panel-grade">
+        <h2>Chấm bài</h2>
+        <p class="hint">
+          Đề: upload <strong>.docx</strong> hoặc dán đường dẫn file / link Google Docs. Bài nộp: mỗi dòng một
+          <strong>thư mục trên máy chạy server</strong> hoặc <strong>link GitHub</strong>.
+        </p>
+        <form id="form-grade" enctype="multipart/form-data">
+          <div class="field">
+            <label for="g-assignment-text">Đề bài (tuỳ chọn nếu đã upload file)</label>
+            <input type="text" id="g-assignment-text" name="assignment_text" placeholder="C:\path\de.docx hoặc https://docs.google.com/..." />
+          </div>
+          <div class="field">
+            <label for="g-assignment-file">Upload file đề (.docx)</label>
+            <input type="file" id="g-assignment-file" name="assignment_file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+          </div>
+          <div class="field">
+            <label for="g-subs">Bài nộp (mỗi dòng một thư mục hoặc URL GitHub)</label>
+            <textarea id="g-subs" name="submissions_text" required placeholder="D:\bai-nop\sv1&#10;https://github.com/..."></textarea>
+          </div>
+          <div class="field">
+            <label for="g-model">Model OpenRouter</label>
+            <select id="g-model" name="model"></select>
+          </div>
+          <div class="row2">
+            <div class="field">
+              <label for="g-ai">Ngưỡng tin cậy AI (0–100)</label>
+              <input type="number" id="g-ai" name="ai_confidence" min="0" max="100" value="75" />
+            </div>
+            <div class="field" style="align-self: end">
+              <div class="checkline">
+                <input type="checkbox" id="g-tpl" name="use_template" checked value="true" />
+                <label for="g-tpl" style="margin: 0">Clone template GitHub từ đề</label>
+              </div>
+              <div class="checkline">
+                <input type="checkbox" id="g-strict" name="strict_ai" checked value="true" />
+                <label for="g-strict" style="margin: 0">Trừ điểm khi likely AI (strict)</label>
+              </div>
+            </div>
+          </div>
+          <div class="actions">
+            <button type="submit" class="primary" id="g-submit">Chạy chấm bài</button>
+          </div>
+          <p class="status" id="g-status"></p>
+          <pre class="log" id="g-log"></pre>
+        </form>
+      </section>
+
+      <!-- Quiz -->
+      <section class="panel" id="panel-quiz">
+        <h2>Tạo Quiz (Excel)</h2>
+        <p class="hint">
+          Không upload Excel: <strong>Quizz ôn tập — theo lesson</strong> → mặc định
+          <strong>example/quizz-lession-example.xlsx</strong> (5 câu, 7 cột);
+          <strong>Quizz đầu giờ — theo session</strong> → mẫu quiz trong package (1 hàng/câu).
+          <strong>Quizz Session đầu giờ</strong> → mặc định
+          <strong>example/Quizz_Session_Dau_Gio_Example.xlsx</strong>
+          (đúng 45 câu; phân bổ Đầu/Cuối + Dễ/TB/Khó như màn hình cấu hình đầu giờ).
+          Có thể kèm DOCX bài giảng (tuỳ chọn).
+        </p>
+        <details class="hint" id="warmup-dist-hint" style="display: none; margin: 0.5rem 0 0">
+          <summary>Phân bổ 45 câu — Session đầu giờ</summary>
+          <p style="margin: 0.5rem 0 0; line-height: 1.45">
+            30 câu <strong>BÀI CŨ</strong> + 15 câu <strong>BÀI MỚI</strong>. Mỗi khối 15 câu (1–15, 16–30, 31–45):
+            đúng <strong>5 Dễ + 5 Trung bình + 5 Khó</strong> (xen kẽ theo STT).
+            <strong>Câu 1–15</strong> (cũ, Đầu): Vận dụng chuyên sâu×4, Phân tích chuyên sâu×3, Sáng tạo×3, Thông hiểu×2,
+            Vận dụng sơ bộ×2, Phân tích sơ bộ×1.
+            <strong>Câu 16–30</strong> (cũ): Thông hiểu×5, Vận dụng sơ bộ×5, Phân tích sơ bộ×5.
+            <strong>Câu 31–45</strong> (mới, Cuối): Sáng tạo×4, Vận dụng×6, Phân tích×5.
+            Cột <code>difficulty</code> (4–11): 4 Vận dụng chuyên sâu; 5 Phân tích chuyên sâu; 6 Sáng tạo; 7 Thông hiểu;
+            8 Vận dụng sơ bộ; 9 Phân tích sơ bộ; 10 Vận dụng; 11 Phân tích.
+          </p>
+        </details>
+        <form id="form-quiz" enctype="multipart/form-data">
+          <div class="field">
+            <label for="q-kind">Loại quiz</label>
+            <select id="q-kind" name="quiz_kind_label" required></select>
+          </div>
+          <div class="field">
+            <label for="q-subject">Môn học (khuyến nghị)</label>
+            <input type="text" id="q-subject" name="subject" placeholder="vd. Lập trình Python, CSDL, …" />
+          </div>
+          <div class="row2" id="quiz-fields-lesson-session">
+            <div class="field">
+              <label for="q-lesson">Tên lesson</label>
+              <input type="text" id="q-lesson" name="lesson" required />
+            </div>
+            <div class="field">
+              <label for="q-session">Tên session</label>
+              <input type="text" id="q-session" name="session" required />
+            </div>
+          </div>
+          <div class="row2" id="quiz-fields-session-warmup" style="display: none">
+            <div class="field">
+              <label for="q-session-prev">Session trước (tuỳ chọn)</label>
+              <input type="text" id="q-session-prev" name="session_prev" />
+            </div>
+            <div class="field">
+              <label for="q-session-curr">Session hiện tại</label>
+              <input type="text" id="q-session-curr" name="session_current" />
+            </div>
+          </div>
+          <div class="row2">
+            <div class="field" id="quiz-field-num-questions">
+              <label for="q-n">Số câu hỏi</label>
+              <input type="number" id="q-n" name="num_questions" min="1" max="50" value="5" />
+            </div>
+            <div class="field">
+              <label for="q-model">Model</label>
+              <select id="q-model" name="model"></select>
+            </div>
+          </div>
+          <div class="field">
+            <label for="q-tpl">Excel mẫu (tuỳ chọn — bỏ trống = theo loại quiz ở trên)</label>
+            <input type="file" id="q-tpl" name="template_file" accept=".xlsx" />
+          </div>
+          <div class="field">
+            <label for="q-docx">DOCX bài giảng (tuỳ chọn)</label>
+            <input type="file" id="q-docx" name="docx_file" accept=".docx" />
+          </div>
+          <div class="actions">
+            <button type="submit" class="primary" id="q-submit">Tạo &amp; tải .xlsx</button>
+          </div>
+          <p class="status" id="q-status"></p>
+        </form>
+      </section>
+
+      <!-- Bài đọc -->
+      <section class="panel" id="panel-reading">
+        <h2>Bài đọc (DOCX + Excel)</h2>
+        <p class="hint">
+          Tạo xong sẽ tải file <strong>.zip</strong> gồm DOCX và Excel. Cần API key OpenRouter (và quota ảnh nếu bật minh họa).
+        </p>
+        <form id="form-reading">
+          <div class="field">
+            <label for="r-subject">Môn</label>
+            <input type="text" id="r-subject" name="subject" required />
+          </div>
+          <div class="row2">
+            <div class="field">
+              <label for="r-session">Session</label>
+              <input type="text" id="r-session" name="session" required />
+            </div>
+            <div class="field">
+              <label for="r-lesson">Lesson</label>
+              <input type="text" id="r-lesson" name="lesson" required />
+            </div>
+          </div>
+          <div class="row2">
+            <div class="field">
+              <label for="r-ss">Số thứ tự session</label>
+              <input type="number" id="r-ss" name="session_stt" min="1" max="99" value="1" />
+            </div>
+            <div class="field">
+              <label for="r-ls">Số thứ tự lesson</label>
+              <input type="number" id="r-ls" name="lesson_stt" min="1" max="99" value="1" />
+            </div>
+          </div>
+          <div class="field">
+            <label for="r-video">YouTube (tuỳ chọn)</label>
+            <input type="url" id="r-video" name="video_url" placeholder="https://www.youtube.com/..." />
+          </div>
+          <div class="field">
+            <label for="r-tech">Ngôn ngữ / công nghệ (tuỳ chọn)</label>
+            <input type="text" id="r-tech" name="technology" />
+          </div>
+          <div class="field">
+            <label for="r-aud">Đối tượng</label>
+            <input type="text" id="r-aud" name="audience" value="Sinh viên năm 1, mới học lập trình" />
+          </div>
+          <div class="field">
+            <label for="r-goals">Mục tiêu sau bài đọc</label>
+            <textarea id="r-goals" name="learning_goals" rows="5"></textarea>
+            <p class="small">Mặc định lấy từ tool — có thể sửa.</p>
+          </div>
+          <div class="field">
+            <label for="r-refs">Gợi ý tài liệu tham khảo (mục VII)</label>
+            <textarea id="r-refs" name="references_hint" rows="3"></textarea>
+          </div>
+          <div class="row2">
+            <div class="field">
+              <label for="r-text-model">Model nội dung</label>
+              <select id="r-text-model" name="text_model"></select>
+            </div>
+            <div class="field">
+              <label for="r-image-model">Model ảnh</label>
+              <select id="r-image-model" name="image_model"></select>
+            </div>
+          </div>
+          <div class="checkline">
+            <input type="checkbox" id="r-img" name="generate_illustrations" checked value="true" />
+            <label for="r-img" style="margin: 0">Tạo 3 ảnh minh họa (mục I–III)</label>
+          </div>
+          <div class="actions">
+            <button type="submit" class="primary" id="r-submit">Tạo &amp; tải .zip</button>
+          </div>
+          <p class="status" id="r-status"></p>
+        </form>
+      </section>
+
+      <footer>Chạy local · OpenRouter · không lưu dữ liệu trên server sau khi tải file</footer>
+    </div>
+    <script src="/static/app.js"></script>
+  </body>
+</html>
