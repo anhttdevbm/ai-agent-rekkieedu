@@ -87,8 +87,18 @@ jobs:
             export AGENT_EDU_IMAGE AGENT_EDU_TAG
 
             docker compose -f docker-compose.prod.yml --env-file .env pull web
-            docker compose -f docker-compose.prod.yml --env-file .env up -d
+            docker compose -f docker-compose.prod.yml --env-file .env up -d --remove-orphans
 
             # Basic health probe (web published to localhost)
-            curl -fsS http://127.0.0.1:8765/api/meta >/dev/null
+            for i in $(seq 1 30); do
+              if curl -fsS http://127.0.0.1:8765/api/meta >/dev/null 2>&1; then
+                echo "OK: /api/meta is healthy"
+                exit 0
+              fi
+              sleep 2
+            done
+            echo "ERROR: /api/meta did not become healthy" >&2
+            docker compose -f docker-compose.prod.yml --env-file .env ps >&2 || true
+            docker compose -f docker-compose.prod.yml --env-file .env logs --tail=200 web >&2 || true
+            exit 1
 
