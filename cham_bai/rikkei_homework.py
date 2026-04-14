@@ -24,14 +24,79 @@ from cham_bai.openrouter import ChatMessage, complete_chat
 
 RIKKEI_BASE = "https://apiportal.rikkei.edu.vn"
 
+# Portal thường kiểm tra từ trình duyệt; thiếu UA đôi khi bị đóng kết nối sớm.
+_RIKKEI_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+)
 
-def _rikkei_headers(token: str) -> dict[str, str]:
+_RETRYABLE_EXC = (
+    httpx.RemoteProtocolError,
+    httpx.LocalProtocolError,
+    httpx.ConnectError,
+    httpx.ReadTimeout,
+    httpx.WriteTimeout,
+    httpx.ConnectTimeout,
+    httpx.PoolTimeout,
+    BrokenPipeError,
+    ConnectionResetError,
+)
+
+
+def _rikkei_client() -> httpx.Client:
+    return httpx.Client(
+        timeout=httpx.Timeout(connect=45.0, read=180.0, write=45.0, pool=60.0),
+        limits=httpx.Limits(max_keepalive_connections=0, max_connections=10),
+        http2=False,
+        follow_redirects=True,
+        verify=True,
+    )
+
+
+def _rikkei_headers(token: str, *, json_body: bool = False) -> dict[str, str]:
     t = (token or "").strip()
-    return {
+    h: dict[str, str] = {
         "Authorization": f"Bearer {t}",
-        "Accept": "application/json",
-        "Content-Type": "application/json",
+        "Accept": "application/json, text/plain, */*",
+        "User-Agent": _RIKKEI_UA,
     }
+    if json_body:
+        h["Content-Type"] = "application/json"
+    return h
+
+
+def _rikkei_request(
+    method: str,
+    url: str,
+    token: str,
+    *,
+    params: dict[str, Any] | None = None,
+    json: dict[str, Any] | None = None,
+    max_attempts: int = 4,
+) -> httpx.Response:
+    last: BaseException | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            with _rikkei_client() as client:
+                return client.request(
+                    method,
+                    url,
+                    headers=_rikkei_headers(token, json_body=json is not None),
+                    params=params,
+                    json=json,
+                )
+        except _RETRYABLE_EXC as e:
+            last = e
+            if attempt < max_attempts:
+                time.sleep(min(2 ** (attempt - 1), 8))
+    assert last is not None
+    tip = (
+        " Gợi ý: SSH vào máy chủ, chạy `curl -sI https://apiportal.rikkei.edu.vn/` "
+        "(egress HTTPS); kiểm tra firewall; token Bearer còn hạn (thử lại trên trình duyệt DevTools)."
+    )
+    raise RuntimeError(
+        f"Gọi API Rikkei không ổn định sau {max_attempts} lần thử: {last!s}.{tip}"
+    ) from last
 
 
 def _unwrap_array(payload: Any) -> list[Any]:
@@ -48,10 +113,9 @@ def _unwrap_array(payload: Any) -> list[Any]:
 def fetch_students(token: str, class_id: int | str, session_id: int | str) -> list[dict[str, Any]]:
     cid, sid = str(class_id).strip(), str(session_id).strip()
     url = f"{RIKKEI_BASE}/students/homeworkProcess/class/{cid}/session/{sid}"
-    with httpx.Client(timeout=120.0) as client:
-        r = client.get(url, headers=_rikkei_headers(token))
-        r.raise_for_status()
-        return [x for x in _unwrap_array(r.json()) if isinstance(x, dict)]
+    r = _rikkei_request("GET", url, token)
+    r.raise_for_status()
+    return [x for x in _unwrap_array(r.json()) if isinstance(x, dict)]
 
 
 def fetch_exercises_page(
@@ -73,10 +137,9 @@ def fetch_exercises_page(
         "limit": limit,
         "studentId": str(student_id),
     }
-    with httpx.Client(timeout=120.0) as client:
-        r = client.get(f"{RIKKEI_BASE}/exercise", headers=_rikkei_headers(token), params=params)
-        r.raise_for_status()
-        return [x for x in _unwrap_array(r.json()) if isinstance(x, dict)]
+    r = _rikkei_request("GET", f"{RIKKEI_BASE}/exercise", token, params=params)
+    r.raise_for_status()
+    return [x for x in _unwrap_array(r.json()) if isinstance(x, dict)]
 
 
 def fetch_all_exercises_for_student(
@@ -195,12 +258,11 @@ def generate_btvn_comment(*, homework_title: str, link_git: str, model: str) -> 
 
 
 def get_exercise_detail(token: str, exercise_id: int | str) -> dict[str, Any] | None:
-    with httpx.Client(timeout=60.0) as client:
-        r = client.get(f"{RIKKEI_BASE}/exercise/{exercise_id}", headers=_rikkei_headers(token))
-        if r.status_code == 404:
-            return None
-        r.raise_for_status()
-        data = r.json()
+    r = _rikkei_request("GET", f"{RIKKEI_BASE}/exercise/{exercise_id}", token)
+    if r.status_code == 404:
+        return None
+    r.raise_for_status()
+    data = r.json()
     return data if isinstance(data, dict) else None
 
 
@@ -228,12 +290,12 @@ def put_exercise_comment(
         "linkGit": lg,
         "comment": comment,
     }
-    with httpx.Client(timeout=60.0) as client:
-        r = client.put(
-            f"{RIKKEI_BASE}/exercise/{exercise_id}",
-            headers=_rikkei_headers(token),
-            json=body,
-        )
+    r = _rikkei_request(
+        "PUT",
+        f"{RIKKEI_BASE}/exercise/{exercise_id}",
+        token,
+        json=body,
+    )
     if r.status_code >= 400:
         try:
             detail = r.json()
