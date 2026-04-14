@@ -541,6 +541,21 @@ def _warmup_block_retry_messages(*, bad_raw: str, n: int, part: str) -> list[Cha
 
 
 def _parse_session_warmup_items(arr: list[Any], *, plan: str = "warmup") -> list[dict[str, object]]:
+    def normalize_code_block(qtext: str) -> str:
+        """
+        Chuẩn hoá phần code trong question_content để Excel wrap đúng:
+        - Nếu có 'Code:' thì bắt buộc thành 'Code:\\n' và code bắt đầu ở dòng mới.
+        - Sửa một vài lỗi hay gặp kiểu 'Code: s=... print(...)' thành xuống dòng.
+        """
+        s = (qtext or "").strip()
+        if "code:" not in s.lower():
+            return s
+        # chuẩn hoá marker Code:
+        s = re.sub(r"(?i)\bcode\s*:\s*", "Code:\n", s)
+        # nếu model nhét nhiều câu lệnh cùng dòng sau Code:, tách thô trước print/return/input/for/if/while
+        s = re.sub(r"(?m)^(\s*Code:\n)([^\n]+)\s+(print\(|return\b|input\(|for\b|if\b|while\b)", r"\1\2\n\3", s)
+        return s.strip()
+
     if len(arr) < 45:
         raise ValueError(f"Cần đúng 45 câu, model trả {len(arr)} phần tử.")
     if len(arr) > 45:
@@ -578,7 +593,7 @@ def _parse_session_warmup_items(arr: list[Any], *, plan: str = "warmup") -> list
         if ic not in (1, 2, 3, 4):
             raise ValueError(f"Câu {i + 1}: isCorrect phải là số 1..4.")
         row: dict[str, object] = {
-            "question_content": q.strip(),
+            "question_content": normalize_code_block(q),
             "answer_1": str(answers[0]).strip(),
             "explanation_answer_1": str(exps[0]).strip(),
             "answer_2": str(answers[1]).strip(),
