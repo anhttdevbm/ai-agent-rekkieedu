@@ -18,7 +18,8 @@ from openpyxl import Workbook
 from openpyxl.styles import Font
 from openpyxl.utils import get_column_letter
 
-from cham_bai.git_remote import normalize_github_repo_url
+from cham_bai.collector import CollectedBundle, format_bundle_for_prompt
+from cham_bai.git_remote import fetch_repo_sources_bundle, normalize_github_repo_url
 from cham_bai.openrouter import ChatMessage, complete_chat
 
 
@@ -236,11 +237,30 @@ def mark_shared_repo_violations(rows: list[dict[str, Any]]) -> None:
 
 
 _BTVN_COMMENT_SYSTEM = """Bạn là giảng viên CNTT ở Việt Nam. Viết nhận xét BTVN cực ngắn (1–3 câu), tự nhiên như người thật, không markdown, không gạch đầu dòng.
-Chỉ dựa trên tiêu đề bài và link repo (không đọc được mã nguồn). Gợi ý chung: hoàn thành đúng yêu cầu, cấu trúc repo, commit, README nếu cần. Giọng điềm tĩnh, không phóng đại."""
+Ưu tiên nhận xét dựa trên mã nguồn trong repo (nếu có), tập trung: đúng yêu cầu bài (theo tiêu đề), cấu trúc repo, chất lượng SQL/code, README, cách tổ chức file, tính rõ ràng.
+Không chấm điểm, không đưa thang điểm. Giọng điềm tĩnh, giống người chấm thật."""
 
 
-def generate_btvn_comment(*, homework_title: str, link_git: str, model: str) -> str:
-    user = f"Tiêu đề bài: {homework_title or '(không rõ)'}\nLink nộp: {link_git}\nHãy viết nhận xét ngắn."
+def _bundle_brief(bundle: CollectedBundle | None) -> str:
+    if not bundle or not bundle.files:
+        return "(Không đọc được mã nguồn từ repo.)"
+    return format_bundle_for_prompt(bundle)
+
+
+def generate_btvn_comment(
+    *,
+    homework_title: str,
+    link_git: str,
+    model: str,
+    submission_bundle: CollectedBundle | None,
+) -> str:
+    user = (
+        f"Tiêu đề bài: {homework_title or '(không rõ)'}\n"
+        f"Link nộp: {link_git}\n\n"
+        "Mã nguồn trong repo (có thể bị cắt bớt):\n"
+        f"{_bundle_brief(submission_bundle)}\n\n"
+        "Hãy viết nhận xét ngắn."
+    )
     text, _ = complete_chat(
         [
             ChatMessage(role="system", content=_BTVN_COMMENT_SYSTEM),
@@ -248,7 +268,7 @@ def generate_btvn_comment(*, homework_title: str, link_git: str, model: str) -> 
         ],
         model=model,
         temperature=0.45,
-        max_tokens=400,
+        max_tokens=450,
         timeout_s=120.0,
     )
     one_line = re.sub(r"\s+", " ", text).strip()
@@ -335,6 +355,7 @@ def write_btvn_excel(rows: list[dict[str, Any]], path: Path) -> None:
         "link_git",
         "Link hợp lệ",
         "Lý do",
+        "Lỗi đọc repo",
         "Nhận xét (AI)",
         "Lỗi AI",
         "Đã push portal",
@@ -356,6 +377,7 @@ def write_btvn_excel(rows: list[dict[str, Any]], path: Path) -> None:
                 r.get("link_git", ""),
                 "Có" if r.get("link_valid") else "Không",
                 r.get("link_reason", ""),
+                r.get("repo_error", ""),
                 r.get("ai_comment", ""),
                 r.get("ai_error", ""),
                 "Có" if r.get("pushed") else "Không",
@@ -366,8 +388,9 @@ def write_btvn_excel(rows: list[dict[str, Any]], path: Path) -> None:
     for col in range(1, len(headers) + 1):
         ws.column_dimensions[get_column_letter(col)].width = 18
     ws.column_dimensions["G"].width = 42
-    ws.column_dimensions["J"].width = 40
-    ws.column_dimensions["K"].width = 28
+    ws.column_dimensions["J"].width = 28
+    ws.column_dimensions["K"].width = 40
+    ws.column_dimensions["L"].width = 28
 
     wb.save(path)
 
@@ -455,6 +478,7 @@ def run_btvn_job(params: BtvnJobParams) -> tuple[bool, str, Path | None]:
                     "pushed": False,
                     "push_error": "",
                     "ai_error": "",
+                    "repo_error": "",
                     "_raw_exercise": ex,
                 }
             )
@@ -469,11 +493,21 @@ def run_btvn_job(params: BtvnJobParams) -> tuple[bool, str, Path | None]:
         if not r.get("link_valid"):
             r["ai_comment"] = ""
             continue
+        bundle = None
+        try:
+            bundle, err = fetch_repo_sources_bundle(str(r.get("link_git", "")))
+            if err:
+                r["repo_error"] = err
+                bundle = None
+        except Exception as e:
+            r["repo_error"] = str(e)[:500]
+            bundle = None
         try:
             r["ai_comment"] = generate_btvn_comment(
                 homework_title=str(r.get("homework_title", "")),
                 link_git=str(r.get("link_git", "")),
                 model=model,
+                submission_bundle=bundle,
             )
         except Exception as e:
             r["ai_comment"] = ""
