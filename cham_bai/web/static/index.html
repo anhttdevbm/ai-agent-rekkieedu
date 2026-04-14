@@ -81,25 +81,24 @@
       <section class="panel" id="panel-quiz">
         <h2>Tạo Quiz (Excel)</h2>
         <p class="hint">
-          Không upload Excel: <strong>Quizz ôn tập — theo lesson</strong> → mặc định
-          <strong>example/quizz-lession-example.xlsx</strong> (5 câu, 7 cột);
-          <strong>Quizz đầu giờ — theo session</strong> → mẫu quiz trong package (1 hàng/câu).
+          Không upload Excel: <strong>Quizz đầu giờ — theo session</strong> → mẫu quiz trong package (1 hàng/câu).
           <strong>Quizz Session đầu giờ</strong> → mặc định
           <strong>example/Quizz_Session_Dau_Gio_Example.xlsx</strong>
-          (đúng 45 câu; phân bổ Đầu/Cuối + Dễ/TB/Khó như màn hình cấu hình đầu giờ).
+          (đúng 45 câu; difficulty chia đều theo 6 mức 4/5/6/7/8/9).
           Có thể kèm DOCX bài giảng (tuỳ chọn).
         </p>
         <details class="hint" id="warmup-dist-hint" style="display: none; margin: 0.5rem 0 0">
           <summary>Phân bổ 45 câu — Session đầu giờ</summary>
           <p style="margin: 0.5rem 0 0; line-height: 1.45">
-            30 câu <strong>BÀI CŨ</strong> + 15 câu <strong>BÀI MỚI</strong>. Mỗi khối 15 câu (1–15, 16–30, 31–45):
-            đúng <strong>5 Dễ + 5 Trung bình + 5 Khó</strong> (xen kẽ theo STT).
-            <strong>Câu 1–15</strong> (cũ, Đầu): Vận dụng chuyên sâu×4, Phân tích chuyên sâu×3, Sáng tạo×3, Thông hiểu×2,
-            Vận dụng sơ bộ×2, Phân tích sơ bộ×1.
-            <strong>Câu 16–30</strong> (cũ): Thông hiểu×5, Vận dụng sơ bộ×5, Phân tích sơ bộ×5.
-            <strong>Câu 31–45</strong> (mới, Cuối): Sáng tạo×4, Vận dụng×6, Phân tích×5.
-            Cột <code>difficulty</code> (4–11): 4 Vận dụng chuyên sâu; 5 Phân tích chuyên sâu; 6 Sáng tạo; 7 Thông hiểu;
-            8 Vận dụng sơ bộ; 9 Phân tích sơ bộ; 10 Vận dụng; 11 Phân tích.
+            45 câu: 30 câu <strong>BÀI CŨ</strong> + 15 câu <strong>BÀI MỚI</strong>.
+            Difficulty chỉ dùng 6 mức và chia đều:
+            <code>4</code> Vận dụng chuyên sâu,
+            <code>5</code> Phân tích chuyên sâu,
+            <code>6</code> Sáng tạo,
+            <code>7</code> Thông hiểu,
+            <code>8</code> Vận dụng sơ bộ,
+            <code>9</code> Phân tích sơ bộ.
+            (Mỗi mức 7 câu; 3 mức đầu được +1 câu.)
           </p>
         </details>
         <form id="form-quiz" enctype="multipart/form-data">

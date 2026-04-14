@@ -1,15 +1,15 @@
 """
-Kế hoạch cố định 45 câu cho «Quizz Session đầu giờ» (khớp UI phân bổ Đầu/Cuối + Dễ/TB/Khó).
+Kế hoạch cố định 45 câu cho «Quizz Session đầu giờ».
 
-- 30 câu đầu: BÀI CŨ (session trước); 15 câu sau: BÀI MỚI (session hiện tại).
-- Mỗi khối 15 câu (1–15, 16–30, 31–45): đúng 5 Dễ + 5 Trung bình + 5 Khó (xen kẽ theo STT: 1,4,7… = Dễ; 2,5,8… = TB; 3,6,9… = Khó).
-- Câu 1–15 — nhãn «Đầu»: Vận dụng chuyên sâu×4, Phân tích chuyên sâu×3, Sáng tạo×3, Thông hiểu×2, Vận dụng sơ bộ×2, Phân tích sơ bộ×1.
-- Câu 16–30 — BÀI CŨ tiếp: Thông hiểu×5, Vận dụng sơ bộ×5, Phân tích sơ bộ×5.
-- Câu 31–45 — nhãn «Cuối»: Sáng tạo×4, Vận dụng×6, Phân tích×5.
-
-Quy ước cột difficulty (4–11), khớp hệ thống ngoài:
+Yêu cầu hiện tại:
+- Chỉ dùng 6 mức difficulty: 4, 5, 6, 7, 8, 9
   4 Vận dụng chuyên sâu | 5 Phân tích chuyên sâu | 6 Sáng tạo | 7 Thông hiểu
-  | 8 Vận dụng sơ bộ | 9 Phân tích sơ bộ | 10 Vận dụng | 11 Phân tích
+  | 8 Vận dụng sơ bộ | 9 Phân tích sơ bộ
+- 45 câu chia đều theo 6 mức difficulty:
+  mỗi mức 7 câu, còn dư 3 câu → cộng thêm 1 câu cho 3 mức đầu theo thứ tự legend.
+
+Ghi chú: vẫn giữ nhãn 30 câu «BÀI CŨ» + 15 câu «BÀI MỚI» và vòng Dễ/TB/Khó theo STT để dễ nhìn,
+nhưng difficulty được áp theo phân bổ đều ở trên.
 """
 
 from __future__ import annotations
@@ -24,11 +24,9 @@ DIFFICULTY_BY_COGNITIVE: dict[str, int] = {
     "thong_hieu": 7,
     "van_dung_so_bo": 8,
     "phan_tich_so_bo": 9,
-    "van_dung": 10,
-    "phan_tich": 11,
 }
 
-# Thứ tự hiển thị legend / prompt: từ 4 lên 11.
+# Thứ tự hiển thị legend / prompt: theo yêu cầu (6 mức).
 DIFFICULTY_LEGEND_KEYS: tuple[str, ...] = (
     "van_dung_chuyen_sau",
     "phan_tich_chuyen_sau",
@@ -36,16 +34,12 @@ DIFFICULTY_LEGEND_KEYS: tuple[str, ...] = (
     "thong_hieu",
     "van_dung_so_bo",
     "phan_tich_so_bo",
-    "van_dung",
-    "phan_tich",
 )
 
 COGNITIVE_LABEL_VI: dict[str, str] = {
     "thong_hieu": "Thông hiểu",
     "phan_tich_so_bo": "Phân tích sơ bộ",
     "van_dung_so_bo": "Vận dụng sơ bộ",
-    "van_dung": "Vận dụng",
-    "phan_tich": "Phân tích",
     "van_dung_chuyen_sau": "Vận dụng chuyên sâu",
     "phan_tich_chuyen_sau": "Phân tích chuyên sâu",
     "sang_tao": "Sáng tạo",
@@ -62,43 +56,32 @@ def _repeat(keys: list[str], counts: list[int]) -> list[str]:
 def _build_specs() -> list[dict[str, object]]:
     specs: list[dict[str, object]] = []
 
-    block1_cog = (
-        _repeat(["van_dung_chuyen_sau", "phan_tich_chuyen_sau", "sang_tao", "thong_hieu", "van_dung_so_bo", "phan_tich_so_bo"], [4, 3, 3, 2, 2, 1])
-    )
-    for j, ck in enumerate(block1_cog):
-        specs.append(
-            {
-                "index1": len(specs) + 1,
-                "part": "prev",
-                "category_vi": "BÀI CŨ",
-                "tier_vi": TIER_CYCLE_VI[j % 3],
-                "cognitive_key": ck,
-                "cognitive_vi": COGNITIVE_LABEL_VI[ck],
-                "difficulty": DIFFICULTY_BY_COGNITIVE[ck],
-            }
-        )
+    # Chia đều 45 câu theo 6 mức cognitive_key (7 câu/mức, dư 3 câu cho 3 mức đầu theo legend).
+    keys = list(DIFFICULTY_LEGEND_KEYS)
+    base = 45 // len(keys)  # 7
+    rem = 45 % len(keys)   # 3
+    pool: list[str] = []
+    for i, k in enumerate(keys):
+        pool.extend([k] * (base + (1 if i < rem else 0)))
 
-    block2_cog = _repeat(["thong_hieu", "van_dung_so_bo", "phan_tich_so_bo"], [5, 5, 5])
-    for j, ck in enumerate(block2_cog):
-        specs.append(
-            {
-                "index1": len(specs) + 1,
-                "part": "prev",
-                "category_vi": "BÀI CŨ",
-                "tier_vi": TIER_CYCLE_VI[j % 3],
-                "cognitive_key": ck,
-                "cognitive_vi": COGNITIVE_LABEL_VI[ck],
-                "difficulty": DIFFICULTY_BY_COGNITIVE[ck],
-            }
-        )
+    # Trộn đơn giản theo vòng để không dồn cùng loại vào một đoạn.
+    # (Không random để luôn tái lập.)
+    ordered: list[str] = []
+    buckets: dict[str, int] = {k: pool.count(k) for k in keys}
+    idx = 0
+    while len(ordered) < 45:
+        k = keys[idx % len(keys)]
+        if buckets.get(k, 0) > 0:
+            ordered.append(k)
+            buckets[k] -= 1
+        idx += 1
 
-    block3_cog = _repeat(["sang_tao", "van_dung", "phan_tich"], [4, 6, 5])
-    for j, ck in enumerate(block3_cog):
+    for j, ck in enumerate(ordered):
         specs.append(
             {
                 "index1": len(specs) + 1,
-                "part": "current",
-                "category_vi": "BÀI MỚI",
+                "part": ("prev" if (len(specs) < 30) else "current"),
+                "category_vi": ("BÀI CŨ" if (len(specs) < 30) else "BÀI MỚI"),
                 "tier_vi": TIER_CYCLE_VI[j % 3],
                 "cognitive_key": ck,
                 "cognitive_vi": COGNITIVE_LABEL_VI[ck],
@@ -143,9 +126,6 @@ def session_warmup_distribution_summary_vi() -> str:
     """Mô tả ngắn cho UI (web/GUI)."""
     return (
         "45 câu: 30 BÀI CŨ + 15 BÀI MỚI. "
-        "Mỗi khối 15 câu (1–15, 16–30, 31–45) có đúng 5 Dễ + 5 Trung bình + 5 Khó (theo STT). "
-        "Câu 1–15 (cũ, Đầu): Vận dụng chuyên sâu×4, Phân tích chuyên sâu×3, Sáng tạo×3, Thông hiểu×2, Vận dụng sơ bộ×2, Phân tích sơ bộ×1. "
-        "Câu 16–30 (cũ): Thông hiểu×5, Vận dụng sơ bộ×5, Phân tích sơ bộ×5. "
-        "Câu 31–45 (mới, Cuối): Sáng tạo×4, Vận dụng×6, Phân tích×5. "
+        "Difficulty chỉ dùng 6 mức: 4/5/6/7/8/9 và chia đều (mỗi mức 7 câu; 3 mức đầu +1 câu). "
         f"Cột difficulty: {session_warmup_difficulty_legend_vi()}."
     )
