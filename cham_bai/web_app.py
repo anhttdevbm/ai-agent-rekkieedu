@@ -43,7 +43,7 @@ from cham_bai.reading_gen import (
     run_reading_generation,
     sanitize_reading_filename_part,
 )
-from cham_bai.rikkei_homework import BtvnJobParams, run_btvn_job
+from cham_bai.btvn_comment import BtvnCommentParams, run_btvn_comments
 from cham_bai.workflow import GradeJobParams, GradeJobResult, run_grade_batch, run_grade_job
 
 _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="web")
@@ -391,45 +391,46 @@ def _cleanup_quiz_temp(tmp_tpl: str | None, tmp_docx: str | None, out_dir: str |
 @app.post("/api/btvn")
 async def api_btvn(
     background_tasks: BackgroundTasks,
-    rikkei_token: str = Form(...),
-    class_id: str = Form(...),
-    session_id: str = Form(...),
-    course_id: str = Form(""),
-    text_model: str = Form(""),
-    push_to_portal: str = Form("false"),
-    max_students: str = Form(""),
+    assignment_text: str = Form(""),
+    submissions_text: str = Form(...),
+    model: str = Form(""),
+    assignment_images: list[UploadFile] | None = File(None),
 ) -> FileResponse:
-    cid = (class_id or "").strip()
-    sid = (session_id or "").strip()
-    if not cid or not sid:
-        raise HTTPException(status_code=400, detail="Nhập Class ID và Session ID.")
+    subs_lines = [
+        ln.strip()
+        for ln in (submissions_text or "").splitlines()
+        if ln.strip() and not ln.strip().startswith("#")
+    ]
+    if not subs_lines:
+        raise HTTPException(status_code=400, detail="Chưa có danh sách bài nộp (mỗi dòng 1 link GitHub).")
 
-    ms: int | None = None
-    if (max_students or "").strip():
-        try:
-            ms = int((max_students or "").strip())
-            if ms < 1:
-                raise ValueError
-        except ValueError as e:
-            raise HTTPException(
-                status_code=400,
-                detail="Giới hạn số học sinh (max_students) phải là số nguyên dương.",
-            ) from e
+    imgs: list[tuple[str, bytes]] = []
+    if assignment_images:
+        for f in assignment_images:
+            if not f or not f.filename:
+                continue
+            raw = await f.read()
+            if not raw:
+                continue
+            ct = (f.content_type or "").strip() or "image/png"
+            if not ct.startswith("image/"):
+                continue
+            # giới hạn nhẹ để tránh payload quá lớn
+            if len(raw) > 5_000_000:
+                raise HTTPException(status_code=400, detail=f"Ảnh quá lớn: {f.filename} (>5MB).")
+            imgs.append((ct, raw))
 
-    params = BtvnJobParams(
-        rikkei_token=rikkei_token,
-        class_id=cid,
-        session_id=sid,
-        course_id=(course_id or "").strip(),
-        text_model=(text_model or "").strip(),
-        push_to_portal=_parse_bool_form(push_to_portal),
-        max_students=ms,
+    params = BtvnCommentParams(
+        assignment_text=(assignment_text or "").strip(),
+        assignment_images=imgs,
+        submissions=subs_lines,
+        model=(model or os.getenv("OPENROUTER_MODEL", "anthropic/claude-sonnet-4.6")).strip(),
     )
 
     loop = asyncio.get_event_loop()
 
     def work():
-        return run_btvn_job(params)
+        return run_btvn_comments(params)
 
     ok, msg, out_path = await loop.run_in_executor(_executor, work)
     if not ok or out_path is None:
@@ -440,8 +441,7 @@ async def api_btvn(
                 pass
         raise HTTPException(status_code=500, detail=msg or "Lỗi không xác định.")
 
-    raw_name = f"btvn_class_{cid}_session_{sid}.xlsx"
-    safe_name = re.sub(r"[^\w\-.]+", "_", raw_name, flags=re.UNICODE).strip("_") or "btvn.xlsx"
+    safe_name = "btvn_nhan_xet.xlsx"
 
     def cleanup_btvn_xlsx() -> None:
         try:

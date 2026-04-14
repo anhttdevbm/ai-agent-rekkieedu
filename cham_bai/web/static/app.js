@@ -199,7 +199,6 @@
     $("#b-status").textContent = "";
     try {
       const fd = new FormData(ev.target);
-      fd.set("push_to_portal", $("#b-push").checked ? "true" : "false");
       const r = await fetch("/api/btvn", { method: "POST", body: fd });
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));

@@ -237,48 +237,29 @@
         </form>
       </section>
 
-      <!-- Chấm BTVN Rikkei -->
+      <!-- Chấm BTVN (nhận xét repo) -->
       <section class="panel" id="panel-btvn">
-        <h2>Chấm BTVN (API Rikkei)</h2>
+        <h2>Chấm BTVN (nhận xét)</h2>
         <p class="hint">
-          Nhập <strong>token Bearer</strong> của portal (chỉ dùng trong request này, không lưu trên server).
-          Lấy danh sách học sinh theo <strong>Class ID</strong> + <strong>Session ID</strong>, sau đó gọi từng bài tập để lấy
-          <code>link_git</code>. <strong>Quy tắc:</strong> nếu <em>cùng một repo GitHub</em> được gắn cho <em>nhiều bài tập khác nhau</em>
-          của một học sinh thì coi là không riêng từng bài — <strong>không tính</strong> (ghi trong Excel). Nhận xét ngắn do model OpenRouter
-          (cần <code>OPENROUTER_API_KEY</code>). Tuỳ chọn ghi nhận xét lên portal (PUT).
+          Nhập <strong>đề bài dạng văn bản</strong> (có thể kèm ảnh) và danh sách <strong>link GitHub</strong> bài nộp (mỗi dòng 1 link).
+          Hệ thống sẽ clone repo, đọc mã nguồn (có giới hạn) và tạo <strong>nhận xét ngắn</strong>. Không chấm điểm.
         </p>
         <form id="form-btvn">
           <div class="field">
-            <label for="b-token">Token Rikkei (Bearer)</label>
-            <input type="password" id="b-token" name="rikkei_token" required autocomplete="off" placeholder="Dán JWT / token từ portal" />
-          </div>
-          <div class="row2">
-            <div class="field">
-              <label for="b-class">Class ID</label>
-              <input type="text" id="b-class" name="class_id" required placeholder="ví dụ 73" />
-            </div>
-            <div class="field">
-              <label for="b-session">Session ID</label>
-              <input type="text" id="b-session" name="session_id" required placeholder="ví dụ 2054" />
-            </div>
+            <label for="b-assignment">Đề bài (văn bản)</label>
+            <textarea id="b-assignment" name="assignment_text" rows="8" placeholder="Dán nội dung đề ở đây…"></textarea>
           </div>
           <div class="field">
-            <label for="b-course">Course ID (tuỳ chọn, để lọc API exercise)</label>
-            <input type="text" id="b-course" name="course_id" placeholder="Để trống nếu không cần" />
+            <label for="b-images">Ảnh trong đề (tuỳ chọn)</label>
+            <input type="file" id="b-images" name="assignment_images" accept="image/*" multiple />
           </div>
-          <div class="row2">
-            <div class="field">
-              <label for="b-model">Model OpenRouter (nhận xét)</label>
-              <select id="b-model" name="text_model"></select>
-            </div>
-            <div class="field">
-              <label for="b-max">Giới hạn số học sinh (tuỳ chọn)</label>
-              <input type="number" id="b-max" name="max_students" min="1" placeholder="Trống = tất cả" />
-            </div>
+          <div class="field">
+            <label for="b-subs">Bài nộp (mỗi dòng 1 link GitHub)</label>
+            <textarea id="b-subs" name="submissions_text" rows="6" required placeholder="https://github.com/owner/repo"></textarea>
           </div>
-          <div class="checkline">
-            <input type="checkbox" id="b-push" name="push_to_portal" value="true" />
-            <label for="b-push" style="margin: 0">Ghi nhận xét AI lên portal (PUT từng exercise)</label>
+          <div class="field">
+            <label for="b-model">Model OpenRouter</label>
+            <select id="b-model" name="model"></select>
           </div>
           <div class="actions">
             <button type="submit" class="primary" id="b-submit">Chạy &amp; tải Excel</button>

@@ -64,6 +64,37 @@ def complete_chat(
     return content.strip(), data
 
 
+def complete_chat_raw(
+    messages: list[dict[str, Any]],
+    *,
+    model: str,
+    temperature: float = 0.2,
+    max_tokens: int = 4096,
+    timeout_s: float = 300.0,
+    extra_body: dict[str, Any] | None = None,
+) -> tuple[str, dict[str, Any]]:
+    """
+    Biến thể cho message content dạng object/list (multimodal), không ép content=str.
+    `messages` phải theo schema OpenAI/OpenRouter: [{"role": "...", "content": ...}, ...]
+    """
+    body: dict[str, Any] = {
+        "model": model,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+    if extra_body:
+        body.update(extra_body)
+    data = post_chat_completions(body, timeout_s=timeout_s)
+    try:
+        content = data["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError) as e:
+        raise RuntimeError(f"Phản hồi OpenRouter không hợp lệ: {data!r}") from e
+    if not isinstance(content, str):
+        raise RuntimeError(f"Nội dung model không phải chuỗi: {type(content)}")
+    return content.strip(), data
+
+
 def _decode_one_data_url(url: str) -> bytes | None:
     m = re.match(r"data:image/[^;]+;base64,(.+)", url.strip(), re.I | re.DOTALL)
     if not m:
