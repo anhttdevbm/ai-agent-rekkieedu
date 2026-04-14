@@ -23,6 +23,7 @@ from cham_bai.quiz_excel import (
     read_headers_from_template,
 )
 from cham_bai.session_warmup_plan import apply_session_warmup_plan
+from cham_bai.session_end_plan import apply_session_end_plan
 from cham_bai.settings import model as resolve_model
 
 
@@ -65,6 +66,23 @@ def default_session_warmup_quiz_output_path(template_xlsx: Path, session_current
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     part = sanitize_quiz_filename_part(session_current)
     stem = f"quizz_session_Dau_gio_{part}_{ts}"
+    p = base / f"{stem}.xlsx"
+    n = 1
+    while p.exists():
+        p = base / f"{stem}_{n}.xlsx"
+        n += 1
+    return p
+
+
+def default_session_end_quiz_output_path(template_xlsx: Path, session_current: str) -> Path:
+    """
+    Đường dẫn .xlsx quiz session cuối giờ (cùng thư mục với mẫu):
+    quizz_session_Cuoi_gio_<Tên session hiện tại>_<YYYYMMDD_HHMMSS>.xlsx (tránh trùng tên).
+    """
+    base = template_xlsx.resolve().parent
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    part = sanitize_quiz_filename_part(session_current)
+    stem = f"quizz_session_Cuoi_gio_{part}_{ts}"
     p = base / f"{stem}.xlsx"
     n = 1
     while p.exists():
@@ -166,6 +184,7 @@ def _finish_reason(data: dict[str, Any]) -> str | None:
 QUIZ_KIND_SESSION = "session"
 QUIZ_KIND_LESSON = "lesson"
 QUIZ_KIND_SESSION_WARMUP = "session_warmup"
+QUIZ_KIND_SESSION_END = "session_end"
 
 
 def normalize_quiz_kind(kind: str | None) -> str:
@@ -174,6 +193,8 @@ def normalize_quiz_kind(kind: str | None) -> str:
         return QUIZ_KIND_LESSON
     if k == QUIZ_KIND_SESSION_WARMUP:
         return QUIZ_KIND_SESSION_WARMUP
+    if k == QUIZ_KIND_SESSION_END:
+        return QUIZ_KIND_SESSION_END
     return QUIZ_KIND_SESSION
 
 
@@ -187,6 +208,11 @@ def _quiz_kind_bullet(kind: str) -> str:
         return (
             "- Loại: QUIZZ SESSION ĐẦU GIỜ — kiểm tra nhanh trước khi vào bài; "
             "ưu tiên câu hỏi ngắn, sát \"session hiện tại\", có 1–2 câu nối kiến thức từ \"session trước\".\n"
+        )
+    if kind == QUIZ_KIND_SESSION_END:
+        return (
+            "- Loại: QUIZZ SESSION CUỐI GIỜ — tổng kết/đánh giá nhanh theo session hiện tại; "
+            "ưu tiên câu hỏi sát nội dung vừa học.\n"
         )
     return (
         "- Loại: QUIZ THEO SESSION — quiz đầu giờ sát nội dung session, "
@@ -261,6 +287,104 @@ SYSTEM_QUIZ_SESSION_WARMUP = (
     "- Nếu có code trong câu hỏi: identifier chỉ tiếng Anh (snake_case), logic khớp đáp án.\n"
     "- Mục tiêu: kiểm tra bài cũ + sinh viên đã chuẩn bị bài mới, đúng phân bổ từng vị trí."
 )
+
+SYSTEM_QUIZ_SESSION_END = (
+    "Bạn là giảng viên đại học. Soạn quiz cuối giờ (tổng kết/đánh giá nhanh) — nội dung tiếng Việt.\n\n"
+    "Chỉ trả về một mảng JSON hợp lệ. Không markdown, không ```, không chữ ngoài mảng.\n\n"
+    "Yêu cầu đầu ra:\n"
+    "- Đúng 45 phần tử.\n"
+    "- TẤT CẢ câu hỏi đều bám sát session hiện tại (BÀI MỚI).\n"
+    "- Mỗi phần tử là object với ĐÚNG các khóa ASCII: part, question_content, answers (4 string), explanations (4 string), isCorrect (1..4), difficulty (số nguyên).\n"
+    "- \"part\": luôn là \"current\".\n"
+    "- \"difficulty\": CHỈ được dùng các số: 6, 10, 11.\n"
+    "  (6 Sáng tạo; 10 Vận dụng; 11 Phân tích) — tool sẽ tự chia đều.\n\n"
+    "Ràng buộc:\n"
+    "- Giải thích đủ rõ vì sao đúng/sai (ngắn gọn, không rỗng).\n"
+    "- Nếu có code: identifier chỉ tiếng Anh (snake_case), logic khớp đáp án.\n"
+    "- Mục tiêu: bám sát session hiện tại, không lẫn session trước."
+)
+
+
+def _end_retry_messages(bad_raw: str) -> list[ChatMessage]:
+    tail = bad_raw[-9000:] if len(bad_raw) > 9000 else bad_raw
+    return [
+        ChatMessage(
+            role="system",
+            content=(
+                "Chỉ output DUY NHẤT một mảng JSON hợp lệ gồm đúng 45 object. "
+                "Không markdown, không ```, không chữ ngoài mảng. "
+                "Mỗi object có đúng các khóa ASCII: part, question_content, answers, explanations, isCorrect, difficulty. "
+                "answers và explanations là mảng đúng 4 string; isCorrect là 1..4; "
+                "difficulty chỉ được là 6/10/11; part luôn là 'current'. "
+                "Toàn bộ output phải bắt đầu bằng [ và kết thúc bằng ]."
+            ),
+        ),
+        ChatMessage(
+            role="user",
+            content=(
+                "Output trước bị thiếu/cụt hoặc sai định dạng. "
+                "Hãy output LẠI TOÀN BỘ mảng 45 phần tử từ dấu [ đến dấu ] (đừng cố nối tiếp).\n\n"
+                f"Output trước (có thể bị cắt):\n{tail}"
+            ),
+        ),
+    ]
+
+
+def _end_block_messages(
+    *,
+    subject: str,
+    session_current: str,
+    start_stt: int,
+    n: int,
+    docx_excerpt: str,
+) -> list[ChatMessage]:
+    end_stt = start_stt + n - 1
+    user = (
+        "Thông tin:\n"
+        f"{_subject_bullet(subject)}"
+        f"- Session hiện tại: {session_current}\n\n"
+        f"Nhiệm vụ: soạn đúng {n} câu, STT {start_stt}–{end_stt} (KHÔNG ghi STT vào JSON), "
+        "tất cả đều thuộc session hiện tại.\n"
+        "Yêu cầu: mọi object phải có part='current'.\n"
+    )
+    if docx_excerpt.strip():
+        user += f"\nNội dung bài giảng (DOCX, trích):\n---\n{docx_excerpt}\n---\n"
+    sys = (
+        "Chỉ output DUY NHẤT một mảng JSON hợp lệ gồm đúng "
+        f"{n} object. Không markdown, không ```, không chữ ngoài mảng.\n"
+        "Mỗi object có đúng các khóa ASCII: part, question_content, answers, explanations, isCorrect, difficulty.\n"
+        "answers và explanations là mảng đúng 4 string; isCorrect là 1..4; difficulty chỉ được là 6/10/11; part luôn là 'current'.\n"
+        "Để tránh bị cắt output: viết NGẮN — question_content <= 220 ký tự; mỗi explanation <= 120 ký tự.\n"
+        "Nếu có code: đặt code ở CUỐI question_content theo đúng cấu trúc:\n"
+        "Code:\\n<dòng 1>\\n<dòng 2>... (giữ thụt lề chuẩn, không dùng markdown fence). "
+        "Chỉ question_content được phép có xuống dòng; answers/explanations phải 1 dòng.\n"
+        "Output phải bắt đầu bằng [ và kết thúc bằng ]."
+    )
+    return [ChatMessage(role="system", content=sys), ChatMessage(role="user", content=user)]
+
+
+def _end_block_retry_messages(*, bad_raw: str, n: int) -> list[ChatMessage]:
+    tail = bad_raw[-9000:] if len(bad_raw) > 9000 else bad_raw
+    return [
+        ChatMessage(
+            role="system",
+            content=(
+                "Chỉ output DUY NHẤT một mảng JSON hợp lệ gồm đúng "
+                f"{n} object. Không markdown, không ```, không chữ ngoài mảng. "
+                "Mỗi object có đúng các khóa ASCII: part, question_content, answers, explanations, isCorrect, difficulty. "
+                "answers và explanations là mảng đúng 4 string; isCorrect là 1..4; difficulty chỉ được là 6/10/11; part luôn là 'current'. "
+                "Output phải bắt đầu bằng [ và kết thúc bằng ]."
+            ),
+        ),
+        ChatMessage(
+            role="user",
+            content=(
+                "Output trước bị thiếu/cụt hoặc sai định dạng. "
+                "Hãy output LẠI TOÀN BỘ mảng (đừng cố nối tiếp).\n\n"
+                f"Output trước (có thể bị cắt):\n{tail}"
+            ),
+        ),
+    ]
 
 
 def _vertical_retry_messages(bad_raw: str) -> list[ChatMessage]:
@@ -416,7 +540,7 @@ def _warmup_block_retry_messages(*, bad_raw: str, n: int, part: str) -> list[Cha
     ]
 
 
-def _parse_session_warmup_items(arr: list[Any]) -> list[dict[str, object]]:
+def _parse_session_warmup_items(arr: list[Any], *, plan: str = "warmup") -> list[dict[str, object]]:
     if len(arr) < 45:
         raise ValueError(f"Cần đúng 45 câu, model trả {len(arr)} phần tử.")
     if len(arr) > 45:
@@ -427,10 +551,16 @@ def _parse_session_warmup_items(arr: list[Any]) -> list[dict[str, object]]:
         if not isinstance(it, dict):
             raise ValueError(f"Câu {i + 1}: mỗi phần tử phải là object.")
         part = str(it.get("part", "")).strip().lower()
-        if i < 30 and part not in ("prev", ""):
-            raise ValueError(f"Câu {i + 1}: 30 câu đầu phải part='prev'.")
-        if i >= 30 and part not in ("current", ""):
-            raise ValueError(f"Câu {i + 1}: 15 câu sau phải part='current'.")
+        if plan == "warmup":
+            if i < 30 and part not in ("prev", ""):
+                raise ValueError(f"Câu {i + 1}: 30 câu đầu phải part='prev'.")
+            if i >= 30 and part not in ("current", ""):
+                raise ValueError(f"Câu {i + 1}: 15 câu sau phải part='current'.")
+        elif plan == "end":
+            if part not in ("current", ""):
+                raise ValueError(f"Câu {i + 1}: part phải là 'current'.")
+        else:
+            raise ValueError("Plan không hợp lệ.")
         q = it.get("question_content")
         if not isinstance(q, str) or not q.strip():
             raise ValueError(f"Câu {i + 1}: thiếu question_content.")
@@ -461,7 +591,10 @@ def _parse_session_warmup_items(arr: list[Any]) -> list[dict[str, object]]:
             "difficulty": 4,
         }
         out.append(row)
-    apply_session_warmup_plan(out)
+    if plan == "warmup":
+        apply_session_warmup_plan(out)
+    else:
+        apply_session_end_plan(out)
     return out
 
 
@@ -697,7 +830,7 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
         return False, f"Không tìm thấy file Excel mẫu: {params.template_xlsx}"
 
     qkind = normalize_quiz_kind(params.quiz_kind)
-    if qkind == QUIZ_KIND_SESSION_WARMUP:
+    if qkind in (QUIZ_KIND_SESSION_WARMUP, QUIZ_KIND_SESSION_END):
         if not (params.subject or "").strip():
             return False, "Thiếu môn học."
         if not (params.session_current or "").strip():
@@ -718,8 +851,8 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
         except Exception as e:
             return False, f"Lỗi đọc DOCX: {e}"
 
-    # Quizz session đầu giờ: 45 câu, 1 hàng / câu theo header warmup
-    if qkind == QUIZ_KIND_SESSION_WARMUP:
+    # Quizz session đầu giờ / cuối giờ: 45 câu, 1 hàng / câu theo header warmup
+    if qkind in (QUIZ_KIND_SESSION_WARMUP, QUIZ_KIND_SESSION_END):
         try:
             headers = read_headers_from_template(params.template_xlsx)
         except Exception as e:
@@ -735,28 +868,40 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
         temp0 = max(0.0, min(2.0, float(params.temperature)))
 
         # Chia 45 câu thành 3 block 15 câu để giảm lỗi cắt/thiếu JSON và thường nhanh hơn.
-        blocks: list[tuple[str, int, int]] = [
-            ("prev", 1, 15),
-            ("prev", 16, 15),
-            ("current", 31, 15),
-        ]
+        blocks: list[tuple[str, int, int]]
+        if qkind == QUIZ_KIND_SESSION_WARMUP:
+            blocks = [("prev", 1, 15), ("prev", 16, 15), ("current", 31, 15)]
+        else:
+            blocks = [("current", 1, 15), ("current", 16, 15), ("current", 31, 15)]
         all_items: list[Any] = []
         for part, start_stt, n_need in blocks:
             last_raw = ""
             arr_block: list[Any] | None = None
             for attempt in range(3):
-                if attempt == 0:
-                    msgs = _warmup_block_messages(
-                        subject=subj,
-                        session_prev=prev_s,
-                        session_current=curr_s,
-                        part=part,
-                        start_stt=start_stt,
-                        n=n_need,
-                        docx_excerpt=docx_excerpt,
-                    )
+                if qkind == QUIZ_KIND_SESSION_WARMUP:
+                    if attempt == 0:
+                        msgs = _warmup_block_messages(
+                            subject=subj,
+                            session_prev=prev_s,
+                            session_current=curr_s,
+                            part=part,
+                            start_stt=start_stt,
+                            n=n_need,
+                            docx_excerpt=docx_excerpt,
+                        )
+                    else:
+                        msgs = _warmup_block_retry_messages(bad_raw=last_raw, n=n_need, part=part)
                 else:
-                    msgs = _warmup_block_retry_messages(bad_raw=last_raw, n=n_need, part=part)
+                    if attempt == 0:
+                        msgs = _end_block_messages(
+                            subject=subj,
+                            session_current=curr_s,
+                            start_stt=start_stt,
+                            n=n_need,
+                            docx_excerpt=docx_excerpt,
+                        )
+                    else:
+                        msgs = _end_block_retry_messages(bad_raw=last_raw, n=n_need)
                 raw, _data = complete_chat(
                     msgs,
                     model=m,
@@ -775,13 +920,26 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
                         arr_block = None
                         break
             if arr_block is None:
-                return False, f"JSON warmup bị cắt/sai ở block {start_stt}–{start_stt + n_need - 1}.\n---\n{last_raw[:2800]}"
+                if qkind == QUIZ_KIND_SESSION_WARMUP:
+                    return (
+                        False,
+                        f"JSON warmup bị cắt/sai ở block {start_stt}–{start_stt + n_need - 1}.\n---\n{last_raw[:2800]}",
+                    )
+                return (
+                    False,
+                    f"JSON session cuối giờ bị cắt/sai ở block {start_stt}–{start_stt + n_need - 1}.\n---\n{last_raw[:2800]}",
+                )
             all_items.extend(arr_block)
 
         try:
-            rows = _parse_session_warmup_items(all_items)
+            rows = _parse_session_warmup_items(all_items, plan=("warmup" if qkind == QUIZ_KIND_SESSION_WARMUP else "end"))
         except Exception as e:
-            return False, f"JSON warmup không hợp lệ: {e}\n---\n{json.dumps(all_items[:2], ensure_ascii=False)[:2800]}"
+            if qkind == QUIZ_KIND_SESSION_WARMUP:
+                return False, f"JSON warmup không hợp lệ: {e}\n---\n{json.dumps(all_items[:2], ensure_ascii=False)[:2800]}"
+            return (
+                False,
+                f"JSON session cuối giờ không hợp lệ: {e}\n---\n{json.dumps(all_items[:2], ensure_ascii=False)[:2800]}",
+            )
 
         fill_template_session_warmup_quiz(params.template_xlsx, params.output_xlsx, rows)
         return True, str(params.output_xlsx)

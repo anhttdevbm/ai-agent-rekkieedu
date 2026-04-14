@@ -371,6 +371,7 @@ def fill_template_session_warmup_quiz(
     Ghi quiz warmup (45 câu) vào file output theo template:
     question_content, answer_1..4 + explanation_answer_1..4, isCorrect (1..4), difficulty (int), category.
     30 câu đầu: BÀI CŨ; 15 câu sau: BÀI MỚI.
+    Nếu row có khóa `category` thì dùng giá trị đó (hỗ trợ các loại quiz 45 câu khác).
     """
     wb = load_workbook(template_xlsx)
     ws = wb.active
@@ -390,7 +391,7 @@ def fill_template_session_warmup_quiz(
         ws.cell(rr, 9).value = r.get("explanation_answer_4", "")
         ws.cell(rr, 10).value = r.get("isCorrect", "")
         ws.cell(rr, 11).value = r.get("difficulty", "")
-        ws.cell(rr, 12).value = "BÀI CŨ" if i < 30 else "BÀI MỚI"
+        ws.cell(rr, 12).value = r.get("category", "") or ("BÀI CŨ" if i < 30 else "BÀI MỚI")
     wb.save(output_xlsx)
 
 

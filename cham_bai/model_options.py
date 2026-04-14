@@ -4,11 +4,12 @@ Hằng số model / loại quiz dùng chung GUI và web — không phụ thuộc
 
 from __future__ import annotations
 
-from cham_bai.quiz_gen import QUIZ_KIND_SESSION, QUIZ_KIND_SESSION_WARMUP
+from cham_bai.quiz_gen import QUIZ_KIND_SESSION, QUIZ_KIND_SESSION_END, QUIZ_KIND_SESSION_WARMUP
 
 QUIZ_KIND_OPTIONS: tuple[tuple[str, str], ...] = (
     ("Quizz đầu giờ — theo session", QUIZ_KIND_SESSION),
     ("Quizz Session đầu giờ", QUIZ_KIND_SESSION_WARMUP),
+    ("Quizz Session cuối giờ", QUIZ_KIND_SESSION_END),
 )
 
 MODEL_OPTIONS: tuple[str, ...] = (

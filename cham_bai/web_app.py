@@ -27,9 +27,11 @@ from cham_bai.quiz_excel import ensure_session_warmup_quiz_example_template
 from cham_bai.quiz_gen import (
     QUIZ_KIND_LESSON,
     QUIZ_KIND_SESSION,
+    QUIZ_KIND_SESSION_END,
     QUIZ_KIND_SESSION_WARMUP,
     QuizGenParams,
     default_quiz_output_path,
+    default_session_end_quiz_output_path,
     default_session_warmup_quiz_output_path,
     normalize_quiz_kind,
     run_quiz_generation,
@@ -275,7 +277,7 @@ async def api_quiz(
         template_path = Path(tmp_tpl)
     elif qkind == QUIZ_KIND_LESSON:
         template_path = ensure_lesson_quiz_example_template()
-    elif qkind == QUIZ_KIND_SESSION_WARMUP:
+    elif qkind in (QUIZ_KIND_SESSION_WARMUP, QUIZ_KIND_SESSION_END):
         template_path = ensure_session_warmup_quiz_example_template()
     else:
         template_path = ensure_default_quiz_template()
@@ -308,6 +310,13 @@ async def api_quiz(
         lesson_s = subj_s
         session_s = curr_s
         out_path = Path(out_dir) / default_session_warmup_quiz_output_path(template_path, curr_s).name
+    elif qkind == QUIZ_KIND_SESSION_END:
+        if not subj_s or not curr_s:
+            _cleanup_quiz_temp(tmp_tpl, tmp_docx, out_dir)
+            raise HTTPException(status_code=400, detail="Thiếu môn học hoặc session hiện tại.")
+        lesson_s = subj_s
+        session_s = curr_s
+        out_path = Path(out_dir) / default_session_end_quiz_output_path(template_path, curr_s).name
     else:
         out_path = Path(out_dir) / default_quiz_output_path(template_path, lesson_s, session_s).name
 
@@ -326,7 +335,7 @@ async def api_quiz(
         session=session_s,
         session_prev=prev_s,
         session_current=curr_s,
-        num_questions=(45 if qkind == QUIZ_KIND_SESSION_WARMUP else int(num_questions)),
+        num_questions=(45 if qkind in (QUIZ_KIND_SESSION_WARMUP, QUIZ_KIND_SESSION_END) else int(num_questions)),
         model=(model or os.getenv("OPENROUTER_MODEL", "anthropic/claude-sonnet-4.6")).strip(),
         output_xlsx=out_path,
         subject=subj_s,

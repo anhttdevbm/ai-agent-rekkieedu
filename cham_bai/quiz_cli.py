@@ -7,8 +7,10 @@ from pathlib import Path
 from cham_bai.cli import _ensure_utf8_stdio
 from cham_bai.quiz_gen import (
     QuizGenParams,
+    QUIZ_KIND_SESSION_END,
     QUIZ_KIND_SESSION_WARMUP,
     default_quiz_output_path,
+    default_session_end_quiz_output_path,
     default_session_warmup_quiz_output_path,
     normalize_quiz_kind,
     run_quiz_generation,
@@ -32,7 +34,11 @@ def main() -> int:
     p.add_argument("--session", default="", help="Tên session (bắt buộc nếu kind=lesson hoặc kind=session)")
     p.add_argument("--subject", default="", help="Môn học / lĩnh vực (tuỳ chọn — đưa vào prompt AI)")
     p.add_argument("--session-prev", default="", help="Session trước (tuỳ chọn — chỉ dùng cho kind=session_warmup)")
-    p.add_argument("--session-current", default="", help="Session hiện tại (tuỳ chọn — chỉ dùng cho kind=session_warmup)")
+    p.add_argument(
+        "--session-current",
+        default="",
+        help="Session hiện tại (tuỳ chọn — dùng cho kind=session_warmup hoặc kind=session_end)",
+    )
     p.add_argument("--docx", default="", help="DOCX bài giảng (tuỳ chọn)")
     p.add_argument(
         "--num",
@@ -44,8 +50,8 @@ def main() -> int:
     p.add_argument(
         "--kind",
         default="session",
-        choices=("session", "lesson", "session_warmup"),
-        help="session = quiz theo session; session_warmup = quizz session đầu giờ (có session trước/hiện tại); lesson = ôn tập theo lesson",
+        choices=("session", "lesson", "session_warmup", "session_end"),
+        help="session = quiz theo session; session_warmup = quizz session đầu giờ; session_end = quizz session cuối giờ; lesson = ôn tập theo lesson",
     )
     args = p.parse_args()
 
@@ -57,9 +63,9 @@ def main() -> int:
     subject = (args.subject or "").strip()
     session_prev = (args.session_prev or "").strip()
     session_current = (args.session_current or "").strip()
-    if qkind == QUIZ_KIND_SESSION_WARMUP:
+    if qkind in (QUIZ_KIND_SESSION_WARMUP, QUIZ_KIND_SESSION_END):
         if not subject or not session_current:
-            print("Thiếu --subject hoặc --session-current cho kind=session_warmup.", file=sys.stderr)
+            print("Thiếu --subject hoặc --session-current cho kind=session_warmup/session_end.", file=sys.stderr)
             return 2
         lesson = subject
         session = session_current
@@ -72,6 +78,8 @@ def main() -> int:
         out_path = Path(out)
     elif qkind == QUIZ_KIND_SESSION_WARMUP:
         out_path = default_session_warmup_quiz_output_path(template_path, session_current)
+    elif qkind == QUIZ_KIND_SESSION_END:
+        out_path = default_session_end_quiz_output_path(template_path, session_current)
     else:
         out_path = default_quiz_output_path(template_path, lesson, session)
 

@@ -20,9 +20,11 @@ from cham_bai.session_warmup_plan import session_warmup_distribution_summary_vi
 from cham_bai.quiz_gen import (
     QUIZ_KIND_LESSON,
     QUIZ_KIND_SESSION,
+    QUIZ_KIND_SESSION_END,
     QUIZ_KIND_SESSION_WARMUP,
     QuizGenParams,
     default_quiz_output_path,
+    default_session_end_quiz_output_path,
     default_session_warmup_quiz_output_path,
     normalize_quiz_kind,
     run_quiz_generation,
@@ -362,11 +364,11 @@ def _build_quiz_tab(main: ttk.Frame, root: tk.Tk) -> None:
         qk = normalize_quiz_kind(kind_map.get(lbl, QUIZ_KIND_SESSION))
         if qk == QUIZ_KIND_LESSON:
             tpl_var.set(str(ensure_lesson_quiz_example_template()))
-        elif qk == QUIZ_KIND_SESSION_WARMUP:
+        elif qk in (QUIZ_KIND_SESSION_WARMUP, QUIZ_KIND_SESSION_END):
             tpl_var.set(str(ensure_session_warmup_quiz_example_template()))
         else:
             tpl_var.set(str(ensure_default_quiz_template()))
-        if qk == QUIZ_KIND_SESSION_WARMUP:
+        if qk in (QUIZ_KIND_SESSION_WARMUP, QUIZ_KIND_SESSION_END):
             n_var.set(45)
         else:
             n_var.set(5)
@@ -387,7 +389,7 @@ def _build_quiz_tab(main: ttk.Frame, root: tk.Tk) -> None:
         lbl = q_kind_var.get().strip()
         kind_map = dict(QUIZ_KIND_OPTIONS)
         qk = normalize_quiz_kind(kind_map.get(lbl, QUIZ_KIND_SESSION))
-        if qk == QUIZ_KIND_SESSION_WARMUP:
+        if qk in (QUIZ_KIND_SESSION_WARMUP, QUIZ_KIND_SESSION_END):
             n_q_lbl.grid_remove()
             n_q_spin.grid_remove()
             n_var.set(45)
@@ -436,12 +438,12 @@ def _build_quiz_tab(main: ttk.Frame, root: tk.Tk) -> None:
         qk = normalize_quiz_kind(kind_map.get(lbl, QUIZ_KIND_SESSION))
         if qk == QUIZ_KIND_LESSON:
             p = ensure_lesson_quiz_example_template()
-        elif qk == QUIZ_KIND_SESSION_WARMUP:
+        elif qk in (QUIZ_KIND_SESSION_WARMUP, QUIZ_KIND_SESSION_END):
             p = ensure_session_warmup_quiz_example_template()
         else:
             p = ensure_default_quiz_template()
         tpl_var.set(str(p))
-        if qk == QUIZ_KIND_SESSION_WARMUP:
+        if qk in (QUIZ_KIND_SESSION_WARMUP, QUIZ_KIND_SESSION_END):
             n_var.set(45)
         else:
             n_var.set(5)
@@ -510,6 +512,17 @@ def _build_quiz_tab(main: ttk.Frame, root: tk.Tk) -> None:
             curr_lbl.grid(row=row + 1, column=0, sticky=tk.W, pady=2)
             curr_ent.grid(row=row + 1, column=1, columnspan=2, sticky=tk.EW, padx=(8, 0), pady=2)
             warmup_plan_lbl.grid(row=row + 2, column=0, columnspan=3, sticky=tk.W, padx=(0, 8), pady=(4, 8))
+        elif qk == QUIZ_KIND_SESSION_END:
+            lesson_lbl.grid_remove()
+            lesson_ent.grid_remove()
+            session_lbl.grid_remove()
+            session_ent.grid_remove()
+
+            prev_lbl.grid_remove()
+            prev_ent.grid_remove()
+            curr_lbl.grid(row=row, column=0, sticky=tk.W, pady=2)
+            curr_ent.grid(row=row, column=1, columnspan=2, sticky=tk.EW, padx=(8, 0), pady=2)
+            warmup_plan_lbl.grid_remove()
         else:
             prev_lbl.grid_remove()
             prev_ent.grid_remove()
@@ -591,7 +604,7 @@ def _build_quiz_tab(main: ttk.Frame, root: tk.Tk) -> None:
         session = session_var.get().strip()
         session_prev = session_prev_var.get().strip()
         session_curr = session_curr_var.get().strip()
-        if qkind == QUIZ_KIND_SESSION_WARMUP:
+        if qkind in (QUIZ_KIND_SESSION_WARMUP, QUIZ_KIND_SESSION_END):
             if not subject_q_var.get().strip() or not session_curr:
                 messagebox.showwarning("Thiếu thông tin", "Điền Môn học và Session hiện tại.")
                 return
@@ -620,7 +633,11 @@ def _build_quiz_tab(main: ttk.Frame, root: tk.Tk) -> None:
             suggested = (
                 default_session_warmup_quiz_output_path(template_path, session_curr).name
                 if qkind == QUIZ_KIND_SESSION_WARMUP
-                else default_quiz_output_path(template_path, lesson, session).name
+                else (
+                    default_session_end_quiz_output_path(template_path, session_curr).name
+                    if qkind == QUIZ_KIND_SESSION_END
+                    else default_quiz_output_path(template_path, lesson, session).name
+                )
             )
             out = filedialog.asksaveasfilename(
                 title="Lưu file quiz Excel",
@@ -635,7 +652,11 @@ def _build_quiz_tab(main: ttk.Frame, root: tk.Tk) -> None:
             out_path = (
                 default_session_warmup_quiz_output_path(template_path, session_curr)
                 if qkind == QUIZ_KIND_SESSION_WARMUP
-                else default_quiz_output_path(template_path, lesson, session)
+                else (
+                    default_session_end_quiz_output_path(template_path, session_curr)
+                    if qkind == QUIZ_KIND_SESSION_END
+                    else default_quiz_output_path(template_path, lesson, session)
+                )
             )
 
         q_append(f"[File ra] {out_path}")

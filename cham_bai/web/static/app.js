@@ -77,27 +77,33 @@
   function applyQuizKindUI() {
     const kindLabel = ($("#q-kind").value || "").trim();
     const warmup = kindLabel === "Quizz Session đầu giờ";
+    const end = kindLabel === "Quizz Session cuối giờ";
 
     const a = $("#quiz-fields-lesson-session");
     const b = $("#quiz-fields-session-warmup");
-    if (a) a.style.display = warmup ? "none" : "";
-    if (b) b.style.display = warmup ? "" : "none";
+    if (a) a.style.display = warmup || end ? "none" : "";
+    if (b) b.style.display = warmup || end ? "" : "none";
 
     const lesson = $("#q-lesson");
     const session = $("#q-session");
     const prev = $("#q-session-prev");
     const curr = $("#q-session-curr");
-    if (lesson) lesson.required = !warmup;
-    if (session) session.required = !warmup;
-    if (curr) curr.required = warmup;
+    if (lesson) lesson.required = !(warmup || end);
+    if (session) session.required = !(warmup || end);
+    if (curr) curr.required = warmup || end;
     if (prev) prev.required = false;
 
     const wh = $("#warmup-dist-hint");
     if (wh) wh.style.display = warmup ? "block" : "none";
+    const eh = $("#end-dist-hint");
+    if (eh) eh.style.display = end ? "block" : "none";
+
+    const prevField = $("#quiz-field-session-prev");
+    if (prevField) prevField.style.display = end ? "none" : "";
 
     const nField = $("#quiz-field-num-questions");
     const qn = $("#q-n");
-    if (warmup) {
+    if (warmup || end) {
       if (nField) nField.style.display = "none";
       if (qn) {
         if (qn.dataset.prevBeforeWarmup === undefined) {

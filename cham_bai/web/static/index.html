@@ -82,9 +82,9 @@
         <h2>Tạo Quiz (Excel)</h2>
         <p class="hint">
           Không upload Excel: <strong>Quizz đầu giờ — theo session</strong> → mẫu quiz trong package (1 hàng/câu).
-          <strong>Quizz Session đầu giờ</strong> → mặc định
+          <strong>Quizz Session đầu giờ</strong> và <strong>Quizz Session cuối giờ</strong> → mặc định
           <strong>example/Quizz_Session_Dau_Gio_Example.xlsx</strong>
-          (đúng 45 câu; difficulty chia đều theo 6 mức 4/5/6/7/8/9).
+          (đúng 45 câu; đầu giờ dùng difficulty 4/5/6/7/8/9; cuối giờ dùng 6/10/11).
           Có thể kèm DOCX bài giảng (tuỳ chọn).
         </p>
         <details class="hint" id="warmup-dist-hint" style="display: none; margin: 0.5rem 0 0">
@@ -99,6 +99,15 @@
             <code>8</code> Vận dụng sơ bộ,
             <code>9</code> Phân tích sơ bộ.
             (Mỗi mức 7 câu; 3 mức đầu được +1 câu.)
+          </p>
+        </details>
+        <details class="hint" id="end-dist-hint" style="display: none; margin: 0.5rem 0 0">
+          <summary>Phân bổ 45 câu — Session cuối giờ</summary>
+          <p style="margin: 0.5rem 0 0; line-height: 1.45">
+            45 câu: chỉ lấy <strong>session hiện tại</strong>. Difficulty chia đều:
+            <code>6</code> Sáng tạo,
+            <code>10</code> Vận dụng,
+            <code>11</code> Phân tích (mỗi mức 15 câu).
           </p>
         </details>
         <form id="form-quiz" enctype="multipart/form-data">
@@ -121,7 +130,7 @@
             </div>
           </div>
           <div class="row2" id="quiz-fields-session-warmup" style="display: none">
-            <div class="field">
+            <div class="field" id="quiz-field-session-prev">
               <label for="q-session-prev">Session trước (tuỳ chọn)</label>
               <input type="text" id="q-session-prev" name="session_prev" />
             </div>
