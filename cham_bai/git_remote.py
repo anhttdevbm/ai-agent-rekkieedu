@@ -4,7 +4,10 @@ import re
 import shutil
 import subprocess
 import tempfile
+import zipfile
 from pathlib import Path
+
+import httpx
 
 from cham_bai.collector import CollectedBundle, collect_sources
 
@@ -55,6 +58,28 @@ def git_shallow_clone(repo_https_root: str, dest: Path) -> None:
     )
 
 
+def _download_github_zip(normalized_repo_https: str, dest_zip: Path) -> None:
+    """
+    Tải zip repo từ GitHub mà không cần git.
+    Dùng /archive/HEAD.zip để lấy default branch.
+    """
+    url = normalized_repo_https.rstrip("/") + "/archive/HEAD.zip"
+    with httpx.Client(timeout=120.0, follow_redirects=True) as client:
+        r = client.get(url, headers={"User-Agent": "AgentEdu/1.0"})
+        r.raise_for_status()
+        dest_zip.write_bytes(r.content)
+
+
+def _extract_zip_to_dir(zip_path: Path, out_dir: Path) -> Path:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        zf.extractall(out_dir)
+    subs = [p for p in out_dir.iterdir() if p.is_dir()]
+    if len(subs) == 1:
+        return subs[0]
+    return out_dir
+
+
 def fetch_repo_sources_bundle(
     repo_https_root: str,
     *,
@@ -86,7 +111,24 @@ def fetch_repo_sources_bundle(
         err = (e.stderr or e.stdout or "").strip() or str(e)
         return None, f"git clone bài nộp lỗi: {err}"
     except FileNotFoundError:
-        return None, "Không tìm thấy lệnh 'git' trên PATH."
+        # Fallback: tải zip (không cần git)
+        try:
+            zip_p = tmp / "repo.zip"
+            _download_github_zip(normalized, zip_p)
+            root = _extract_zip_to_dir(zip_p, tmp / "repo_zip")
+            if not root.is_dir():
+                return None, "Tải zip thất bại: thư mục repo không tồn tại."
+            bundle = collect_sources(
+                root,
+                max_total_chars=max_total_chars,
+                max_file_chars=max_file_chars,
+                max_files=max_files,
+            )
+            return bundle, None
+        except httpx.HTTPStatusError as e:
+            return None, f"Tải zip repo lỗi: {e.response.status_code} {e.response.text[:400]}"
+        except Exception as e:
+            return None, f"Tải zip repo thất bại: {e}"
     except subprocess.TimeoutExpired:
         return None, "git clone bài nộp quá thời gian chờ."
     finally:
