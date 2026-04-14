@@ -254,6 +254,10 @@
             <input type="file" id="b-images" name="assignment_images" accept="image/*" multiple />
           </div>
           <div class="field">
+            <label for="b-gh-token">GitHub Token (tuỳ chọn — dùng cho repo private / tránh 401)</label>
+            <input type="password" id="b-gh-token" name="github_token" autocomplete="off" placeholder="ghp_... hoặc fine-grained token" />
+          </div>
+          <div class="field">
             <label for="b-subs">Bài nộp (mỗi dòng 1 link GitHub)</label>
             <textarea id="b-subs" name="submissions_text" rows="6" required placeholder="https://github.com/owner/repo"></textarea>
           </div>

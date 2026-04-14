@@ -58,14 +58,19 @@ def git_shallow_clone(repo_https_root: str, dest: Path) -> None:
     )
 
 
-def _download_github_zip(normalized_repo_https: str, dest_zip: Path) -> None:
+def _download_github_zip(normalized_repo_https: str, dest_zip: Path, *, github_token: str | None) -> None:
     """
     Tải zip repo từ GitHub mà không cần git.
     Dùng /archive/HEAD.zip để lấy default branch.
     """
     url = normalized_repo_https.rstrip("/") + "/archive/HEAD.zip"
+    headers = {"User-Agent": "AgentEdu/1.0"}
+    t = (github_token or "").strip()
+    if t:
+        headers["Authorization"] = f"Bearer {t}"
+        headers["Accept"] = "application/vnd.github+json"
     with httpx.Client(timeout=120.0, follow_redirects=True) as client:
-        r = client.get(url, headers={"User-Agent": "AgentEdu/1.0"})
+        r = client.get(url, headers=headers)
         r.raise_for_status()
         dest_zip.write_bytes(r.content)
 
@@ -83,6 +88,7 @@ def _extract_zip_to_dir(zip_path: Path, out_dir: Path) -> Path:
 def fetch_repo_sources_bundle(
     repo_https_root: str,
     *,
+    github_token: str | None = None,
     max_total_chars: int = 450_000,
     max_file_chars: int = 120_000,
     max_files: int = 400,
@@ -114,7 +120,7 @@ def fetch_repo_sources_bundle(
         # Fallback: tải zip (không cần git)
         try:
             zip_p = tmp / "repo.zip"
-            _download_github_zip(normalized, zip_p)
+            _download_github_zip(normalized, zip_p, github_token=github_token)
             root = _extract_zip_to_dir(zip_p, tmp / "repo_zip")
             if not root.is_dir():
                 return None, "Tải zip thất bại: thư mục repo không tồn tại."

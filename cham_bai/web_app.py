@@ -394,6 +394,7 @@ async def api_btvn(
     assignment_text: str = Form(""),
     submissions_text: str = Form(...),
     model: str = Form(""),
+    github_token: str = Form(""),
     assignment_images: list[UploadFile] | None = File(None),
 ) -> FileResponse:
     subs_lines = [
@@ -425,6 +426,7 @@ async def api_btvn(
         assignment_images=imgs,
         submissions=subs_lines,
         model=(model or os.getenv("OPENROUTER_MODEL", "anthropic/claude-sonnet-4.6")).strip(),
+        github_token=(github_token or "").strip(),
     )
 
     loop = asyncio.get_event_loop()

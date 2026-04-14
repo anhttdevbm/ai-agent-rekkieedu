@@ -42,6 +42,7 @@ class BtvnCommentParams:
     assignment_images: list[tuple[str, bytes]]  # (content_type, bytes)
     submissions: list[str]
     model: str
+    github_token: str = ""
     delay_s: float = 0.25
 
 
@@ -101,7 +102,7 @@ def run_btvn_comments(params: BtvnCommentParams) -> tuple[bool, str, Path | None
         repo_err = ""
         bundle = None
         if gh:
-            bundle, err = fetch_repo_sources_bundle(ref)
+            bundle, err = fetch_repo_sources_bundle(ref, github_token=(params.github_token or "").strip() or None)
             if err:
                 repo_err = err
                 bundle = None
