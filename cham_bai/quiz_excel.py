@@ -3,10 +3,13 @@ from __future__ import annotations
 import math
 import re
 import shutil
+import tempfile
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+import os
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.cell.cell import MergedCell
@@ -320,14 +323,29 @@ def _package_repo_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
 
+def _writable_example_dir() -> Path:
+    """
+    Thư mục lưu template/example có thể ghi được trong môi trường cài bằng pip / Docker.
+    Ưu tiên env AGENT_EDU_DATA_DIR, fallback về /tmp.
+    """
+    base = (os.getenv("AGENT_EDU_DATA_DIR") or "").strip()
+    if base:
+        p = Path(base).expanduser().resolve()
+    else:
+        p = Path(tempfile.gettempdir()) / "agent-edu"
+    out = p / "example"
+    out.mkdir(parents=True, exist_ok=True)
+    return out
+
+
 def lesson_quiz_example_template_path() -> Path:
     """Mẫu Excel cho quiz theo lesson: `example/quizz-lession-example.xlsx`."""
-    return _package_repo_root() / "example" / "quizz-lession-example.xlsx"
+    return _writable_example_dir() / "quizz-lession-example.xlsx"
 
 
 def session_warmup_quiz_example_template_path() -> Path:
     """Mẫu Excel cho quiz session đầu giờ: `example/Quizz_Session_Dau_Gio_Example.xlsx`."""
-    return _package_repo_root() / "example" / "Quizz_Session_Dau_Gio_Example.xlsx"
+    return _writable_example_dir() / "Quizz_Session_Dau_Gio_Example.xlsx"
 
 
 def ensure_session_warmup_quiz_example_template() -> Path:
@@ -401,7 +419,6 @@ def ensure_lesson_quiz_example_template() -> Path:
     Nếu chưa có, sao chép từ mẫu chuẩn (cùng khung 7 cột dọc).
     """
     p = lesson_quiz_example_template_path()
-    p.parent.mkdir(parents=True, exist_ok=True)
     if not p.is_file():
         shutil.copy2(ensure_default_quiz_template(), p)
     return p
