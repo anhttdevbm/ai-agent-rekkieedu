@@ -25,6 +25,7 @@
     fillSelect($("#q-model"), meta.models, meta.default_model);
     fillSelect($("#r-text-model"), meta.models, meta.default_model);
     fillSelect($("#r-image-model"), meta.image_models, meta.default_image_model);
+    if ($("#b-model")) fillSelect($("#b-model"), meta.models, meta.default_model);
 
     if (meta.default_learning_goals && !$("#r-goals").value.trim()) {
       $("#r-goals").value = meta.default_learning_goals;
@@ -185,6 +186,38 @@
     }
   }
 
+  async function postBtvn(ev) {
+    ev.preventDefault();
+    const btn = $("#b-submit");
+    setBusy(btn, true, "Đang xử lý BTVN…");
+    $("#b-status").textContent = "";
+    try {
+      const fd = new FormData(ev.target);
+      fd.set("push_to_portal", $("#b-push").checked ? "true" : "false");
+      const r = await fetch("/api/btvn", { method: "POST", body: fd });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        alert(formatApiErr(err.detail) || "Lỗi chấm BTVN");
+        return;
+      }
+      const blob = await r.blob();
+      const cd = r.headers.get("Content-Disposition") || "";
+      let name = "btvn.xlsx";
+      const m = /filename\*?=(?:UTF-8'')?([^;\n]+)/i.exec(cd);
+      if (m) name = decodeURIComponent(m[1].replace(/['"]/g, "").trim());
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      $("#b-status").textContent = "Đã tải file Excel.";
+    } catch (e) {
+      alert(String(e));
+    } finally {
+      setBusy(btn, false);
+    }
+  }
+
   async function postReading(ev) {
     ev.preventDefault();
     const btn = $("#r-submit");
@@ -218,6 +251,8 @@
     $("#form-grade").addEventListener("submit", postGrade);
     $("#form-quiz").addEventListener("submit", postQuiz);
     $("#form-reading").addEventListener("submit", postReading);
+    const fb = $("#form-btvn");
+    if (fb) fb.addEventListener("submit", postBtvn);
     loadMeta().catch((e) => {
       $("#ver-pill").textContent = "lỗi tải meta";
       console.error(e);

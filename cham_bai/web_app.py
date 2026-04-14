@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import shutil
 import tempfile
 import zipfile
@@ -40,6 +41,7 @@ from cham_bai.reading_gen import (
     run_reading_generation,
     sanitize_reading_filename_part,
 )
+from cham_bai.rikkei_homework import BtvnJobParams, run_btvn_job
 from cham_bai.workflow import GradeJobParams, GradeJobResult, run_grade_batch, run_grade_job
 
 _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="web")
@@ -375,6 +377,76 @@ def _cleanup_quiz_temp(tmp_tpl: str | None, tmp_docx: str | None, out_dir: str |
             pass
     if out_dir:
         shutil.rmtree(out_dir, ignore_errors=True)
+
+
+@app.post("/api/btvn")
+async def api_btvn(
+    background_tasks: BackgroundTasks,
+    rikkei_token: str = Form(...),
+    class_id: str = Form(...),
+    session_id: str = Form(...),
+    course_id: str = Form(""),
+    text_model: str = Form(""),
+    push_to_portal: str = Form("false"),
+    max_students: str = Form(""),
+) -> FileResponse:
+    cid = (class_id or "").strip()
+    sid = (session_id or "").strip()
+    if not cid or not sid:
+        raise HTTPException(status_code=400, detail="Nhập Class ID và Session ID.")
+
+    ms: int | None = None
+    if (max_students or "").strip():
+        try:
+            ms = int((max_students or "").strip())
+            if ms < 1:
+                raise ValueError
+        except ValueError as e:
+            raise HTTPException(
+                status_code=400,
+                detail="Giới hạn số học sinh (max_students) phải là số nguyên dương.",
+            ) from e
+
+    params = BtvnJobParams(
+        rikkei_token=rikkei_token,
+        class_id=cid,
+        session_id=sid,
+        course_id=(course_id or "").strip(),
+        text_model=(text_model or "").strip(),
+        push_to_portal=_parse_bool_form(push_to_portal),
+        max_students=ms,
+    )
+
+    loop = asyncio.get_event_loop()
+
+    def work():
+        return run_btvn_job(params)
+
+    ok, msg, out_path = await loop.run_in_executor(_executor, work)
+    if not ok or out_path is None:
+        if out_path is not None and out_path.is_file():
+            try:
+                out_path.unlink()
+            except OSError:
+                pass
+        raise HTTPException(status_code=500, detail=msg or "Lỗi không xác định.")
+
+    raw_name = f"btvn_class_{cid}_session_{sid}.xlsx"
+    safe_name = re.sub(r"[^\w\-.]+", "_", raw_name, flags=re.UNICODE).strip("_") or "btvn.xlsx"
+
+    def cleanup_btvn_xlsx() -> None:
+        try:
+            out_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    background_tasks.add_task(cleanup_btvn_xlsx)
+
+    return FileResponse(
+        path=str(out_path),
+        filename=safe_name,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
 
 
 @app.post("/api/reading")
