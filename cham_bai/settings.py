@@ -40,10 +40,11 @@ def _embedded_openrouter_key() -> str:
 
 
 def api_key() -> str:
-    # Ưu tiên key nhúng lúc build EXE (embed_key_from_env.py), sau đó .env / biến môi trường.
-    key = _embedded_openrouter_key()
+    # Khi chạy server/Docker: luôn ưu tiên biến môi trường (.env / compose).
+    # Key nhúng chỉ dành cho bản EXE (PyInstaller).
+    key = (os.getenv("OPENROUTER_API_KEY") or "").strip()
     if not key:
-        key = (os.getenv("OPENROUTER_API_KEY") or "").strip()
+        key = _embedded_openrouter_key()
     if not key:
         raise RuntimeError(
             "Thiếu OPENROUTER_API_KEY. Với EXE: build lại sau khi chạy scripts/embed_key_from_env.py "
