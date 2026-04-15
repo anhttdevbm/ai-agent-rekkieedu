@@ -230,6 +230,7 @@
           tr.appendChild(td(cmt));
           tr.appendChild(td(aiErr));
           resBody.appendChild(tr);
+          
         });
         if (resWrap) resWrap.style.display = "";
       }
