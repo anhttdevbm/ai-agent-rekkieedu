@@ -30,9 +30,26 @@ def _chat_headers() -> dict[str, str]:
     return headers
 
 
+def _chat_headers_minimal() -> dict[str, str]:
+    return {
+        "Authorization": f"Bearer {settings.api_key()}",
+        "Content-Type": "application/json",
+    }
+
+
 def post_chat_completions(body: dict[str, Any], *, timeout_s: float = 300.0) -> dict[str, Any]:
     with httpx.Client(timeout=timeout_s) as client:
-        r = client.post(settings.OPENROUTER_URL, headers=_chat_headers(), json=body)
+        h = _chat_headers()
+        r = client.post(settings.OPENROUTER_URL, headers=h, json=body)
+        # Một số key có thể bị chặn khi gửi HTTP-Referer/X-Title; thử lại 1 lần với header tối giản.
+        if r.status_code == 401 and ("HTTP-Referer" in h or "X-Title" in h):
+            r2 = client.post(
+                settings.OPENROUTER_URL,
+                headers=_chat_headers_minimal(),
+                json=body,
+            )
+            r2.raise_for_status()
+            return r2.json()
         r.raise_for_status()
         return r.json()
 
