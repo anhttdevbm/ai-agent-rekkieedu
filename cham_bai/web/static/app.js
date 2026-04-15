@@ -197,6 +197,10 @@
     const btn = $("#b-submit");
     setBusy(btn, true, "Đang xử lý BTVN…");
     $("#b-status").textContent = "";
+    const resWrap = $("#b-results");
+    const resBody = $("#b-results-body");
+    if (resWrap) resWrap.style.display = "none";
+    if (resBody) resBody.innerHTML = "";
     try {
       const fd = new FormData(ev.target);
       const r = await fetch("/api/btvn", { method: "POST", body: fd });
@@ -205,17 +209,31 @@
         alert(formatApiErr(err.detail) || "Lỗi chấm BTVN");
         return;
       }
-      const blob = await r.blob();
-      const cd = r.headers.get("Content-Disposition") || "";
-      let name = "btvn.xlsx";
-      const m = /filename\*?=(?:UTF-8'')?([^;\n]+)/i.exec(cd);
-      if (m) name = decodeURIComponent(m[1].replace(/['"]/g, "").trim());
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = name;
-      a.click();
-      URL.revokeObjectURL(a.href);
-      $("#b-status").textContent = "Đã tải file Excel.";
+      const data = await r.json().catch(() => ({}));
+      const rows = (data && data.rows) || [];
+      if (resBody && Array.isArray(rows)) {
+        rows.forEach((x) => {
+          const tr = document.createElement("tr");
+          const repo = (x.repo || x.submission || "").trim();
+          const repoErr = (x.repo_error || "").trim();
+          const cmt = (x.comment || "").trim();
+          const aiErr = (x.ai_error || "").trim();
+          const td = (t) => {
+            const el = document.createElement("td");
+            el.style.padding = "10px";
+            el.style.borderBottom = "1px solid #f3f4f6";
+            el.textContent = t;
+            return el;
+          };
+          tr.appendChild(td(repo));
+          tr.appendChild(td(repoErr));
+          tr.appendChild(td(cmt));
+          tr.appendChild(td(aiErr));
+          resBody.appendChild(tr);
+        });
+        if (resWrap) resWrap.style.display = "";
+      }
+      $("#b-status").textContent = "Xong.";
     } catch (e) {
       alert(String(e));
     } finally {

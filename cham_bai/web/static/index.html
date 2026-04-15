@@ -266,10 +266,26 @@
             <select id="b-model" name="model"></select>
           </div>
           <div class="actions">
-            <button type="submit" class="primary" id="b-submit">Chạy &amp; tải Excel</button>
+            <button type="submit" class="primary" id="b-submit">Chạy nhận xét</button>
           </div>
           <p class="status" id="b-status"></p>
         </form>
+        <div id="b-results" style="margin-top: 0.75rem; display: none">
+          <div class="hint" style="margin: 0 0 0.5rem 0">Kết quả hiển thị trực tiếp (không tạo file Excel).</div>
+          <div style="overflow: auto; max-height: 55vh; border: 1px solid #e5e7eb; border-radius: 12px">
+            <table class="tbl" style="width: 100%; border-collapse: collapse">
+              <thead>
+                <tr>
+                  <th style="text-align: left; padding: 10px; border-bottom: 1px solid #e5e7eb">Repo</th>
+                  <th style="text-align: left; padding: 10px; border-bottom: 1px solid #e5e7eb">Lỗi repo</th>
+                  <th style="text-align: left; padding: 10px; border-bottom: 1px solid #e5e7eb">Nhận xét</th>
+                  <th style="text-align: left; padding: 10px; border-bottom: 1px solid #e5e7eb">Lỗi AI</th>
+                </tr>
+              </thead>
+              <tbody id="b-results-body"></tbody>
+            </table>
+          </div>
+        </div>
       </section>
 
       <footer>Chạy local · OpenRouter · không lưu dữ liệu trên server sau khi tải file</footer>

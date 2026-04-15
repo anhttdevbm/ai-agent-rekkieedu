@@ -87,7 +87,7 @@ def comment_one(
     return re.sub(r"\s+", " ", text).strip()
 
 
-def run_btvn_comments(params: BtvnCommentParams) -> tuple[bool, str, Path | None]:
+def run_btvn_comments_json(params: BtvnCommentParams) -> tuple[bool, str, list[dict[str, Any]] | None]:
     try:
         from cham_bai import settings
 
@@ -134,11 +134,17 @@ def run_btvn_comments(params: BtvnCommentParams) -> tuple[bool, str, Path | None
             }
         )
         time.sleep(max(0.0, params.delay_s))
+    return True, "", rows
 
+
+# Backward compatible (nếu nơi khác vẫn gọi)
+def run_btvn_comments(params: BtvnCommentParams) -> tuple[bool, str, Path | None]:
+    ok, msg, rows = run_btvn_comments_json(params)
+    if not ok or rows is None:
+        return False, msg, None
     fd, tmp_path = tempfile.mkstemp(suffix=".xlsx")
     os.close(fd)
     out = Path(tmp_path)
-
     wb = Workbook()
     ws = wb.active
     ws.title = "BTVN"

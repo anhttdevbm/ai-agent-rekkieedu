@@ -43,7 +43,7 @@ from cham_bai.reading_gen import (
     run_reading_generation,
     sanitize_reading_filename_part,
 )
-from cham_bai.btvn_comment import BtvnCommentParams, run_btvn_comments
+from cham_bai.btvn_comment import BtvnCommentParams, run_btvn_comments_json
 from cham_bai.workflow import GradeJobParams, GradeJobResult, run_grade_batch, run_grade_job
 
 _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="web")
@@ -396,7 +396,7 @@ async def api_btvn(
     model: str = Form(""),
     github_token: str = Form(""),
     assignment_images: list[UploadFile] | None = File(None),
-) -> FileResponse:
+) -> JSONResponse:
     subs_lines = [
         ln.strip()
         for ln in (submissions_text or "").splitlines()
@@ -432,32 +432,13 @@ async def api_btvn(
     loop = asyncio.get_event_loop()
 
     def work():
-        return run_btvn_comments(params)
+        return run_btvn_comments_json(params)
 
-    ok, msg, out_path = await loop.run_in_executor(_executor, work)
-    if not ok or out_path is None:
-        if out_path is not None and out_path.is_file():
-            try:
-                out_path.unlink()
-            except OSError:
-                pass
+    ok, msg, rows = await loop.run_in_executor(_executor, work)
+    if not ok or rows is None:
         raise HTTPException(status_code=500, detail=msg or "Lỗi không xác định.")
 
-    safe_name = "btvn_nhan_xet.xlsx"
-
-    def cleanup_btvn_xlsx() -> None:
-        try:
-            out_path.unlink(missing_ok=True)
-        except OSError:
-            pass
-
-    background_tasks.add_task(cleanup_btvn_xlsx)
-
-    return FileResponse(
-        path=str(out_path),
-        filename=safe_name,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
+    return JSONResponse({"ok": True, "rows": rows})
 
 
 @app.post("/api/reading")
