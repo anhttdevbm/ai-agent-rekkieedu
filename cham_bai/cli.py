@@ -45,6 +45,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="File text: mỗi dòng một thư mục hoặc link GitHub (cùng một đề, chấm lô)",
     )
     p.add_argument(
+        "--project-spec-repo",
+        default="",
+        metavar="URL",
+        help="Tuỳ chọn: link GitHub repo đề / yêu cầu mini project (tham chiếu khi chấm)",
+    )
+    p.add_argument(
+        "--report-repo",
+        default="",
+        metavar="URL",
+        help="Tuỳ chọn: link GitHub repo báo cáo + mini project (mã nguồn + .docx, trích văn bản)",
+    )
+    p.add_argument(
         "--out",
         default="",
         help="Ghi JSON kết quả ra file (mặc định: in ra stdout)",
@@ -118,6 +130,8 @@ def main(argv: list[str] | None = None) -> int:
         max_tokens=args.max_tokens,
         temperature=args.temperature,
         debug=args.debug,
+        project_spec_repo_url=(args.project_spec_repo or "").strip(),
+        report_repo_url=(args.report_repo or "").strip(),
     )
 
     if len(subs) == 1:

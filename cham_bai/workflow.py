@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -28,6 +29,9 @@ class GradeJobParams:
     max_tokens: int = 4096
     temperature: float = 0.2
     debug: bool = False
+    # Tuỳ chọn: repo đề mini project; repo sinh viên (code + DOCX báo cáo đã trích văn bản).
+    project_spec_repo_url: str = ""
+    report_repo_url: str = ""
 
 
 @dataclass
@@ -69,6 +73,39 @@ def _load_submission_bundle(
         f"Không phải thư mục hợp lệ hoặc link GitHub hợp lệ: {ref}",
         warnings,
     )
+
+
+def _github_token_for_fetch() -> str | None:
+    t = (os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN") or "").strip()
+    return t or None
+
+
+def _load_optional_github_bundle(
+    url: str,
+    *,
+    label_vi: str,
+) -> tuple[CollectedBundle | None, list[str]]:
+    s = (url or "").strip()
+    if not s:
+        return None, []
+    if not normalize_github_repo_url(s):
+        return None, [f"{label_vi}: không phải link GitHub hợp lệ — bỏ qua."]
+    docx_w: list[str] = []
+    bundle, err = fetch_repo_sources_bundle(
+        s,
+        github_token=_github_token_for_fetch(),
+        include_docx_text=True,
+        docx_out_warnings=docx_w,
+    )
+    warns: list[str] = []
+    norm = normalize_github_repo_url(s)
+    if err or bundle is None:
+        warns.append(f"{label_vi}: {err or 'Không tải được repo.'}")
+        return None, warns
+    warns.append(f"Đã tải {label_vi}: {norm}")
+    for w in docx_w:
+        warns.append(f"{label_vi} (DOCX): {w}")
+    return bundle, warns
 
 
 def _prepare_assignment(
@@ -120,6 +157,9 @@ def _grade_single_from_prepared(
     submission_ref: str,
     params: GradeJobParams,
     prep_warnings: list[str],
+    *,
+    project_spec_bundle: CollectedBundle | None = None,
+    report_bundle: CollectedBundle | None = None,
 ) -> GradeJobResult:
     warnings = list(prep_warnings)
     submission, submission_error, sub_warns = _load_submission_bundle(submission_ref)
@@ -148,6 +188,8 @@ def _grade_single_from_prepared(
             ai_penalty_min_confidence=max(0, min(100, params.ai_confidence)),
             temperature=params.temperature,
             max_tokens=params.max_tokens,
+            project_spec_bundle=project_spec_bundle,
+            report_bundle=report_bundle,
         )
     except RuntimeError as e:
         return GradeJobResult(ok=False, error_message=str(e), warnings=warnings)
@@ -181,7 +223,8 @@ def run_grade_batch(
     attach_prep_warnings_to_first_only: bool = True,
 ) -> list[tuple[str, GradeJobResult]]:
     """
-    Cùng một đề, chấm nhiều bài nộp. Đề và template chỉ tải một lần.
+    Cùng một đề, chấm nhiều bài nộp. Đề, template và hai repo GitHub tuỳ chọn (đề project / báo cáo)
+    chỉ tải một lần cho cả lô.
     Trả về danh sách (submission_ref, kết quả) theo thứ tự.
     """
     subs = [s.strip() for s in submission_refs if s.strip()]
@@ -195,16 +238,36 @@ def run_grade_batch(
         return [(subs[0], GradeJobResult(ok=False, error_message=err))]
 
     assert doc is not None
+
+    extra_pw = list(prep_w)
+    project_spec_bundle, pw_proj = _load_optional_github_bundle(
+        params.project_spec_repo_url,
+        label_vi="Repo đề mini project",
+    )
+    extra_pw.extend(pw_proj)
+    report_bundle, pw_rep = _load_optional_github_bundle(
+        params.report_repo_url,
+        label_vi="Repo báo cáo & mini project",
+    )
+    extra_pw.extend(pw_rep)
+
     p_inner = replace(params, out_path=None) if len(subs) > 1 else params
     out: list[tuple[str, GradeJobResult]] = []
     for i, submission_ref in enumerate(subs):
         pw = (
-            list(prep_w)
+            list(extra_pw)
             if (i == 0 or not attach_prep_warnings_to_first_only)
             else []
         )
         r = _grade_single_from_prepared(
-            doc, template_bundle, template_error, submission_ref, p_inner, pw
+            doc,
+            template_bundle,
+            template_error,
+            submission_ref,
+            p_inner,
+            pw,
+            project_spec_bundle=project_spec_bundle,
+            report_bundle=report_bundle,
         )
         out.append((submission_ref, r))
     return out

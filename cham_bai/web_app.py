@@ -126,6 +126,8 @@ def _run_grade_sync(
     no_template: bool,
     strict_ai: bool,
     ai_confidence: int,
+    project_spec_repo_url: str = "",
+    report_repo_url: str = "",
 ) -> tuple[bool, str, list[dict]]:
     try:
         from cham_bai.settings import api_key as _need_key
@@ -143,6 +145,8 @@ def _run_grade_sync(
         strict_ai=strict_ai,
         ai_confidence=int(ai_confidence),
         debug=False,
+        project_spec_repo_url=(project_spec_repo_url or "").strip(),
+        report_repo_url=(report_repo_url or "").strip(),
     )
 
     log_parts: list[str] = []
@@ -189,6 +193,8 @@ async def api_grade(
     assignment_text: str = Form(""),
     assignment_file: UploadFile | None = File(None),
     submissions_text: str = Form(...),
+    project_spec_repo_url: str = Form(""),
+    report_repo_url: str = Form(""),
     model: str = Form(""),
     use_template: str = Form("true"),
     strict_ai: str = Form("true"),
@@ -231,6 +237,23 @@ async def api_grade(
                 detail=f"Bài nộp không hợp lệ (thư mục trên máy chủ hoặc link GitHub): {s[:160]}",
             )
 
+    proj_u = (project_spec_repo_url or "").strip()
+    rep_u = (report_repo_url or "").strip()
+    for label, u in (
+        ("Link đề mini project (GitHub)", proj_u),
+        ("Link repo báo cáo & mini project (GitHub)", rep_u),
+    ):
+        if u and not normalize_github_repo_url(u):
+            if tmp_assignment:
+                try:
+                    os.unlink(tmp_assignment)
+                except OSError:
+                    pass
+            raise HTTPException(
+                status_code=400,
+                detail=f"{label} không hợp lệ (chỉ hỗ trợ github.com / dạng owner/repo).",
+            )
+
     loop = asyncio.get_event_loop()
 
     def work():
@@ -241,6 +264,8 @@ async def api_grade(
             not _parse_bool_form(use_template),
             _parse_bool_form(strict_ai),
             ai_confidence,
+            project_spec_repo_url=proj_u,
+            report_repo_url=rep_u,
         )
 
     try:

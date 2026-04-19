@@ -92,6 +92,8 @@ def fetch_repo_sources_bundle(
     max_total_chars: int = 450_000,
     max_file_chars: int = 120_000,
     max_files: int = 400,
+    include_docx_text: bool = False,
+    docx_out_warnings: list[str] | None = None,
 ) -> tuple[CollectedBundle | None, str | None]:
     """
     Clone nhẹ repo rồi thu thập mã nguồn. Trả về (bundle, lỗi).
@@ -112,6 +114,12 @@ def fetch_repo_sources_bundle(
             max_file_chars=max_file_chars,
             max_files=max_files,
         )
+        if include_docx_text:
+            from cham_bai.docx_reader import append_docx_plaintext_from_repo_to_bundle
+
+            append_docx_plaintext_from_repo_to_bundle(
+                root, bundle, out_warnings=docx_out_warnings
+            )
         return bundle, None
     except subprocess.CalledProcessError as e:
         err = (e.stderr or e.stdout or "").strip() or str(e)
@@ -130,6 +138,12 @@ def fetch_repo_sources_bundle(
                 max_file_chars=max_file_chars,
                 max_files=max_files,
             )
+            if include_docx_text:
+                from cham_bai.docx_reader import append_docx_plaintext_from_repo_to_bundle
+
+                append_docx_plaintext_from_repo_to_bundle(
+                    root, bundle, out_warnings=docx_out_warnings
+                )
             return bundle, None
         except httpx.HTTPStatusError as e:
             return None, f"Tải zip repo lỗi: {e.response.status_code} {e.response.text[:400]}"

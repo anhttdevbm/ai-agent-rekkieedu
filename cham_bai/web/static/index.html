@@ -33,8 +33,10 @@
       <section class="panel visible" id="panel-grade">
         <h2>Chấm bài</h2>
         <p class="hint">
-          Đề: upload <strong>.docx</strong> hoặc dán đường dẫn file / link Google Docs. Bài nộp: mỗi dòng một
-          <strong>thư mục trên máy chạy server</strong> hoặc <strong>link GitHub</strong>.
+          Đề: upload <strong>.docx</strong> hoặc dán đường dẫn file / link Google Docs. Tuỳ chọn: link GitHub
+          <strong>đề mini project</strong> và repo <strong>báo cáo + code mini project</strong> (có thể kèm file .docx — hệ thống trích văn bản).
+          Bài nộp: mỗi dòng một <strong>thư mục trên máy chạy server</strong> hoặc <strong>link GitHub</strong>.
+          Repo private: đặt biến môi trường <code>GITHUB_TOKEN</code>.
         </p>
         <form id="form-grade" enctype="multipart/form-data">
           <div class="field">
@@ -44,6 +46,14 @@
           <div class="field">
             <label for="g-assignment-file">Upload file đề (.docx)</label>
             <input type="file" id="g-assignment-file" name="assignment_file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
+          </div>
+          <div class="field">
+            <label for="g-project-spec">Link GitHub đề mini project (tuỳ chọn)</label>
+            <input type="url" id="g-project-spec" name="project_spec_repo_url" placeholder="https://github.com/org/de-bai-mini-project" />
+          </div>
+          <div class="field">
+            <label for="g-report-repo">Link GitHub repo báo cáo + mini project (tuỳ chọn)</label>
+            <input type="url" id="g-report-repo" name="report_repo_url" placeholder="https://github.com/user/bao-cao-va-code (mã + file .docx báo cáo)" />
           </div>
           <div class="field">
             <label for="g-subs">Bài nộp (mỗi dòng một thư mục hoặc URL GitHub)</label>

@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 from docx import Document
 from docx.opc.constants import RELATIONSHIP_TYPE as RT
+
+from cham_bai.collector import DEFAULT_IGNORE_DIR_NAMES, CollectedBundle
 
 GITHUB_URL_RE = re.compile(
     r"https://github\.com/(?P<owner>[\w.-]+)/(?P<repo>[\w.-]+)(?:/(?:tree|blob)/[\w./-]+)?/?",
@@ -87,3 +90,54 @@ def extract_docx(path: str) -> DocxContent:
         _register_github_urls(blob, seen, urls)
 
     return DocxContent(plain_text=plain, github_repo_urls=urls)
+
+
+def _docx_rel_should_skip(rel: Path) -> bool:
+    for part in rel.parts:
+        if part in DEFAULT_IGNORE_DIR_NAMES:
+            return True
+    return False
+
+
+def append_docx_plaintext_from_repo_to_bundle(
+    root: Path,
+    bundle: CollectedBundle,
+    *,
+    max_docx: int = 8,
+    max_chars_each: int = 90_000,
+    out_warnings: list[str] | None = None,
+) -> None:
+    """
+    Đọc các file .docx dưới root (repo đã clone), thêm nội dung văn bản vào bundle.files
+    (collector bỏ qua .docx vì nhị phân). Gọi trước khi xóa thư mục tạm clone.
+    """
+    n = 0
+    for p in sorted(root.rglob("*.docx")):
+        if not p.is_file():
+            continue
+        try:
+            rel = p.relative_to(root)
+        except ValueError:
+            continue
+        if _docx_rel_should_skip(rel):
+            continue
+        if n >= max_docx:
+            if out_warnings is not None:
+                out_warnings.append(
+                    f"Chỉ trích tối đa {max_docx} file DOCX trong repo; bỏ qua các file .docx còn lại."
+                )
+            break
+        try:
+            dc = extract_docx(str(p))
+        except Exception as e:
+            if out_warnings is not None:
+                out_warnings.append(f"Không đọc được {rel.as_posix()}: {e}")
+            continue
+        text = (dc.plain_text or "").strip()
+        if not text:
+            continue
+        if len(text) > max_chars_each:
+            text = text[:max_chars_each] + "\n\n[... DOCX truncated ...]\n"
+        pseudo = f"_docx_text/{rel.as_posix()}.txt"
+        bundle.files.append((pseudo, text))
+        n += 1
