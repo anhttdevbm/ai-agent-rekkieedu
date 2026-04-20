@@ -48,13 +48,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--project-spec-repo",
         default="",
         metavar="URL",
-        help="Tuỳ chọn: link GitHub repo đề / yêu cầu mini project (tham chiếu khi chấm)",
+        help="Tuỳ chọn: GitHub repo đề mini project — chỉ đối chiếu điều kiện có/không (mini_project_present), không tính điểm",
     )
     p.add_argument(
         "--report-repo",
         default="",
         metavar="URL",
-        help="Tuỳ chọn: link GitHub repo báo cáo + mini project (mã nguồn + .docx, trích văn bản)",
+        help="Tuỳ chọn: GitHub repo báo cáo (+ mã mini kèm) — DOCX để chấm báo cáo; mini chỉ dùng cho có/không, không tính điểm",
     )
     p.add_argument(
         "--out",

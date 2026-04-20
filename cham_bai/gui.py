@@ -154,6 +154,38 @@ def _build_grade_tab(main: ttk.Frame, root: tk.Tk) -> None:
     )
     row += 1
 
+    hint_lf = ttk.LabelFrame(main, text="Cách chấm (tab này)", padding=6)
+    hint_lf.grid(row=row, column=0, columnspan=3, sticky=tk.EW, pady=(2, 6))
+    hint_lf.columnconfigure(0, weight=1)
+    ttk.Label(
+        hint_lf,
+        text=(
+            "Điểm và nhận xét chỉ dựa trên bài tập đầu giờ (mỗi dòng «Bài nộp») và báo cáo (DOCX trong repo báo cáo nếu bạn điền link). "
+            "Bài tập đầu giờ được ưu tiên hơn trong tổng điểm. Mini project: chỉ hiển thị Có / Không / Không rõ — không tính điểm, không nhận xét chất lượng mini trong phần điểm."
+        ),
+        wraplength=720,
+        justify=tk.LEFT,
+    ).grid(row=0, column=0, sticky=tk.W)
+    row += 1
+
+    proj_spec_var = tk.StringVar()
+    ttk.Label(main, text="Repo đề mini project (tuỳ chọn)").grid(
+        row=row, column=0, sticky=tk.W, pady=2
+    )
+    ttk.Entry(main, textvariable=proj_spec_var, width=70).grid(
+        row=row, column=1, columnspan=2, sticky=tk.EW, padx=(8, 0), pady=2
+    )
+    row += 1
+
+    report_repo_var = tk.StringVar()
+    ttk.Label(main, text="Repo báo cáo + mini (tuỳ chọn)").grid(
+        row=row, column=0, sticky=tk.W, pady=2
+    )
+    ttk.Entry(main, textvariable=report_repo_var, width=70).grid(
+        row=row, column=1, columnspan=2, sticky=tk.EW, padx=(8, 0), pady=2
+    )
+    row += 1
+
     ttk.Label(main, text="Model OpenRouter").grid(row=row, column=0, sticky=tk.W, pady=2)
     model_var = tk.StringVar(value=os.getenv("OPENROUTER_MODEL", "anthropic/claude-sonnet-4.6"))
     ttk.Combobox(
@@ -218,8 +250,11 @@ def _build_grade_tab(main: ttk.Frame, root: tk.Tk) -> None:
                 blob = json.loads(res.json_text)
                 fs = blob.get("final_score")
                 fc = blob.get("final_comment")
+                mp = blob.get("mini_project_present")
                 append_log(f"Điểm: {fs}")
                 append_log(f"Nhận xét: {fc}")
+                if mp is not None:
+                    append_log(f"Mini project (chỉ có/không): {mp}")
             except Exception as e:
                 append_log(f"[Lỗi hiển thị kết quả] {e}")
 
@@ -303,6 +338,8 @@ def _build_grade_tab(main: ttk.Frame, root: tk.Tk) -> None:
             strict_ai=strict_var.get(),
             ai_confidence=int(conf_var.get()),
             debug=False,
+            project_spec_repo_url=proj_spec_var.get().strip(),
+            report_repo_url=report_repo_var.get().strip(),
         )
 
         def worker() -> None:

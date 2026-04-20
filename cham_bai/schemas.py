@@ -14,6 +14,8 @@ class GradePayload:
     integrity_confidence_0_100: int
     integrity_notes: list[str] = field(default_factory=list)
     rubric: dict[str, Any] | None = None
+    # Mini project: chỉ điều kiện có/không — không tính vào score/comment.
+    mini_project_present: str = "không_rõ"  # có | không | không_rõ
 
     def to_public_dict(
         self,
@@ -27,6 +29,7 @@ class GradePayload:
             "final_comment": final_comment,
             "model_score": self.score,
             "model_comment": self.comment,
+            "mini_project_present": self.mini_project_present,
             "integrity_verdict": self.integrity_verdict,
             "integrity_confidence_0_100": self.integrity_confidence_0_100,
             "integrity_notes": self.integrity_notes,
@@ -87,6 +90,18 @@ def coalesce_grade(d: dict[str, Any]) -> GradePayload:
     if rubric is not None and not isinstance(rubric, dict):
         rubric = None
 
+    mpp_val = d.get("mini_project_present", "")
+    if isinstance(mpp_val, bool):
+        mini_project_present = "có" if mpp_val else "không"
+    else:
+        mpp_raw = str(mpp_val or "").strip().lower()
+        if mpp_raw in {"có", "co", "yes", "true", "1", "c"}:
+            mini_project_present = "có"
+        elif mpp_raw in {"không", "khong", "no", "false", "0", "k"}:
+            mini_project_present = "không"
+        else:
+            mini_project_present = "không_rõ"
+
     return GradePayload(
         score=score,
         comment=comment,
@@ -94,4 +109,5 @@ def coalesce_grade(d: dict[str, Any]) -> GradePayload:
         integrity_confidence_0_100=conf_int,
         integrity_notes=notes_list,
         rubric=rubric,
+        mini_project_present=mini_project_present,
     )
