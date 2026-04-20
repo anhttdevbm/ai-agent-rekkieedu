@@ -49,13 +49,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--report-repo",
         default="",
         metavar="URL",
-        help="Tuỳ chọn (một bài nộp): GitHub repo báo cáo (+ mã mini kèm). Nhiều bài: dùng --report-repo-list.",
+        help="Tuỳ chọn (một bài nộp): link GitHub repo báo cáo hoặc Google Docs. Nhiều bài: dùng --report-repo-list.",
     )
     p.add_argument(
         "--report-repo-list",
         default="",
         metavar="FILE",
-        help="Tuỳ chọn (chấm lô): file text — mỗi dòng một URL GitHub repo báo cáo, dòng i khớp dòng i của --submission-list (dòng trống = không repo)",
+        help="Tuỳ chọn (chấm lô): file — mỗi dòng link GitHub hoặc Google Docs, dòng i khớp --submission-list",
     )
     p.add_argument(
         "--out",

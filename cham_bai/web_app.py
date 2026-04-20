@@ -48,6 +48,7 @@ from cham_bai.workflow import (
     GradeJobParams,
     GradeJobResult,
     has_grade_slots,
+    is_valid_report_source_url,
     run_grade_batch,
     run_grade_job,
 )
@@ -240,10 +241,10 @@ async def api_grade(
 
     for ln in (report_repos_text or "").splitlines():
         u = ln.strip()
-        if u and not normalize_github_repo_url(u):
+        if u and not is_valid_report_source_url(u):
             raise HTTPException(
                 status_code=400,
-                detail=f"Dòng repo báo cáo không hợp lệ (chỉ GitHub): {u[:160]}",
+                detail=f"Dòng báo cáo không hợp lệ (GitHub hoặc Google Docs): {u[:160]}",
             )
 
     loop = asyncio.get_event_loop()

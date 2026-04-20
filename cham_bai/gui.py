@@ -41,6 +41,7 @@ from cham_bai.workflow import (
     GradeJobResult,
     grade_row_label,
     has_grade_slots,
+    is_valid_report_source_url,
     normalized_grade_rows,
     run_grade_batch,
 )
@@ -156,7 +157,7 @@ def _build_grade_tab(main: ttk.Frame, root: tk.Tk) -> None:
     )
     row += 1
 
-    ttk.Label(main, text="Repo báo cáo + mini (tuỳ chọn, mỗi dòng một URL)").grid(
+    ttk.Label(main, text="Báo cáo + mini (tuỳ chọn — GitHub hoặc Google Docs, mỗi dòng một link)").grid(
         row=row, column=0, sticky=tk.NW, pady=2
     )
     report_box_fr = ttk.Frame(main)
@@ -314,10 +315,10 @@ def _build_grade_tab(main: ttk.Frame, root: tk.Tk) -> None:
         report_lines = report_raw.splitlines()
         for ru in report_lines:
             u = ru.strip()
-            if u and not normalize_github_repo_url(u):
+            if u and not is_valid_report_source_url(u):
                 messagebox.showwarning(
-                    "Repo báo cáo không hợp lệ",
-                    f"Mỗi dòng phải trống hoặc là link GitHub:\n{u[:120]}",
+                    "Báo cáo không hợp lệ",
+                    f"Mỗi dòng phải trống hoặc là link GitHub / Google Docs:\n{u[:120]}",
                 )
                 return
 
