@@ -8,6 +8,7 @@ from cham_bai import __version__
 from cham_bai.workflow import (
     GradeJobParams,
     batch_results_to_json,
+    has_grade_slots,
     run_grade_batch,
     run_grade_job,
 )
@@ -123,9 +124,11 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     subs = _parse_submission_list(args)
-    if not subs:
+    report_txt = _build_report_repos_text(args)
+    if not has_grade_slots(subs, report_txt):
         print(
-            "Cần --submission (một bài) hoặc --submission-list (file danh sách).",
+            "Cần --submission / --submission-list và/hoặc --report-repo / --report-repo-list "
+            "(mỗi dòng bài nộp có thể trống nếu cùng dòng có repo báo cáo).",
             file=sys.stderr,
         )
         return 2
@@ -141,7 +144,7 @@ def main(argv: list[str] | None = None) -> int:
         max_tokens=args.max_tokens,
         temperature=args.temperature,
         debug=args.debug,
-        report_repos_text=_build_report_repos_text(args),
+        report_repos_text=report_txt,
     )
 
     if len(subs) == 1:
@@ -190,9 +193,11 @@ def _parse_submission_list(args: argparse.Namespace) -> list[str]:
             print(f"Không tìm thấy file: {p}", file=sys.stderr)
             return []
         raw = p.read_text(encoding="utf-8")
-        return [ln.strip() for ln in raw.splitlines() if ln.strip()]
-    s = (args.submission or "").strip()
-    return [s] if s else []
+        return [(ln.rstrip("\r") or "").strip() for ln in raw.splitlines()]
+    s = getattr(args, "submission", None)
+    if s is None:
+        return []
+    return [str(s).strip()]
 
 
 if __name__ == "__main__":

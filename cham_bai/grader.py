@@ -15,6 +15,7 @@ SYSTEM_PROMPT = """Bạn là trợ giảng chấm bài lập trình bậc đại
 
 Phạm vi ĐIỂM và NHẬN XÉT (bắt buộc):
 • Chỉ dựa trên (A) **bài tập đầu giờ** — mã trong khối «MÃ NGUỒN HỌC VIÊN — BÀI TẬP ĐẦU GIỜ» (bài nộp chính), và (B) **báo cáo** — văn bản trích từ DOCX trong khối «REPO BÁO CÁO…» hoặc trong dữ liệu đề bài nếu có.
+• Nếu **không có** mã bài tập đầu giờ (khối đó rỗng) thì `score` và `comment` **chỉ** theo **báo cáo** (và vẫn xử lý `mini_project_present` từ repo báo cáo nếu có).
 • **Bài tập đầu giờ quan trọng hơn báo cáo:** khi cả hai đều có đủ dữ liệu để chấm, trọng số gợi ý khoảng **65–75%** cho bài tập đầu giờ và **25–35%** cho báo cáo (làm tròn thành một số điểm 0–100 nguyên). Nếu chỉ có một phần thì toàn bộ `score` phản ánh phần đó; nếu thiếu báo cáo khi đề bắt buộc thì phản ánh trong điểm/comment phần báo cáo, không bịa.
 • **Mini project:** KHÔNG tính vào `score`, KHÔNG được đánh giá chất lượng trong `comment`. Chỉ kết luận `mini_project_present` là **có**, **không**, hoặc **không_rõ** dựa trên **đề bài** và bằng chứng trong **repo báo cáo** (mã kèm repo) nếu có — không dùng để chấm điểm.
 
@@ -92,7 +93,12 @@ def build_user_prompt(
     parts.append(
         "\n\n## MÃ NGUỒN HỌC VIÊN — BÀI TẬP ĐẦU GIỜ (bài nộp chính — chấm điểm, ưu tiên)\n"
     )
-    parts.append(submission_context)
+    if submission_context.strip():
+        parts.append(submission_context)
+    else:
+        parts.append(
+            "(Không có mã nguồn bài tập đầu giờ cho lượt chấm này — chỉ chấm báo cáo / mini_project_present theo khối repo báo cáo nếu có.)"
+        )
 
     if report_bundle is not None:
         parts.append(
@@ -103,7 +109,7 @@ def build_user_prompt(
 
     parts.append(
         "\n\n## HƯỚNG DẪN CHẤM (bắt buộc)\n"
-        "- `score` và `comment` chỉ phản ánh **bài tập đầu giờ** (khối trên) và **báo cáo** (DOCX trong khối repo báo cáo nếu có). Ưu tiên bài tập đầu giờ trong tổng điểm khi cả hai có dữ liệu.\n"
+        "- `score` và `comment` chỉ phản ánh **bài tập đầu giờ** (khối trên) và **báo cáo** (DOCX trong khối repo báo cáo nếu có). Nếu khối bài tập đầu giờ rỗng thì chỉ báo cáo. Ưu tiên bài tập đầu giờ trong tổng điểm khi cả hai có dữ liệu.\n"
         "- `mini_project_present`: **có** / **không** / **không_rõ** — chỉ bằng chứng nộp / đối chiếu đề; không dùng để cộng trừ `score`, không mô tả chất lượng mini trong `comment`.\n"
         "- Chấm lỏng tay (đề vs template): không trừ nặng vì đề nói “sản phẩm” mà bài làm theo template “danh bạ/contact”; nếu logic sửa/xóa/validate tương đương thì điểm bài tập đầu giờ quanh mức hợp lý (~70) theo SYSTEM.\n"
         "- Không soi chữ trong alert nếu đúng ý; không bịa yêu cầu không có trong đề.\n"

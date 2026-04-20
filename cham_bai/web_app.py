@@ -44,7 +44,13 @@ from cham_bai.reading_gen import (
     sanitize_reading_filename_part,
 )
 from cham_bai.btvn_comment import BtvnCommentParams, run_btvn_comments_json
-from cham_bai.workflow import GradeJobParams, GradeJobResult, run_grade_batch, run_grade_job
+from cham_bai.workflow import (
+    GradeJobParams,
+    GradeJobResult,
+    has_grade_slots,
+    run_grade_batch,
+    run_grade_job,
+)
 
 _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="web")
 
@@ -192,16 +198,14 @@ def _run_grade_sync(
 @app.post("/api/grade")
 async def api_grade(
     assignment_text: str = Form(...),
-    submissions_text: str = Form(...),
+    submissions_text: str = Form(""),
     report_repos_text: str = Form(""),
     model: str = Form(""),
     use_template: str = Form("true"),
     strict_ai: str = Form("true"),
     ai_confidence: int = Form(75),
 ) -> JSONResponse:
-    subs_lines = [ln.strip() for ln in submissions_text.splitlines() if ln.strip()]
-    if not subs_lines:
-        raise HTTPException(status_code=400, detail="Thêm ít nhất một dòng bài nộp (thư mục hoặc GitHub).")
+    subs_lines = [(ln.rstrip("\r") or "").strip() for ln in (submissions_text or "").splitlines()]
 
     assignment_ref = (assignment_text or "").strip()
     if not assignment_ref:
@@ -219,7 +223,15 @@ async def api_grade(
             detail="Đề cần là đường dẫn file .docx tồn tại trên máy chủ hoặc URL Google Docs.",
         )
 
+    if not has_grade_slots(subs_lines, report_repos_text or ""):
+        raise HTTPException(
+            status_code=400,
+            detail="Cần ít nhất một dòng có bài nộp (thư mục/GitHub) hoặc link repo báo cáo.",
+        )
+
     for s in subs_lines:
+        if not s.strip():
+            continue
         if not normalize_github_repo_url(s) and not Path(s).is_dir():
             raise HTTPException(
                 status_code=400,

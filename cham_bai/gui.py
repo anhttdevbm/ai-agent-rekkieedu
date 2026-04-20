@@ -39,8 +39,10 @@ from cham_bai.reading_gen import (
 from cham_bai.workflow import (
     GradeJobParams,
     GradeJobResult,
+    grade_row_label,
+    has_grade_slots,
+    normalized_grade_rows,
     run_grade_batch,
-    run_grade_job,
 )
 
 
@@ -169,8 +171,8 @@ def _build_grade_tab(main: ttk.Frame, root: tk.Tk) -> None:
     ttk.Label(
         hint_lf,
         text=(
-            "Dòng 1 repo báo cáo khớp dòng 1 «Bài nộp», dòng 2 khớp dòng 2, … (dòng trống = không repo cho bài đó). "
-            "Điểm/nhận xét: bài tập đầu giờ + báo cáo (ưu tiên BT đầu giờ). Mini project: chỉ Có/Không/Không rõ trong kết quả."
+            "Dòng i repo báo cáo khớp dòng i «Bài nộp» (cả hai đều có thể để trống từng dòng: chỉ bài nộp, chỉ repo, hoặc cả hai). "
+            "Có thể chỉ điền repo mà không điền bài nộp cho dòng đó — chỉ chấm báo cáo. Điểm/nhận xét: BT đầu giờ + báo cáo (ưu tiên BT). Mini project: Có/Không/Không rõ."
         ),
         wraplength=720,
         justify=tk.LEFT,
@@ -249,33 +251,31 @@ def _build_grade_tab(main: ttk.Frame, root: tk.Tk) -> None:
             except Exception as e:
                 append_log(f"[Lỗi hiển thị kết quả] {e}")
 
-    def on_done(res: GradeJobResult) -> None:
+    def on_grade_batch_done(batch: list[tuple[str, GradeJobResult]]) -> None:
         set_busy(False)
-        _append_single_result("Bài nộp", res)
-        if not res.ok:
-            messagebox.showerror("Lỗi", res.error_message or "Chấm bài thất bại.")
+        if not batch:
             return
-        messagebox.showinfo("Xong", "Chấm bài hoàn tất. Xem điểm và nhận xét ở khung log bên dưới.")
-
-    def on_batch_done(batch: list[tuple[str, GradeJobResult]]) -> None:
-        set_busy(False)
         ok_n = 0
         for sub, res in batch:
             _append_single_result(sub, res)
             if res.ok:
                 ok_n += 1
-        bad = len(batch) - ok_n
-        messagebox.showinfo(
-            "Xong",
-            f"Đã chấm {len(batch)} bài: thành công {ok_n}, lỗi {bad}.",
-        )
+        if len(batch) == 1 and not batch[0][1].ok:
+            messagebox.showerror("Lỗi", batch[0][1].error_message or "Chấm bài thất bại.")
+        elif len(batch) == 1:
+            messagebox.showinfo("Xong", "Chấm bài hoàn tất. Xem điểm và nhận xét ở khung log bên dưới.")
+        else:
+            bad = len(batch) - ok_n
+            messagebox.showinfo(
+                "Xong",
+                f"Đã chấm {len(batch)} dòng: thành công {ok_n}, lỗi {bad}.",
+            )
 
     def run_job() -> None:
         d = assignment_var.get().strip()
         subs_lines = [
-            ln.strip()
+            (ln.rstrip("\r") or "").strip()
             for ln in subs_text.get("1.0", tk.END).splitlines()
-            if ln.strip()
         ]
 
         if not d:
@@ -294,13 +294,16 @@ def _build_grade_tab(main: ttk.Frame, root: tk.Tk) -> None:
             )
             return
 
-        if not subs_lines:
+        report_raw = report_repos_box.get("1.0", tk.END)
+        if not has_grade_slots(subs_lines, report_raw):
             messagebox.showwarning(
-                "Thiếu nộp bài",
-                "Thêm ít nhất một dòng: thư mục hoặc link GitHub (có thể nhiều dòng, cùng một đề).",
+                "Thiếu dữ liệu chấm",
+                "Cần ít nhất một dòng có bài nộp (thư mục/GitHub) hoặc link repo báo cáo (hai ô khớp từng dòng).",
             )
             return
         for s in subs_lines:
+            if not s:
+                continue
             if not normalize_github_repo_url(s) and not Path(s).is_dir():
                 messagebox.showwarning(
                     "Bài nộp không hợp lệ",
@@ -308,7 +311,6 @@ def _build_grade_tab(main: ttk.Frame, root: tk.Tk) -> None:
                 )
                 return
 
-        report_raw = report_repos_box.get("1.0", tk.END)
         report_lines = report_raw.splitlines()
         for ru in report_lines:
             u = ru.strip()
@@ -327,13 +329,14 @@ def _build_grade_tab(main: ttk.Frame, root: tk.Tk) -> None:
             messagebox.showwarning("Thiếu API key", str(e))
             return
 
-        n = len(subs_lines)
-        append_log(f"Đang chấm {n} bài (cùng đề, có thể mất vài phút mỗi bài)…")
+        norm_subs, _, _ = normalized_grade_rows(subs_lines, report_raw)
+        sn = len(norm_subs)
+        append_log(f"Đang chấm {sn} dòng (cùng đề, có thể mất vài phút mỗi dòng)…")
         set_busy(True)
 
         params = GradeJobParams(
             assignment_ref=d,
-            submission_ref=subs_lines[0],
+            submission_ref=norm_subs[0] if norm_subs else "",
             out_path=None,
             model=model_var.get().strip(),
             no_template=not use_tpl_var.get(),
@@ -345,17 +348,15 @@ def _build_grade_tab(main: ttk.Frame, root: tk.Tk) -> None:
 
         def worker() -> None:
             try:
-                if n == 1:
-                    res = run_grade_job(params)
-                    root.after(0, lambda: on_done(res))
-                else:
-                    batch = run_grade_batch(d, subs_lines, params)
-                    root.after(0, lambda b=batch: on_batch_done(b))
+                batch = run_grade_batch(d, subs_lines, params)
+                root.after(0, lambda b=batch: on_grade_batch_done(b))
             except Exception as e:
+                ns, nr, _ = normalized_grade_rows(subs_lines, report_raw)
+                err_lab = grade_row_label(ns[0] if ns else "", nr[0] if nr else "", 0)
                 root.after(
                     0,
-                    lambda: on_done(
-                        GradeJobResult(ok=False, error_message=str(e)),
+                    lambda lab=err_lab, err=str(e): on_grade_batch_done(
+                        [(lab, GradeJobResult(ok=False, error_message=err))],
                     ),
                 )
 

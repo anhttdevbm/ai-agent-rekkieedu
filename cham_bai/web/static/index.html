@@ -34,8 +34,8 @@
         <h2>Chấm bài</h2>
         <p class="hint">
           Đề bài: <strong>đường dẫn file .docx</strong> trên máy chạy server hoặc <strong>link Google Docs</strong> (chia sẻ xem được).
-          Bài nộp: mỗi dòng một <strong>thư mục</strong> hoặc <strong>link GitHub</strong>.
-          Repo báo cáo (tuỳ chọn): mỗi dòng một URL GitHub — <strong>dòng 1 khớp bài nộp dòng 1</strong>, dòng trống = không có repo cho bài đó.
+          Bài nộp: mỗi dòng một <strong>thư mục</strong> hoặc <strong>link GitHub</strong> (có thể để trống dòng nếu dòng đó chỉ chấm repo báo cáo).
+          Repo báo cáo (tuỳ chọn): mỗi dòng một URL GitHub — <strong>dòng 1 khớp bài nộp dòng 1</strong>; có thể chỉ điền repo mà không điền bài nộp cho dòng đó.
           Repo private: đặt biến môi trường <code>GITHUB_TOKEN</code>.
         </p>
         <form id="form-grade">
@@ -51,7 +51,7 @@
           </div>
           <div class="field">
             <label for="g-subs">Bài nộp (mỗi dòng một thư mục hoặc URL GitHub)</label>
-            <textarea id="g-subs" name="submissions_text" required placeholder="D:\bai-nop\sv1&#10;https://github.com/..."></textarea>
+            <textarea id="g-subs" name="submissions_text" placeholder="D:\bai-nop\sv1&#10;&#10;https://github.com/..."></textarea>
           </div>
           <div class="field">
             <label for="g-report-repos">Repo báo cáo + mini (tuỳ chọn, mỗi dòng một URL — khớp dòng với bài nộp)</label>

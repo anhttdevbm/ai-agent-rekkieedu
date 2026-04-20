@@ -45,11 +45,14 @@ class GradeJobResult:
 def _load_submission_bundle(
     submission_ref: str,
 ) -> tuple[CollectedBundle | None, str | None, list[str]]:
-    """Trả về (bundle, lỗi, cảnh báo)."""
+    """Trả về (bundle, lỗi, cảnh báo). Chuỗi rỗng = không bài tập đầu giờ (bundle rỗng, dùng khi chỉ chấm repo báo cáo)."""
     warnings: list[str] = []
     ref = submission_ref.strip()
     if not ref:
-        return None, "Chưa chỉ định thư mục hoặc link GitHub bài nộp.", warnings
+        warnings.append(
+            "Bài tập đầu giờ trống — chỉ chấm theo repo báo cáo + mini (nếu có) cho dòng này."
+        )
+        return CollectedBundle(root=Path(".").resolve(), files=[]), None, warnings
 
     local = Path(ref)
     gh = normalize_github_repo_url(ref)
@@ -79,24 +82,54 @@ def _github_token_for_fetch() -> str | None:
     return t or None
 
 
-def _aligned_report_repo_urls(
-    submission_count: int,
+def grade_row_label(submission_ref: str, report_url: str, row_index: int) -> str:
+    """Nhãn log/JSON khi bài nộp trống nhưng vẫn có dòng chấm (repo báo cáo)."""
+    s = (submission_ref or "").strip()
+    r = (report_url or "").strip()
+    if s:
+        return s
+    if r:
+        return f"(chỉ repo báo cáo) {r}"
+    return f"(dòng {row_index + 1} trống)"
+
+
+def _normalize_parallel_submissions_and_reports(
+    submission_refs: list[str],
     report_repos_text: str,
-) -> tuple[list[str], list[str]]:
-    """Mỗi chỉ số i tương ứng submission thứ i (0-based)."""
-    raw = (report_repos_text or "").splitlines()
-    out = [raw[i].strip() if i < len(raw) else "" for i in range(submission_count)]
-    warns: list[str] = []
-    nonempty = sum(1 for ln in raw if ln.strip())
-    if len(raw) > submission_count:
-        warns.append(
-            f"Số dòng link repo báo cáo ({len(raw)}) > số bài nộp ({submission_count}); chỉ dùng {submission_count} dòng đầu."
-        )
-    if submission_count > 1 and nonempty and len(raw) < submission_count:
-        warns.append(
-            f"Số dòng link repo báo cáo ({len(raw)}) < số bài nộp ({submission_count}); các bài thiếu dòng coi như không có repo."
-        )
-    return out, warns
+) -> tuple[list[str], list[str], list[str]]:
+    """
+    Cùng số dòng sau khi pad; bỏ các cặp trống ở cuối.
+    Cho phép dòng i chỉ có repo báo cáo (bài nộp i trống).
+    """
+    sl = [(str(x) if x is not None else "").strip() for x in (submission_refs or [])]
+    rl = [(ln.rstrip("\r") or "").strip() for ln in (report_repos_text or "").splitlines()]
+    n = max(len(sl), len(rl))
+    sl = sl + [""] * (n - len(sl))
+    rl = rl + [""] * (n - len(rl))
+    while n > 0 and not sl[n - 1] and not rl[n - 1]:
+        n -= 1
+    sl, rl = sl[:n], rl[:n]
+    return sl, rl, []
+
+
+def has_grade_slots(submission_refs: list[str], report_repos_text: str) -> bool:
+    """Có ít nhất một dòng chấm (bài nộp hoặc repo báo cáo hoặc cả hai)."""
+    s, _, _ = _normalize_parallel_submissions_and_reports(
+        submission_refs,
+        report_repos_text,
+    )
+    return bool(s)
+
+
+def normalized_grade_rows(
+    submission_refs: list[str],
+    report_repos_text: str,
+) -> tuple[list[str], list[str], list[str]]:
+    """Cặp (bài nộp, repo) đã pad và bỏ dòng trống cuối — dùng GUI/CLI nếu cần."""
+    return _normalize_parallel_submissions_and_reports(
+        submission_refs,
+        report_repos_text,
+    )
 
 
 def _load_optional_github_bundle(
@@ -189,7 +222,14 @@ def _grade_single_from_prepared(
             warnings=warnings,
         )
 
-    if not submission.files:
+    ref_nonempty = bool((submission_ref or "").strip())
+    if not submission.files and report_bundle is None:
+        return GradeJobResult(
+            ok=False,
+            error_message="Thiếu cả bài tập đầu giờ (bài nộp) và repo báo cáo — không có gì để chấm.",
+            warnings=warnings,
+        )
+    if not submission.files and ref_nonempty:
         warnings.append(
             "Không thu thập được file mã nguồn nào từ bài nộp (thư mục rỗng hoặc repo không có file phù hợp)."
         )
@@ -242,20 +282,31 @@ def run_grade_batch(
     """
     Cùng một đề, chấm nhiều bài nộp. Đề và template tải một lần.
     Repo báo cáo (tuỳ chọn): `params.report_repos_text` — nhiều dòng, dòng i khớp bài nộp thứ i.
+    Một dòng có thể chỉ có repo báo cáo (bài nộp trống) hoặc chỉ bài nộp (repo trống).
     """
-    subs = [s.strip() for s in submission_refs if s.strip()]
+    subs, report_urls, align_warns = _normalize_parallel_submissions_and_reports(
+        submission_refs,
+        params.report_repos_text,
+    )
     if not subs:
-        return [("", GradeJobResult(ok=False, error_message="Danh sách bài nộp trống."))]
+        return [
+            (
+                "",
+                GradeJobResult(
+                    ok=False,
+                    error_message="Thiếu dữ liệu — cần ít nhất một dòng có bài nộp hoặc link repo báo cáo.",
+                ),
+            )
+        ]
 
     doc, template_bundle, template_error, prep_w, err = _prepare_assignment(
         assignment_ref, params.no_template
     )
     if err:
-        return [(subs[0], GradeJobResult(ok=False, error_message=err))]
+        lab0 = grade_row_label(subs[0], report_urls[0] if report_urls else "", 0)
+        return [(lab0, GradeJobResult(ok=False, error_message=err))]
 
     assert doc is not None
-
-    report_urls, align_warns = _aligned_report_repo_urls(len(subs), params.report_repos_text)
 
     report_bundle_cache: dict[str, tuple[CollectedBundle | None, list[str]]] = {}
 
@@ -291,7 +342,7 @@ def run_grade_batch(
             pw,
             report_bundle=rb,
         )
-        out.append((submission_ref, r))
+        out.append((grade_row_label(submission_ref, rep_u, i), r))
     return out
 
 
