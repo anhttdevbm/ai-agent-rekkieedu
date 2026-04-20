@@ -16,12 +16,12 @@ SYSTEM_PROMPT = """Bạn là trợ giảng chấm bài lập trình bậc đại
 Phạm vi ĐIỂM và NHẬN XÉT (bắt buộc):
 • Chỉ dựa trên (A) **bài tập đầu giờ** — mã trong khối «MÃ NGUỒN HỌC VIÊN — BÀI TẬP ĐẦU GIỜ» (bài nộp chính), và (B) **báo cáo** — văn bản trích từ DOCX trong khối «REPO BÁO CÁO…» hoặc trong dữ liệu đề bài nếu có.
 • **Bài tập đầu giờ quan trọng hơn báo cáo:** khi cả hai đều có đủ dữ liệu để chấm, trọng số gợi ý khoảng **65–75%** cho bài tập đầu giờ và **25–35%** cho báo cáo (làm tròn thành một số điểm 0–100 nguyên). Nếu chỉ có một phần thì toàn bộ `score` phản ánh phần đó; nếu thiếu báo cáo khi đề bắt buộc thì phản ánh trong điểm/comment phần báo cáo, không bịa.
-• **Mini project:** KHÔNG tính vào `score`, KHÔNG được đánh giá chất lượng trong `comment`. Chỉ kết luận một trường `mini_project_present` là **có**, **không**, hoặc **không_rõ** (bằng chứng nộp / đối chiếu đề + repo đề mini nếu có). Mã nguồn mini project trong repo báo cáo chỉ dùng để suy ra có/không có bằng chứng nộp tối thiểu, không dùng để chấm điểm.
+• **Mini project:** KHÔNG tính vào `score`, KHÔNG được đánh giá chất lượng trong `comment`. Chỉ kết luận `mini_project_present` là **có**, **không**, hoặc **không_rõ** dựa trên **đề bài** và bằng chứng trong **repo báo cáo** (mã kèm repo) nếu có — không dùng để chấm điểm.
 
 Chấm lỏng tay: ưu tiên chạy được và đáp ứng ý chính; không hạ điểm mạnh vì lệch nhãn chủ đề khi đề và template khác nhau mà sinh viên làm đúng theo template (xem mục 5).
 
 Quy tắc:
-1) Đọc “ĐỀ BÀI” (.docx / Google Docs). Khối «REPO ĐỀ MINI PROJECT» chỉ để hiểu yêu cầu mini và hỗ trợ trường `mini_project_present`, không dùng để tính điểm. Khối «REPO BÁO CÁO…»: phần `_docx_text/` và nội dung báo cáo dùng cho điểm báo cáo; phần mã mini trong repo đó không vào `score`/`comment`.
+1) Đọc “ĐỀ BÀI” (.docx / Google Docs). Khối «REPO BÁO CÁO…» (nếu có): phần `_docx_text/` và nội dung báo cáo dùng cho điểm báo cáo; phần mã mini trong repo đó chỉ hỗ trợ `mini_project_present`, không vào `score`/`comment`.
 2) Báo cáo DOCX: đánh giá mức vừa phải — bài toán, thiết kế/triển khai, kết quả, hạn chế; không soi văn phong hoàn hảo. Nếu không có trích DOCX thì không bịa.
 3) Chỉ chấm phần đề nêu rõ; không bịa thêm hạng mục. Nếu đề chỉ yêu cầu (ví dụ) sửa và xóa thì không trừ vì không có thêm / danh sách đầy đủ trừ khi đề ghi rõ.
 4) Không soi chữ trong alert / thông báo: nếu cùng ý (xác nhận xóa, báo thành công cập nhật/xóa) thì chấp nhận; không trừ nặng vì khác vài từ so với đề nếu logic đúng.
@@ -68,7 +68,6 @@ def build_user_prompt(
     template_bundle: CollectedBundle | None,
     *,
     template_error: str | None,
-    project_spec_bundle: CollectedBundle | None = None,
     report_bundle: CollectedBundle | None = None,
 ) -> str:
     assignment_plain_text = doc.plain_text.strip()
@@ -84,11 +83,6 @@ def build_user_prompt(
         parts.append("\n".join(urls))
     else:
         parts.append("(Không tìm thấy link github.com rõ ràng.)")
-
-    if project_spec_bundle is not None:
-        parts.append("\n\n## REPO ĐỀ MINI PROJECT (GitHub — chỉ tham chiếu / điều kiện có-không)\n")
-        ps = format_bundle_for_prompt(project_spec_bundle).strip()
-        parts.append(ps if ps else "(Repo không có nội dung file text thu thập được.)")
 
     if template_error:
         parts.append("\n\n## GHI CHÚ TEMPLATE\n")
@@ -130,7 +124,6 @@ def grade_submission(
     ai_penalty_min_confidence: int = 75,
     temperature: float = 0.2,
     max_tokens: int = 4096,
-    project_spec_bundle: CollectedBundle | None = None,
     report_bundle: CollectedBundle | None = None,
 ) -> GradeOutcome:
     user_prompt = build_user_prompt(
@@ -138,7 +131,6 @@ def grade_submission(
         submission_bundle,
         template_bundle,
         template_error=template_error,
-        project_spec_bundle=project_spec_bundle,
         report_bundle=report_bundle,
     )
     messages = [

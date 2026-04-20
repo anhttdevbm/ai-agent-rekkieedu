@@ -45,16 +45,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="File text: mỗi dòng một thư mục hoặc link GitHub (cùng một đề, chấm lô)",
     )
     p.add_argument(
-        "--project-spec-repo",
-        default="",
-        metavar="URL",
-        help="Tuỳ chọn: GitHub repo đề mini project — chỉ đối chiếu điều kiện có/không (mini_project_present), không tính điểm",
-    )
-    p.add_argument(
         "--report-repo",
         default="",
         metavar="URL",
-        help="Tuỳ chọn: GitHub repo báo cáo (+ mã mini kèm) — DOCX để chấm báo cáo; mini chỉ dùng cho có/không, không tính điểm",
+        help="Tuỳ chọn (một bài nộp): GitHub repo báo cáo (+ mã mini kèm). Nhiều bài: dùng --report-repo-list.",
+    )
+    p.add_argument(
+        "--report-repo-list",
+        default="",
+        metavar="FILE",
+        help="Tuỳ chọn (chấm lô): file text — mỗi dòng một URL GitHub repo báo cáo, dòng i khớp dòng i của --submission-list (dòng trống = không repo)",
     )
     p.add_argument(
         "--out",
@@ -104,6 +104,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return p
 
 
+def _build_report_repos_text(args: argparse.Namespace) -> str:
+    lst = (getattr(args, "report_repo_list", None) or "").strip()
+    if lst:
+        p = Path(lst)
+        if not p.is_file():
+            print(f"Không tìm thấy file --report-repo-list: {p}", file=sys.stderr)
+            return ""
+        return p.read_text(encoding="utf-8")
+    return (getattr(args, "report_repo", None) or "").strip()
+
+
 def main(argv: list[str] | None = None) -> int:
     _ensure_utf8_stdio()
     args = build_arg_parser().parse_args(argv)
@@ -130,8 +141,7 @@ def main(argv: list[str] | None = None) -> int:
         max_tokens=args.max_tokens,
         temperature=args.temperature,
         debug=args.debug,
-        project_spec_repo_url=(args.project_spec_repo or "").strip(),
-        report_repo_url=(args.report_repo or "").strip(),
+        report_repos_text=_build_report_repos_text(args),
     )
 
     if len(subs) == 1:

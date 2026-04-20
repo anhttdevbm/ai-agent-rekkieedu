@@ -29,9 +29,8 @@ class GradeJobParams:
     max_tokens: int = 4096
     temperature: float = 0.2
     debug: bool = False
-    # Tuỳ chọn: repo đề mini project; repo sinh viên (code + DOCX báo cáo đã trích văn bản).
-    project_spec_repo_url: str = ""
-    report_repo_url: str = ""
+    # Nhiều dòng: dòng i khớp bài nộp dòng i (chấm lô). Dòng trống = không có repo báo cáo cho bài đó.
+    report_repos_text: str = ""
 
 
 @dataclass
@@ -78,6 +77,26 @@ def _load_submission_bundle(
 def _github_token_for_fetch() -> str | None:
     t = (os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN") or "").strip()
     return t or None
+
+
+def _aligned_report_repo_urls(
+    submission_count: int,
+    report_repos_text: str,
+) -> tuple[list[str], list[str]]:
+    """Mỗi chỉ số i tương ứng submission thứ i (0-based)."""
+    raw = (report_repos_text or "").splitlines()
+    out = [raw[i].strip() if i < len(raw) else "" for i in range(submission_count)]
+    warns: list[str] = []
+    nonempty = sum(1 for ln in raw if ln.strip())
+    if len(raw) > submission_count:
+        warns.append(
+            f"Số dòng link repo báo cáo ({len(raw)}) > số bài nộp ({submission_count}); chỉ dùng {submission_count} dòng đầu."
+        )
+    if submission_count > 1 and nonempty and len(raw) < submission_count:
+        warns.append(
+            f"Số dòng link repo báo cáo ({len(raw)}) < số bài nộp ({submission_count}); các bài thiếu dòng coi như không có repo."
+        )
+    return out, warns
 
 
 def _load_optional_github_bundle(
@@ -158,7 +177,6 @@ def _grade_single_from_prepared(
     params: GradeJobParams,
     prep_warnings: list[str],
     *,
-    project_spec_bundle: CollectedBundle | None = None,
     report_bundle: CollectedBundle | None = None,
 ) -> GradeJobResult:
     warnings = list(prep_warnings)
@@ -188,7 +206,6 @@ def _grade_single_from_prepared(
             ai_penalty_min_confidence=max(0, min(100, params.ai_confidence)),
             temperature=params.temperature,
             max_tokens=params.max_tokens,
-            project_spec_bundle=project_spec_bundle,
             report_bundle=report_bundle,
         )
     except RuntimeError as e:
@@ -223,9 +240,8 @@ def run_grade_batch(
     attach_prep_warnings_to_first_only: bool = True,
 ) -> list[tuple[str, GradeJobResult]]:
     """
-    Cùng một đề, chấm nhiều bài nộp. Đề, template và hai repo GitHub tuỳ chọn (đề project / báo cáo)
-    chỉ tải một lần cho cả lô.
-    Trả về danh sách (submission_ref, kết quả) theo thứ tự.
+    Cùng một đề, chấm nhiều bài nộp. Đề và template tải một lần.
+    Repo báo cáo (tuỳ chọn): `params.report_repos_text` — nhiều dòng, dòng i khớp bài nộp thứ i.
     """
     subs = [s.strip() for s in submission_refs if s.strip()]
     if not subs:
@@ -239,26 +255,33 @@ def run_grade_batch(
 
     assert doc is not None
 
-    extra_pw = list(prep_w)
-    project_spec_bundle, pw_proj = _load_optional_github_bundle(
-        params.project_spec_repo_url,
-        label_vi="Repo đề mini project",
-    )
-    extra_pw.extend(pw_proj)
-    report_bundle, pw_rep = _load_optional_github_bundle(
-        params.report_repo_url,
-        label_vi="Repo báo cáo & mini project",
-    )
-    extra_pw.extend(pw_rep)
+    report_urls, align_warns = _aligned_report_repo_urls(len(subs), params.report_repos_text)
+
+    report_bundle_cache: dict[str, tuple[CollectedBundle | None, list[str]]] = {}
+
+    def _report_bundle_for_url(url: str) -> tuple[CollectedBundle | None, list[str]]:
+        key = (url or "").strip()
+        if not key:
+            return None, []
+        if key in report_bundle_cache:
+            return report_bundle_cache[key]
+        b, w = _load_optional_github_bundle(
+            key,
+            label_vi="Repo báo cáo + mini project",
+        )
+        report_bundle_cache[key] = (b, w)
+        return b, w
 
     p_inner = replace(params, out_path=None) if len(subs) > 1 else params
     out: list[tuple[str, GradeJobResult]] = []
     for i, submission_ref in enumerate(subs):
-        pw = (
-            list(extra_pw)
-            if (i == 0 or not attach_prep_warnings_to_first_only)
-            else []
-        )
+        pw: list[str] = []
+        if i == 0 or not attach_prep_warnings_to_first_only:
+            pw.extend(prep_w)
+            pw.extend(align_warns)
+        rep_u = report_urls[i] if i < len(report_urls) else ""
+        rb, rb_warns = _report_bundle_for_url(rep_u)
+        pw.extend(rb_warns)
         r = _grade_single_from_prepared(
             doc,
             template_bundle,
@@ -266,8 +289,7 @@ def run_grade_batch(
             submission_ref,
             p_inner,
             pw,
-            project_spec_bundle=project_spec_bundle,
-            report_bundle=report_bundle,
+            report_bundle=rb,
         )
         out.append((submission_ref, r))
     return out

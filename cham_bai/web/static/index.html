@@ -33,31 +33,34 @@
       <section class="panel visible" id="panel-grade">
         <h2>Chấm bài</h2>
         <p class="hint">
-          Đề: upload <strong>.docx</strong> hoặc dán đường dẫn file / link Google Docs. Tuỳ chọn: link GitHub
-          <strong>đề mini project</strong> và repo <strong>báo cáo + code mini project</strong> (có thể kèm file .docx — hệ thống trích văn bản).
-          Bài nộp: mỗi dòng một <strong>thư mục trên máy chạy server</strong> hoặc <strong>link GitHub</strong>.
+          Đề bài: <strong>đường dẫn file .docx</strong> trên máy chạy server hoặc <strong>link Google Docs</strong> (chia sẻ xem được).
+          Bài nộp: mỗi dòng một <strong>thư mục</strong> hoặc <strong>link GitHub</strong>.
+          Repo báo cáo (tuỳ chọn): mỗi dòng một URL GitHub — <strong>dòng 1 khớp bài nộp dòng 1</strong>, dòng trống = không có repo cho bài đó.
           Repo private: đặt biến môi trường <code>GITHUB_TOKEN</code>.
         </p>
-        <form id="form-grade" enctype="multipart/form-data">
+        <form id="form-grade">
           <div class="field">
-            <label for="g-assignment-text">Đề bài (tuỳ chọn nếu đã upload file)</label>
-            <input type="text" id="g-assignment-text" name="assignment_text" placeholder="C:\path\de.docx hoặc https://docs.google.com/..." />
-          </div>
-          <div class="field">
-            <label for="g-assignment-file">Upload file đề (.docx)</label>
-            <input type="file" id="g-assignment-file" name="assignment_file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" />
-          </div>
-          <div class="field">
-            <label for="g-project-spec">Link GitHub đề mini project (tuỳ chọn)</label>
-            <input type="url" id="g-project-spec" name="project_spec_repo_url" placeholder="https://github.com/org/de-bai-mini-project" />
-          </div>
-          <div class="field">
-            <label for="g-report-repo">Link GitHub repo báo cáo + mini project (tuỳ chọn)</label>
-            <input type="url" id="g-report-repo" name="report_repo_url" placeholder="https://github.com/user/bao-cao-va-code (mã + file .docx báo cáo)" />
+            <label for="g-assignment-text">Đề bài (đường dẫn .docx hoặc Google Docs)</label>
+            <input
+              type="text"
+              id="g-assignment-text"
+              name="assignment_text"
+              required
+              placeholder="C:\path\de.docx hoặc https://docs.google.com/document/d/..."
+            />
           </div>
           <div class="field">
             <label for="g-subs">Bài nộp (mỗi dòng một thư mục hoặc URL GitHub)</label>
             <textarea id="g-subs" name="submissions_text" required placeholder="D:\bai-nop\sv1&#10;https://github.com/..."></textarea>
+          </div>
+          <div class="field">
+            <label for="g-report-repos">Repo báo cáo + mini (tuỳ chọn, mỗi dòng một URL — khớp dòng với bài nộp)</label>
+            <textarea
+              id="g-report-repos"
+              name="report_repos_text"
+              rows="4"
+              placeholder="https://github.com/user/bao-cao-sv1&#10;&#10;https://github.com/user/bao-cao-sv3"
+            ></textarea>
           </div>
           <div class="field">
             <label for="g-model">Model OpenRouter</label>

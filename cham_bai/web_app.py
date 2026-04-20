@@ -102,6 +102,9 @@ def _format_grade_block(label: str, res: GradeJobResult) -> str:
             blob = json.loads(res.json_text)
             lines.append(f"Điểm: {blob.get('final_score')}")
             lines.append(f"Nhận xét: {blob.get('final_comment')}")
+            mp = blob.get("mini_project_present")
+            if mp is not None:
+                lines.append(f"Mini project (chỉ có/không): {mp}")
         except json.JSONDecodeError:
             lines.append(res.json_text[:2000])
     return "\n".join(lines) + "\n"
@@ -126,8 +129,7 @@ def _run_grade_sync(
     no_template: bool,
     strict_ai: bool,
     ai_confidence: int,
-    project_spec_repo_url: str = "",
-    report_repo_url: str = "",
+    report_repos_text: str = "",
 ) -> tuple[bool, str, list[dict]]:
     try:
         from cham_bai.settings import api_key as _need_key
@@ -145,8 +147,7 @@ def _run_grade_sync(
         strict_ai=strict_ai,
         ai_confidence=int(ai_confidence),
         debug=False,
-        project_spec_repo_url=(project_spec_repo_url or "").strip(),
-        report_repo_url=(report_repo_url or "").strip(),
+        report_repos_text=report_repos_text or "",
     )
 
     log_parts: list[str] = []
@@ -190,11 +191,9 @@ def _run_grade_sync(
 
 @app.post("/api/grade")
 async def api_grade(
-    assignment_text: str = Form(""),
-    assignment_file: UploadFile | None = File(None),
+    assignment_text: str = Form(...),
     submissions_text: str = Form(...),
-    project_spec_repo_url: str = Form(""),
-    report_repo_url: str = Form(""),
+    report_repos_text: str = Form(""),
     model: str = Form(""),
     use_template: str = Form("true"),
     strict_ai: str = Form("true"),
@@ -204,54 +203,35 @@ async def api_grade(
     if not subs_lines:
         raise HTTPException(status_code=400, detail="Thêm ít nhất một dòng bài nộp (thư mục hoặc GitHub).")
 
-    tmp_assignment: str | None = await _save_upload_optional(assignment_file, ".docx")
     assignment_ref = (assignment_text or "").strip()
-    if tmp_assignment:
-        assignment_ref = tmp_assignment
     if not assignment_ref:
-        raise HTTPException(status_code=400, detail="Chọn file .docx đề bài hoặc dán đường dẫn / link Google Docs.")
+        raise HTTPException(
+            status_code=400,
+            detail="Điền đề bài: đường dẫn file .docx trên máy chủ hoặc link Google Docs.",
+        )
 
     p = Path(assignment_ref)
     ok_docx = p.is_file() and p.suffix.lower() == ".docx"
     ok_gdoc = is_google_docs_url(assignment_ref)
     if not ok_docx and not ok_gdoc:
-        if tmp_assignment:
-            try:
-                os.unlink(tmp_assignment)
-            except OSError:
-                pass
         raise HTTPException(
             status_code=400,
-            detail="Đề cần là file .docx hợp lệ (upload) hoặc URL Google Docs.",
+            detail="Đề cần là đường dẫn file .docx tồn tại trên máy chủ hoặc URL Google Docs.",
         )
 
     for s in subs_lines:
         if not normalize_github_repo_url(s) and not Path(s).is_dir():
-            if tmp_assignment:
-                try:
-                    os.unlink(tmp_assignment)
-                except OSError:
-                    pass
             raise HTTPException(
                 status_code=400,
                 detail=f"Bài nộp không hợp lệ (thư mục trên máy chủ hoặc link GitHub): {s[:160]}",
             )
 
-    proj_u = (project_spec_repo_url or "").strip()
-    rep_u = (report_repo_url or "").strip()
-    for label, u in (
-        ("Link đề mini project (GitHub)", proj_u),
-        ("Link repo báo cáo & mini project (GitHub)", rep_u),
-    ):
+    for ln in (report_repos_text or "").splitlines():
+        u = ln.strip()
         if u and not normalize_github_repo_url(u):
-            if tmp_assignment:
-                try:
-                    os.unlink(tmp_assignment)
-                except OSError:
-                    pass
             raise HTTPException(
                 status_code=400,
-                detail=f"{label} không hợp lệ (chỉ hỗ trợ github.com / dạng owner/repo).",
+                detail=f"Dòng repo báo cáo không hợp lệ (chỉ GitHub): {u[:160]}",
             )
 
     loop = asyncio.get_event_loop()
@@ -264,18 +244,10 @@ async def api_grade(
             not _parse_bool_form(use_template),
             _parse_bool_form(strict_ai),
             ai_confidence,
-            project_spec_repo_url=proj_u,
-            report_repo_url=rep_u,
+            report_repos_text=report_repos_text or "",
         )
 
-    try:
-        ok, log, results = await loop.run_in_executor(_executor, work)
-    finally:
-        if tmp_assignment:
-            try:
-                os.unlink(tmp_assignment)
-            except OSError:
-                pass
+    ok, log, results = await loop.run_in_executor(_executor, work)
 
     return JSONResponse({"ok": ok, "log": log, "results": results})
 
