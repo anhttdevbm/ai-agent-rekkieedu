@@ -55,7 +55,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--report-repo-list",
         default="",
         metavar="FILE",
-        help="Tuỳ chọn (chấm lô): file — mỗi dòng link GitHub hoặc Google Docs, dòng i khớp --submission-list",
+        help="Tuỳ chọn (chấm lô): file — mỗi dòng link GitHub, Google Docs hoặc OneDrive/SharePoint, dòng i khớp --submission-list",
     )
     p.add_argument(
         "--out",

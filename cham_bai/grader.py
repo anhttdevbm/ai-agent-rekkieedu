@@ -14,7 +14,7 @@ from cham_bai.schemas import GradePayload, coalesce_grade, parse_llm_json
 SYSTEM_PROMPT = """Bạn là trợ giảng chấm bài lập trình bậc đại học.
 
 Phạm vi ĐIỂM và NHẬN XÉT (bắt buộc):
-• Chỉ dựa trên (A) **bài tập đầu giờ** — mã trong khối «MÃ NGUỒN HỌC VIÊN — BÀI TẬP ĐẦU GIỜ» (bài nộp chính), và (B) **báo cáo** — văn bản trong khối «BÁO CÁO» (GitHub: DOCX trích / repo; hoặc Google Docs: nội dung export) hoặc trong đề bài nếu có.
+• Chỉ dựa trên (A) **bài tập đầu giờ** — mã trong khối «MÃ NGUỒN HỌC VIÊN — BÀI TẬP ĐẦU GIỜ» (bài nộp chính), và (B) **báo cáo** — văn bản trong khối «BÁO CÁO» (GitHub: DOCX trích / repo; Google Docs: nội dung export; OneDrive/SharePoint: văn bản trích từ Word chia sẻ) hoặc trong đề bài nếu có.
 • Nếu **không có** mã bài tập đầu giờ (khối đó rỗng) thì `score` và `comment` **chỉ** theo **báo cáo** (và vẫn xử lý `mini_project_present` từ repo báo cáo nếu có).
 • **Bài tập đầu giờ quan trọng hơn báo cáo:** khi cả hai đều có đủ dữ liệu để chấm, trọng số gợi ý khoảng **65–75%** cho bài tập đầu giờ và **25–35%** cho báo cáo (làm tròn thành một số điểm 0–100 nguyên). Nếu chỉ có một phần thì toàn bộ `score` phản ánh phần đó; nếu thiếu báo cáo khi đề bắt buộc thì phản ánh trong điểm/comment phần báo cáo, không bịa.
 • **Mini project:** KHÔNG tính vào `score`, KHÔNG được đánh giá chất lượng trong `comment`. Chỉ kết luận `mini_project_present` là **có**, **không**, hoặc **không_rõ** dựa trên **đề bài** và bằng chứng trong **repo báo cáo** (mã kèm repo) nếu có — không dùng để chấm điểm.
@@ -22,7 +22,7 @@ Phạm vi ĐIỂM và NHẬN XÉT (bắt buộc):
 Chấm lỏng tay: ưu tiên chạy được và đáp ứng ý chính; không hạ điểm mạnh vì lệch nhãn chủ đề khi đề và template khác nhau mà sinh viên làm đúng theo template (xem mục 5).
 
 Quy tắc:
-1) Đọc “ĐỀ BÀI” (.docx / Google Docs). Khối «BÁO CÁO» (nếu có): nội dung báo cáo (kể cả chỉ link Google Docs — đã export văn bản); với GitHub, phần `_docx_text/` và văn bản báo cáo dùng cho điểm; mã mini trong repo chỉ hỗ trợ `mini_project_present`, không vào `score`/`comment`.
+1) Đọc “ĐỀ BÀI” (.docx / Google Docs). Khối «BÁO CÁO» (nếu có): nội dung báo cáo (Google Docs đã export văn bản; OneDrive/SharePoint đã trích từ Word); với GitHub, phần `_docx_text/` và văn bản báo cáo dùng cho điểm; mã mini trong repo chỉ hỗ trợ `mini_project_present`, không vào `score`/`comment`.
 2) Báo cáo DOCX: đánh giá mức vừa phải — bài toán, thiết kế/triển khai, kết quả, hạn chế; không soi văn phong hoàn hảo. Nếu không có trích DOCX thì không bịa.
 3) Chỉ chấm phần đề nêu rõ; không bịa thêm hạng mục. Nếu đề chỉ yêu cầu (ví dụ) sửa và xóa thì không trừ vì không có thêm / danh sách đầy đủ trừ khi đề ghi rõ.
 4) Không soi chữ trong alert / thông báo: nếu cùng ý (xác nhận xóa, báo thành công cập nhật/xóa) thì chấp nhận; không trừ nặng vì khác vài từ so với đề nếu logic đúng.
@@ -102,14 +102,14 @@ def build_user_prompt(
 
     if report_bundle is not None:
         parts.append(
-            "\n\n## BÁO CÁO (GitHub: mã + DOCX trích văn bản; hoặc Google Docs: nội dung export — chấm báo cáo; mã mini chỉ cho mini_project_present)\n"
+            "\n\n## BÁO CÁO (GitHub: mã + DOCX trích văn bản; Google Docs: export; OneDrive/SharePoint: Word chia sẻ — chấm báo cáo; mã mini chỉ cho mini_project_present)\n"
         )
         rs = format_bundle_for_prompt(report_bundle).strip()
         parts.append(rs if rs else "(Repo không có nội dung file text thu thập được.)")
 
     parts.append(
         "\n\n## HƯỚNG DẪN CHẤM (bắt buộc)\n"
-        "- `score` và `comment` chỉ phản ánh **bài tập đầu giờ** (khối trên) và **báo cáo** (khối BÁO CÁO: GitHub hoặc Google Docs nếu có). Nếu khối bài tập đầu giờ rỗng thì chỉ báo cáo. Ưu tiên bài tập đầu giờ trong tổng điểm khi cả hai có dữ liệu.\n"
+        "- `score` và `comment` chỉ phản ánh **bài tập đầu giờ** (khối trên) và **báo cáo** (khối BÁO CÁO: GitHub, Google Docs hoặc OneDrive/SharePoint nếu có). Nếu khối bài tập đầu giờ rỗng thì chỉ báo cáo. Ưu tiên bài tập đầu giờ trong tổng điểm khi cả hai có dữ liệu.\n"
         "- `mini_project_present`: **có** / **không** / **không_rõ** — chỉ bằng chứng nộp / đối chiếu đề; không dùng để cộng trừ `score`, không mô tả chất lượng mini trong `comment`.\n"
         "- Chấm lỏng tay (đề vs template): không trừ nặng vì đề nói “sản phẩm” mà bài làm theo template “danh bạ/contact”; nếu logic sửa/xóa/validate tương đương thì điểm bài tập đầu giờ quanh mức hợp lý (~70) theo SYSTEM.\n"
         "- Không soi chữ trong alert nếu đúng ý; không bịa yêu cầu không có trong đề.\n"

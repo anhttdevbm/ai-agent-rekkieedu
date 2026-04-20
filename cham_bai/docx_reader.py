@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -68,8 +69,7 @@ def _register_github_urls(blob: str, seen: set[str], urls: list[str]) -> None:
             urls.append(url)
 
 
-def extract_docx(path: str) -> DocxContent:
-    doc = Document(path)
+def _document_to_docx_content(doc: Document) -> DocxContent:
     parts: list[str] = []
     for p in doc.paragraphs:
         t = (p.text or "").strip()
@@ -90,6 +90,15 @@ def extract_docx(path: str) -> DocxContent:
         _register_github_urls(blob, seen, urls)
 
     return DocxContent(plain_text=plain, github_repo_urls=urls)
+
+
+def extract_docx(path: str) -> DocxContent:
+    return _document_to_docx_content(Document(path))
+
+
+def extract_docx_bytes(data: bytes) -> DocxContent:
+    """Đọc .docx từ bytes (ví dụ tải từ OneDrive)."""
+    return _document_to_docx_content(Document(io.BytesIO(data)))
 
 
 def _docx_rel_should_skip(rel: Path) -> bool:

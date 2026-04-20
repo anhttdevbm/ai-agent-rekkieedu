@@ -244,7 +244,7 @@ async def api_grade(
         if u and not is_valid_report_source_url(u):
             raise HTTPException(
                 status_code=400,
-                detail=f"Dòng báo cáo không hợp lệ (GitHub hoặc Google Docs): {u[:160]}",
+                detail=f"Dòng báo cáo không hợp lệ (GitHub, Google Docs hoặc OneDrive/SharePoint): {u[:160]}",
             )
 
     loop = asyncio.get_event_loop()

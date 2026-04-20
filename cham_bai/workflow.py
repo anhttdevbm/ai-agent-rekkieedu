@@ -8,8 +8,8 @@ from pathlib import Path
 from cham_bai.assignment import load_assignment
 from cham_bai.collector import CollectedBundle, collect_sources
 from cham_bai.docx_reader import DocxContent
-from cham_bai.gdocs_reader import is_google_docs_url
 from cham_bai.gdocs_reader import fetch_google_doc_plain_text, is_google_docs_url
+from cham_bai.onedrive_reader import fetch_onedrive_share_plain_text, is_onedrive_share_url
 from cham_bai.git_remote import fetch_repo_sources_bundle, normalize_github_repo_url
 from cham_bai.github_template import fetch_template_bundle
 from cham_bai.grader import dump_outcome_json, grade_submission
@@ -134,11 +134,15 @@ def normalized_grade_rows(
 
 
 def is_valid_report_source_url(url: str) -> bool:
-    """Báo cáo: GitHub repo hoặc link Google Docs (bài chỉ nộp Docs)."""
+    """Báo cáo: GitHub repo, Google Docs, hoặc link chia sẻ OneDrive/SharePoint (1drv.ms…)."""
     s = (url or "").strip()
     if not s:
         return False
-    return bool(normalize_github_repo_url(s)) or is_google_docs_url(s)
+    return (
+        bool(normalize_github_repo_url(s))
+        or is_google_docs_url(s)
+        or is_onedrive_share_url(s)
+    )
 
 
 def _load_optional_report_bundle(
@@ -164,9 +168,22 @@ def _load_optional_report_bundle(
         warns.append(f"Đã tải {label_vi} từ Google Docs (văn bản export).")
         return bundle, warns
 
+    if is_onedrive_share_url(s):
+        try:
+            plain = fetch_onedrive_share_plain_text(s)
+        except Exception as e:
+            warns.append(f"{label_vi} (OneDrive/SharePoint): {e}")
+            return None, warns
+        bundle = CollectedBundle(
+            root=Path("(onedrive-báo-cáo)"),
+            files=[("_onedrive_baocao/export.txt", plain)],
+        )
+        warns.append(f"Đã tải {label_vi} từ OneDrive/SharePoint (Word .docx).")
+        return bundle, warns
+
     if not normalize_github_repo_url(s):
         warns.append(
-            f"{label_vi}: cần link GitHub hoặc Google Docs (https://docs.google.com/document/d/...)."
+            f"{label_vi}: cần link GitHub, Google Docs, hoặc OneDrive/SharePoint (ví dụ https://1drv.ms/w/...)."
         )
         return None, warns
 
@@ -345,7 +362,7 @@ def run_grade_batch(
             return report_bundle_cache[key]
         b, w = _load_optional_report_bundle(
             key,
-            label_vi="Báo cáo (GitHub / Google Docs)",
+            label_vi="Báo cáo (GitHub / Google Docs / OneDrive)",
         )
         report_bundle_cache[key] = (b, w)
         return b, w

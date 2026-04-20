@@ -24,7 +24,7 @@ agent-edu-gui
 
 Hoặc: `python launch_gui.py`
 
-- **Đề bài:** file `.docx` hoặc dán URL Google Docs (`https://docs.google.com/document/d/.../edit`). Tài liệu cần đặt quyền **Bất kỳ ai có liên kết — Xem** (Anyone with the link — Viewer). **Bài nộp:** ô nhiều dòng — **mỗi dòng một** thư mục hoặc link GitHub (cùng một đề, chấm lần lượt); **có thể để trống** dòng đó nếu cùng dòng bên «Repo báo cáo» có link (chỉ chấm báo cáo). Nút **Thêm thư mục…** chèn thêm một dòng. **Báo cáo + mini (tuỳ chọn):** ô nhiều dòng — link **GitHub** hoặc **Google Docs** (bài chỉ nộp Docs), **dòng i khớp bài nộp dòng i**. **Kết quả:** điểm + nhận xét + mini project (có/không) trong log. Muốn JSON dùng CLI `--submission-list` và `--out`.
+- **Đề bài:** file `.docx` hoặc dán URL Google Docs (`https://docs.google.com/document/d/.../edit`). Tài liệu cần đặt quyền **Bất kỳ ai có liên kết — Xem** (Anyone with the link — Viewer). **Bài nộp:** ô nhiều dòng — **mỗi dòng một** thư mục hoặc link GitHub (cùng một đề, chấm lần lượt); **có thể để trống** dòng đó nếu cùng dòng bên «Repo báo cáo» có link (chỉ chấm báo cáo). Nút **Thêm thư mục…** chèn thêm một dòng. **Báo cáo + mini (tuỳ chọn):** ô nhiều dòng — link **GitHub**, **Google Docs** (bài chỉ nộp Docs), hoặc **OneDrive/SharePoint** (ví dụ `https://1drv.ms/w/...` — file Word chia sẻ xem được), **dòng i khớp bài nộp dòng i**. **Kết quả:** điểm + nhận xét + mini project (có/không) trong log. Muốn JSON dùng CLI `--submission-list` và `--out`.
 - **Quiz đầu giờ (tab riêng):** nút chính **tự tạo file Excel** (`quiz_<lesson>_<session>_<thời gian>.xlsx`) trong **cùng thư mục với file mẫu**; có thể dùng **Tạo và chọn nơi lưu** nếu muốn chỉ đường dẫn. Chọn file **Excel mẫu** (hàng 1 = tiêu đề cột; có thể dùng nút tạo/mở mẫu mặc định — **7 cột:** STT, Mức độ, Mục tiêu, Câu hỏi, Các đáp án, Kết quả, Giải thích). Với mẫu này, tool luôn tạo **đúng 5 câu** theo thứ tự mức độ/mục tiêu cố định (Thông hiểu → … → Phân tích sơ bộ), **4 hàng mỗi câu** (A–D), merge cột meta + câu hỏi như bảng mẫu. **Bắt buộc:** lesson, session. **Tuỳ chọn:** DOCX. Mẫu kiểu **một hàng một câu** (Đáp án A…D) vẫn dùng được với ô “Số câu hỏi”.
 - **API key:** không nhập trên GUI. Chạy bằng **Python** dùng `.env` (hoặc biến môi trường). **EXE** đã build lấy key **nhúng lúc build** từ `.env` (mục “Đóng gói EXE”).
 
@@ -80,7 +80,7 @@ agent-edu --docx de_bai.docx --submission https://github.com/nguoi_dung/ten-repo
 
 # Nhiều bài cùng đề (file danh sách, mỗi dòng một đường dẫn hoặc URL GitHub):
 agent-edu --assignment de_bai.docx --submission-list ds_bai_nop.txt --out ket_qua_lo.json
-# Cùng lô, mỗi sinh viên một repo báo cáo (file mỗi dòng một URL GitHub, dòng i khớp ds_bai_nop dòng i):
+# Cùng lô, mỗi sinh viên một nguồn báo cáo (file mỗi dòng một URL GitHub, Google Docs hoặc OneDrive/SharePoint; dòng i khớp ds_bai_nop dòng i):
 agent-edu --assignment de_bai.docx --submission-list ds_bai_nop.txt --report-repo-list ds_bao_cao.txt --out ket_qua_lo.json
 ```
 
