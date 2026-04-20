@@ -49,7 +49,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--report-repo",
         default="",
         metavar="URL",
-        help="Tuỳ chọn (một bài nộp): link GitHub repo báo cáo hoặc Google Docs. Nhiều bài: dùng --report-repo-list.",
+        help="Tuỳ chọn (một bài nộp): link GitHub repo báo cáo hoặc Google Docs/Sheets hoặc OneDrive/SharePoint. Nhiều bài: dùng --report-repo-list.",
     )
     p.add_argument(
         "--report-repo-list",

@@ -8,7 +8,12 @@ from pathlib import Path
 from cham_bai.assignment import load_assignment
 from cham_bai.collector import CollectedBundle, collect_sources
 from cham_bai.docx_reader import DocxContent
-from cham_bai.gdocs_reader import fetch_google_doc_plain_text, is_google_docs_url
+from cham_bai.gdocs_reader import (
+    fetch_google_doc_plain_text,
+    fetch_google_sheet_plain_text,
+    is_google_docs_url,
+    is_google_sheet_url,
+)
 from cham_bai.onedrive_reader import fetch_onedrive_share_plain_text, is_onedrive_share_url
 from cham_bai.git_remote import fetch_repo_sources_bundle, normalize_github_repo_url
 from cham_bai.github_template import fetch_template_bundle
@@ -154,6 +159,19 @@ def _load_optional_report_bundle(
     if not s:
         return None, []
     warns: list[str] = []
+
+    if is_google_sheet_url(s):
+        try:
+            plain = fetch_google_sheet_plain_text(s)
+        except Exception as e:
+            warns.append(f"{label_vi} (Google Sheets): {e}")
+            return None, warns
+        bundle = CollectedBundle(
+            root=Path("(google-sheets-báo-cáo)"),
+            files=[("_gsheets_baocao/export.csv", plain)],
+        )
+        warns.append(f"Đã tải {label_vi} từ Google Sheets (CSV export).")
+        return bundle, warns
 
     if is_google_docs_url(s):
         try:
