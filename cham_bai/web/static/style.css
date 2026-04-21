@@ -235,6 +235,30 @@ textarea {
   border: 1px solid var(--border);
 }
 
+.btvn-preview {
+  min-height: 10rem;
+  max-height: 55vh;
+  overflow: auto;
+  width: 100%;
+  padding: 0.7rem 0.85rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
+.btvn-preview img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 0.6rem auto;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+
 input:focus,
 select:focus,
 textarea:focus {

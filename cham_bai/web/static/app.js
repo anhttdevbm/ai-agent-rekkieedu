@@ -197,118 +197,107 @@
     }
   }
 
-  function btvnEditorPlainTextWithPlaceholders() {
-    const ed = $("#b-assignment-editor");
-    if (!ed) return "";
-    const clone = ed.cloneNode(true);
-    let n = 0;
-    clone.querySelectorAll("img").forEach((img) => {
-      n += 1;
-      const tn = document.createTextNode("\n[Hình " + n + " trong đề]\n");
-      img.parentNode.replaceChild(tn, img);
-    });
-    return clone.innerText
-      .replace(/\u00a0/g, " ")
-      .replace(/\r\n/g, "\n")
-      .replace(/\n{3,}/g, "\n\n")
-      .trim();
+  function sanitizeHtmlForPreview(html) {
+    const s = String(html || "");
+    // remove script/style blocks
+    return s
+      .replace(/<script[\s\S]*?<\/script>/gi, "")
+      .replace(/<style[\s\S]*?<\/style>/gi, "")
+      .replace(/\son\w+="[^"]*"/gi, "")
+      .replace(/\son\w+='[^']*'/gi, "");
   }
 
-  async function imgSrcToBlob(src) {
-    if (!src || String(src).startsWith("javascript:")) return null;
+  async function btvnLoadSession() {
+    const token = ($("#b-rk-token") && $("#b-rk-token").value) || "";
+    const sid = ($("#b-session-id") && $("#b-session-id").value) || "";
+    const statusEl = $("#b-session-status");
+    const sel = $("#b-homework");
+    const preview = $("#b-preview");
+    const btn = $("#b-load-session");
+    if (!token.trim() || !String(sid).trim()) {
+      if (statusEl) statusEl.textContent = "Nhập token và session id trước.";
+      return;
+    }
+    setBusy(btn, true, "Đang tải…");
+    if (statusEl) statusEl.textContent = "";
+    if (sel) {
+      sel.innerHTML = "<option value=''>Đang tải…</option>";
+      sel.disabled = true;
+    }
+    if (preview) preview.textContent = "(Đang tải đề...)";
     try {
-      const r = await fetch(src);
-      if (!r.ok) return null;
-      const blob = await r.blob();
-      if (!blob.type.startsWith("image/")) return null;
-      return blob;
-    } catch {
-      return null;
-    }
-  }
-
-  async function btvnBuildFormData() {
-    const fd = new FormData();
-    const ed = $("#b-assignment-editor");
-    const text = btvnEditorPlainTextWithPlaceholders();
-    fd.set("assignment_text", text);
-    let failed = 0;
-    const totalImg = ed ? ed.querySelectorAll("img").length : 0;
-    if (ed) {
-      let idx = 0;
-      for (const img of ed.querySelectorAll("img")) {
-        idx += 1;
-        const blob = await imgSrcToBlob(img.src);
-        if (!blob || blob.size > 5_000_000) {
-          failed += 1;
-          continue;
+      const fd = new FormData();
+      fd.set("session_id", String(sid).trim());
+      fd.set("rikkei_token", token.trim());
+      const r = await fetch("/api/rikkei/session", { method: "POST", body: fd });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        if (statusEl) statusEl.textContent = formatApiErr(data.detail) || "Lỗi tải session.";
+        if (sel) {
+          sel.innerHTML = "<option value=''> (Lỗi tải session) </option>";
+          sel.disabled = true;
         }
-        const ext = (blob.type.split("/")[1] || "png").replace(/[^a-z0-9]/gi, "") || "png";
-        fd.append("assignment_images", blob, "de-bai-hinh-" + idx + "." + ext);
+        if (preview) preview.textContent = "(Không tải được đề.)";
+        return;
       }
+      const hw = (data && data.homework) || [];
+      if (!Array.isArray(hw) || hw.length === 0) {
+        if (statusEl) statusEl.textContent = "Session không có bài tập (homework) hoặc API trả rỗng.";
+        if (sel) {
+          sel.innerHTML = "<option value=''> (Không có bài) </option>";
+          sel.disabled = true;
+        }
+        if (preview) preview.textContent = "(Không có đề.)";
+        return;
+      }
+      // store dataset on select
+      sel.dataset.items = JSON.stringify(hw);
+      sel.innerHTML = "<option value=''>-- Chọn bài --</option>";
+      hw.forEach((x) => {
+        const o = document.createElement("option");
+        o.value = String(x.id || "");
+        o.textContent = String(x.title || x.id || "");
+        sel.appendChild(o);
+      });
+      sel.disabled = false;
+      if (statusEl) statusEl.textContent = `Đã tải: ${data.name || "session"} (${hw.length} bài).`;
+      if (preview) preview.textContent = "(Chọn một bài để xem đề.)";
+    } catch (e) {
+      if (statusEl) statusEl.textContent = String(e);
+    } finally {
+      setBusy(btn, false);
     }
-    fd.set("submissions_text", ($("#b-subs") && $("#b-subs").value) || "");
-    fd.set("model", ($("#b-model") && $("#b-model").value) || "");
-    fd.set("github_token", ($("#b-gh-token") && $("#b-gh-token").value) || "");
-    return { fd, failed, totalImg };
   }
 
-  function setupBtvnEditor() {
-    const ed = $("#b-assignment-editor");
-    if (!ed) return;
-    ed.addEventListener("paste", (e) => {
-      const cd = e.clipboardData;
-      if (!cd) return;
-      const files = Array.from(cd.files || []).filter((f) => f.type.startsWith("image/"));
-      if (!files.length) return;
-      e.preventDefault();
-      const sel = window.getSelection();
-      if (!sel || !sel.rangeCount) return;
-      const range = sel.getRangeAt(0);
-      range.deleteContents();
-      const plain = cd.getData("text/plain");
-      if (plain) {
-        range.insertNode(document.createTextNode(plain));
-        range.collapse(false);
-      }
-      for (const file of files) {
-        if (file.size > 5_000_000) continue;
-        const url = URL.createObjectURL(file);
-        const img = document.createElement("img");
-        img.src = url;
-        img.alt = "";
-        range.insertNode(img);
-        range.setStartAfter(img);
-        range.collapse(true);
-      }
-    });
-    ed.addEventListener("dragover", (e) => e.preventDefault());
-    ed.addEventListener("drop", (e) => {
-      e.preventDefault();
-      const files = Array.from(e.dataTransfer && e.dataTransfer.files ? e.dataTransfer.files : []).filter(
-        (f) => f.type.startsWith("image/")
-      );
-      if (!files.length) return;
-      const sel = window.getSelection();
-      let range;
-      if (sel && sel.rangeCount && ed.contains(sel.anchorNode)) {
-        range = sel.getRangeAt(0);
-      } else {
-        range = document.createRange();
-        range.selectNodeContents(ed);
-        range.collapse(false);
-      }
-      for (const file of files) {
-        if (file.size > 5_000_000) continue;
-        const url = URL.createObjectURL(file);
-        const img = document.createElement("img");
-        img.src = url;
-        img.alt = "";
-        range.insertNode(img);
-        range.setStartAfter(img);
-        range.collapse(true);
-      }
-    });
+  function btvnOnPickHomework() {
+    const sel = $("#b-homework");
+    const preview = $("#b-preview");
+    const hText = $("#b-assignment-text");
+    const hUrls = $("#b-assignment-image-urls");
+    if (!sel || !preview || !hText || !hUrls) return;
+    const id = (sel.value || "").trim();
+    if (!id) {
+      preview.textContent = "(Chọn một bài để xem đề.)";
+      hText.value = "";
+      hUrls.value = "";
+      return;
+    }
+    let items = [];
+    try {
+      items = JSON.parse(sel.dataset.items || "[]");
+    } catch {}
+    const it = items.find((x) => String(x.id) === id);
+    if (!it) {
+      preview.textContent = "(Không tìm thấy đề.)";
+      hText.value = "";
+      hUrls.value = "";
+      return;
+    }
+    const html = sanitizeHtmlForPreview(it.description_html || "");
+    preview.innerHTML =
+      `<div style="font-weight:700;margin:0 0 .5rem 0">${escapeHtml(it.title || "")}</div>` + html;
+    hText.value = String(it.plain_text || "").trim();
+    hUrls.value = JSON.stringify(it.image_urls || []);
   }
 
   async function postBtvn(ev) {
@@ -321,7 +310,13 @@
     if (resWrap) resWrap.style.display = "none";
     if (resBody) resBody.innerHTML = "";
     try {
-      const { fd, failed, totalImg } = await btvnBuildFormData();
+      const fd = new FormData(ev.target);
+      const text = (fd.get("assignment_text") || "").toString().trim();
+      const urls = (fd.get("assignment_image_urls") || "").toString().trim();
+      if (!text) {
+        alert("Chưa có đề bài. Hãy tải session và chọn bài trước.");
+        return;
+      }
       const r = await fetch("/api/btvn", { method: "POST", body: fd });
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
@@ -353,16 +348,7 @@
         });
         if (resWrap) resWrap.style.display = "";
       }
-      let statusMsg = "Xong.";
-      if (totalImg > 0 && failed > 0) {
-        statusMsg +=
-          " Cảnh báo: " +
-          failed +
-          "/" +
-          totalImg +
-          " ảnh trong đề không gửi được (link bị chặn hoặc quá 5MB) — thử dán ảnh trực tiếp hoặc chụp màn hình.";
-      }
-      $("#b-status").textContent = statusMsg;
+      $("#b-status").textContent = "Xong.";
     } catch (e) {
       alert(String(e));
     } finally {
@@ -405,7 +391,10 @@
     $("#form-reading").addEventListener("submit", postReading);
     const fb = $("#form-btvn");
     if (fb) fb.addEventListener("submit", postBtvn);
-    setupBtvnEditor();
+    const bLoad = $("#b-load-session");
+    if (bLoad) bLoad.addEventListener("click", btvnLoadSession);
+    const bSel = $("#b-homework");
+    if (bSel) bSel.addEventListener("change", btvnOnPickHomework);
     loadMeta().catch((e) => {
       $("#ver-pill").textContent = "lỗi tải meta";
       console.error(e);

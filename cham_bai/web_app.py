@@ -8,12 +8,14 @@ import asyncio
 import json
 import os
 import re
+import html as _html
 import shutil
 import tempfile
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import httpx
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -404,10 +406,143 @@ def _cleanup_quiz_temp(tmp_tpl: str | None, tmp_docx: str | None, out_dir: str |
         shutil.rmtree(out_dir, ignore_errors=True)
 
 
+def _rk_bearer(token: str) -> str:
+    t = (token or "").strip()
+    if not t:
+        return ""
+    if t.lower().startswith("bearer "):
+        return t
+    return "Bearer " + t
+
+
+def _rk_sanitize_html(s: str) -> str:
+    raw = (s or "").strip()
+    # drop script/style and basic inline handlers
+    raw = re.sub(r"<script[\s\S]*?</script>", "", raw, flags=re.I)
+    raw = re.sub(r"<style[\s\S]*?</style>", "", raw, flags=re.I)
+    raw = re.sub(r"\son\w+=(\"[^\"]*\"|'[^']*')", "", raw, flags=re.I)
+    return raw
+
+
+_IMG_SRC_RE = re.compile(r"<img[^>]+src=[\"'](?P<src>[^\"']+)[\"'][^>]*>", re.I)
+
+
+def _rk_extract_image_urls(html: str) -> list[str]:
+    seen: set[str] = set()
+    urls: list[str] = []
+    for m in _IMG_SRC_RE.finditer(html or ""):
+        u = (m.group("src") or "").strip()
+        if not u:
+            continue
+        if u not in seen:
+            seen.add(u)
+            urls.append(u)
+    return urls
+
+
+def _rk_html_to_plain_text(html: str) -> str:
+    s = (html or "").strip()
+    if not s:
+        return ""
+    # line breaks for common tags
+    s = re.sub(r"(?i)<br\s*/?>", "\n", s)
+    s = re.sub(r"(?i)</p\s*>", "\n\n", s)
+    s = re.sub(r"(?i)</li\s*>", "\n", s)
+    # remove tags
+    s = re.sub(r"<[^>]+>", " ", s)
+    s = _html.unescape(s)
+    s = re.sub(r"[ \t\r\f\v]+", " ", s)
+    s = re.sub(r"\n\s+\n", "\n\n", s)
+    return s.strip()
+
+
+async def _rk_fetch_image_bytes(url: str) -> tuple[str, bytes] | None:
+    u = (url or "").strip()
+    if not u.startswith(("http://", "https://")):
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+            r = await client.get(u, headers={"User-Agent": "AgentEdu/1.0"})
+        r.raise_for_status()
+        raw = r.content or b""
+        if not raw or len(raw) < 64:
+            return None
+        if len(raw) > 5_000_000:
+            return None
+        ct = (r.headers.get("content-type") or "").split(";")[0].strip().lower()
+        if ct and ct.startswith("image/"):
+            return ct, raw
+        # best-effort sniff
+        if raw[:8] == b"\x89PNG\r\n\x1a\n":
+            return "image/png", raw
+        if raw[:2] == b"\xff\xd8":
+            return "image/jpeg", raw
+        if raw[:6] in (b"GIF87a", b"GIF89a"):
+            return "image/gif", raw
+        if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+            return "image/webp", raw
+        return None
+    except Exception:
+        return None
+
+
+@app.post("/api/rikkei/session")
+async def api_rikkei_session(
+    session_id: int = Form(...),
+    rikkei_token: str = Form(...),
+) -> JSONResponse:
+    sid = int(session_id)
+    tok = (rikkei_token or "").strip()
+    if not tok:
+        raise HTTPException(status_code=400, detail="Thiếu token Rikkei.")
+    url = f"https://apiportal.rikkei.edu.vn/sessions/{sid}"
+    try:
+        async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+            r = await client.get(url, headers={"Authorization": _rk_bearer(tok), "User-Agent": "AgentEdu/1.0"})
+        if r.status_code in (401, 403):
+            raise HTTPException(status_code=401, detail="Token không hợp lệ hoặc không có quyền truy cập session này.")
+        r.raise_for_status()
+        data = r.json()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Lỗi gọi API Rikkei: {e}")
+
+    hw = data.get("homework") if isinstance(data, dict) else None
+    if not isinstance(hw, list):
+        hw = []
+    out_hw: list[dict] = []
+    for item in hw:
+        if not isinstance(item, dict):
+            continue
+        hid = item.get("id")
+        title = item.get("title") or ""
+        desc = item.get("description") or ""
+        desc_s = _rk_sanitize_html(str(desc))
+        out_hw.append(
+            {
+                "id": hid,
+                "title": str(title),
+                "description_html": desc_s,
+                "plain_text": _rk_html_to_plain_text(desc_s),
+                "image_urls": _rk_extract_image_urls(desc_s),
+            }
+        )
+
+    return JSONResponse(
+        {
+            "id": data.get("id") if isinstance(data, dict) else sid,
+            "name": data.get("name") if isinstance(data, dict) else f"Session {sid}",
+            "homework": out_hw,
+        }
+    )
+
+
 @app.post("/api/btvn")
 async def api_btvn(
     background_tasks: BackgroundTasks,
     assignment_text: str = Form(""),
+    assignment_image_urls: str = Form(""),
     submissions_text: str = Form(...),
     model: str = Form(""),
     github_token: str = Form(""),
@@ -436,6 +571,22 @@ async def api_btvn(
             if len(raw) > 5_000_000:
                 raise HTTPException(status_code=400, detail=f"Ảnh quá lớn: {f.filename} (>5MB).")
             imgs.append((ct, raw))
+
+    # Ảnh từ URL trong đề (từ Rikkei)
+    ublob = (assignment_image_urls or "").strip()
+    if ublob:
+        try:
+            urls = json.loads(ublob)
+        except json.JSONDecodeError:
+            urls = []
+        if isinstance(urls, list):
+            # giới hạn nhẹ để tránh payload
+            for u in urls[:10]:
+                if not isinstance(u, str):
+                    continue
+                got = await _rk_fetch_image_bytes(u)
+                if got:
+                    imgs.append(got)
 
     btvn_model = (model or "").strip() or (
         os.getenv("OPENROUTER_BTVN_MODEL", DEFAULT_BTVN_MODEL).strip()

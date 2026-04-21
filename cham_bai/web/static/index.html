@@ -254,22 +254,46 @@
       <section class="panel" id="panel-btvn">
         <h2>Chấm BTVN (nhận xét)</h2>
         <p class="hint">
-          <strong>Một ô đề bài:</strong> dán trực tiếp cả văn bản và hình (Ctrl+V từ trang web, Word, ảnh chụp màn hình…). Danh sách <strong>link GitHub</strong> bài nộp (mỗi dòng 1 link).
-          Hệ thống sẽ clone repo, đọc mã nguồn (có giới hạn) và tạo <strong>nhận xét ngắn</strong>. Không chấm điểm.
-          Ảnh lấy từ link ngoài có thể bị chặn trình duyệt — khi đó hãy dán ảnh trực tiếp hoặc chụp màn hình rồi dán.
+          Nhập <strong>Token Rikkei</strong> và <strong>Session ID</strong> để tải danh sách bài tập, chọn bài cần chấm rồi xem preview đề (text + ảnh).
+          Sau đó nhập danh sách <strong>link GitHub</strong> bài nộp (mỗi dòng 1 link). Hệ thống sẽ clone repo, đọc mã nguồn (có giới hạn) và tạo <strong>nhận xét</strong>. Không chấm điểm.
         </p>
         <form id="form-btvn">
           <div class="field">
-            <label for="b-assignment-editor">Đề bài (dán văn bản và hình vào đây)</label>
-            <div
-              id="b-assignment-editor"
-              class="btvn-editor"
-              contenteditable="true"
-              role="textbox"
-              aria-multiline="true"
-              data-placeholder="Dán toàn bộ đề (chữ + ảnh) vào đây…"
-            ></div>
+            <label for="b-rk-token">Token Rikkei (bắt buộc để gọi API)</label>
+            <input
+              type="password"
+              id="b-rk-token"
+              name="rikkei_token"
+              autocomplete="off"
+              placeholder="Dán token tại đây…"
+              required
+            />
           </div>
+          <div class="row2">
+            <div class="field" style="margin: 0">
+              <label for="b-session-id">Session ID</label>
+              <input type="number" id="b-session-id" min="1" step="1" placeholder="vd. 2058" required />
+            </div>
+            <div class="field" style="align-self: end; margin: 0">
+              <button type="button" class="primary" id="b-load-session">Tải danh sách bài</button>
+            </div>
+          </div>
+          <p class="status" id="b-session-status"></p>
+          <div class="field">
+            <label for="b-homework">Chọn bài tập để chấm</label>
+            <select id="b-homework" disabled>
+              <option value="">(Chưa tải danh sách)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Preview đề bài</label>
+            <div class="btvn-preview" id="b-preview">(Chọn một bài để xem đề.)</div>
+          </div>
+
+          <!-- hidden fields gửi sang /api/btvn -->
+          <input type="hidden" id="b-assignment-text" name="assignment_text" />
+          <input type="hidden" id="b-assignment-image-urls" name="assignment_image_urls" />
+
           <div class="field">
             <label for="b-gh-token">GitHub Token (tuỳ chọn — dùng cho repo private / tránh 401)</label>
             <input type="password" id="b-gh-token" name="github_token" autocomplete="off" placeholder="ghp_... hoặc fine-grained token" />
