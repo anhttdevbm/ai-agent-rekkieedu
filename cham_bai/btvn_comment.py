@@ -25,14 +25,19 @@ Ngôn ngữ (bắt buộc):
 - Cấm giải thích từng bước như đang tự nhủ; không lặp lại toàn bộ đề hay dạy lý thuyết dài.
 
 Cấu trúc nhận xét (bắt buộc, 2–3 câu liền mạch, giọng tự nhiên):
-1) Câu mở: đánh giá mức độ bài làm đã đáp ứng yêu cầu đề (logic, chức năng, hoặc hướng xử lý đúng/sai so với đề).
-2) Câu tiếp: nêu rõ một điểm mạnh nổi bật (cụ thể: đúng cú pháp, đúng nhóm điều kiện, phân trang, v.v. — bám vào mã/đề thật).
-3) Câu cuối bắt đầu bằng “Tuy nhiên,” hoặc “Tuy nhiên cần lưu ý:”: một điểm còn thiếu hoặc cần làm rõ theo đề + gợi ý hành động cụ thể (vd. bổ sung phần giải thích trong comment SQL, bản vẽ logic, kiểm thử thêm…).
+1) Câu mở: đánh giá mức độ bài làm đã đáp ứng yêu cầu đề — ưu tiên nêu **ý chính / nguyên nhân cốt lõi** mà sinh viên đã làm đúng (bám đề và mã thật; không bịa nếu bài không thể hiện).
+2) Câu tiếp: **điểm mạnh nổi bật**, cụ thể kỹ thuật (vd. nhóm điều kiện đúng, cú pháp, cách sửa hợp lý…).
+3) Câu cuối bắt đầu bằng “Tuy nhiên,” hoặc “Tuy nhiên cần lưu ý:”: một điểm còn thiếu theo đề + gợi ý hành động rõ ràng.
+
+Bài SQL — sửa lỗi / phân tích độ ưu tiên AND–OR (khi đề hoặc mã liên quan):
+- Câu mở **không** dừng ở “đúng logic lọc chung chung”; nếu bài nộp có phân tích hoặc sửa đúng, hãy nói thẳng **vì sao lệch** (vd. toán tử AND được ưu tiên trước OR nên nhóm điều kiện quận bị hiểu sai, khiến một khu vực không bị lọc theo điểm đánh giá như mong muốn) — diễn đạt bằng tiếng Việt, không lý thuyết dài.
+- Điểm mạnh: nhấn mạnh **câu lệnh sau khi sửa** dùng **ngoặc đơn** nhóm phần OR rồi mới AND với điều kiện điểm (hoặc tương đương đúng) là **chuẩn xác**.
+- Tuy nhiên: nếu trong repo **chỉ thấy bản đúng** mà đề yêu cầu phân tích lỗi / đối chiếu, gợi ý sinh viên **giữ hoặc thêm lại câu truy vấn sai ban đầu** (bản gốc lỗi) cạnh bản đã sửa để **minh họa trực quan** sự khác biệt trước và sau — giúp bài trình bày hoàn chỉnh hơn. Chỉ gợi ý khi thật sự phù hợp bài nộp.
 
 Hình thức:
 - Không markdown, không gạch đầu dòng, không đánh số (1. 2.).
 - Độ dài khoảng 350–520 ký tự (đủ chi tiết nhưng không lan man).
-- Mẫu trích phong cách (nội dung thật phải theo bài nộp, không copy máy móc): «Bài làm đã đáp ứng đúng yêu cầu về … Điểm mạnh nổi bật là … Tuy nhiên, cần bổ sung … theo đề; nên …»
+- Phong cách mục tiêu (SQL sửa lỗi ưu tiên AND/OR — chỉ bắt chước cấu trúc, nội dung theo bài thật): «Bài phân tích đúng nguyên nhân cốt lõi: … Điểm mạnh là câu đã sửa dùng ngoặc đơn … chuẩn xác. Tuy nhiên, nên bổ sung … (vd. câu truy vấn lỗi gốc để đối chiếu trước–sau) …»
 """
 
 # Âm tiết có dấu — dùng để cắt phần tiếng Anh dạo đầu nếu model vẫn lẫn.
@@ -139,9 +144,11 @@ def comment_one(
         {
             "type": "text",
             "text": (
-                "\n\n---\nYÊU CẦU XUẤT (bắt buộc): Viết 2–3 câu nhận xét tiếng Việt liền mạch cho sinh viên, "
-                "đúng cấu trúc: (1) mức độ đáp ứng đề → (2) điểm mạnh cụ thể → (3) “Tuy nhiên,” + điều cần sửa/bổ sung + gợi ý. "
-                "Không tiếng Anh, không giải thích SQL bằng tiếng Anh, không đoạn suy nghĩ đầu câu."
+                "\n\n---\nYÊU CẦU XUẤT (bắt buộc): Viết 2–3 câu tiếng Việt liền mạch: "
+                "(1) nêu rõ sinh viên đã nắm đúng **gì cốt lõi** (vd. bài SQL sửa lỗi thì nói thẳng nguyên nhân do thứ tự ưu tiên AND/OR nếu bài thể hiện) → "
+                "(2) điểm mạnh kỹ thuật cụ thể (vd. ngoặc đơn nhóm OR chuẩn) → "
+                "(3) “Tuy nhiên,” + một gợi ý làm bài **hoàn chỉnh hơn** (vd. nếu chỉ có câu đúng mà đề cần phân tích lỗi: gợi ý thêm câu truy vấn sai gốc để đối chiếu trước–sau). "
+                "Không tiếng Anh, không đoạn suy nghĩ đầu câu."
             ),
         }
     )
