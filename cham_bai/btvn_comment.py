@@ -200,6 +200,26 @@ def _looks_truncated_vi(s: str) -> bool:
     return False
 
 
+def _violates_comment_structure(s: str) -> bool:
+    """
+    Yêu cầu: 2–3 câu, bắt đầu bằng "Bài...", có "Điểm mạnh..." và có "Tuy nhiên," ở câu cuối.
+    Nếu model trả sai cấu trúc (vd. mở đầu bằng "Tuy nhiên"), trigger rewrite.
+    """
+    t = (s or "").strip()
+    if not t:
+        return True
+    if t.startswith(("Tuy nhiên", "Tuy nhiên,", "Tuy nhiên cần")):
+        return True
+    low = t.lower()
+    if "điểm mạnh" not in low:
+        return True
+    if "tuy nhiên" not in low:
+        return True
+    if not (t.startswith("Bài") or t.startswith("Bài làm") or t.startswith("Bài phân")):
+        return True
+    return False
+
+
 def _img_to_data_url(raw: bytes, content_type: str) -> str:
     b64 = base64.b64encode(raw).decode("ascii")
     return f"data:{content_type};base64,{b64}"
@@ -270,7 +290,11 @@ def comment_one(
         timeout_s=300.0,
     )
     cleaned = _vietnamese_comment_only(re.sub(r"\s+", " ", text).strip())
-    if not _needs_vi_rewrite(cleaned) and not _looks_truncated_vi(cleaned):
+    if (
+        not _needs_vi_rewrite(cleaned)
+        and not _looks_truncated_vi(cleaned)
+        and not _violates_comment_structure(cleaned)
+    ):
         return cleaned
 
     # Repair pass: yêu cầu viết lại đúng format tiếng Việt, dựa trên context + output vừa nhận.
@@ -280,6 +304,10 @@ def comment_one(
             "text": (
                 "Hãy VIẾT LẠI nhận xét theo đúng yêu cầu (2–3 câu tiếng Việt, bắt đầu kiểu “Bài…”, có “Tuy nhiên,”), "
                 "độ dài 350–520 ký tự (tối thiểu 320). Không tiếng Anh.\n\n"
+                "CẤU TRÚC BẮT BUỘC (đúng thứ tự):\n"
+                "- Câu 1 bắt đầu bằng “Bài …”: nêu rõ nguyên nhân cốt lõi đã phân tích/đã sửa (vd. AND ưu tiên hơn OR làm điều kiện Quận 1/Quận 3 và rating bị hiểu sai).\n"
+                "- Câu 2 bắt đầu bằng “Điểm mạnh …”: nêu điểm mạnh kỹ thuật rất cụ thể (vd. thêm ngoặc đơn nhóm (Quận 1 OR Quận 3) rồi AND rating > 4.0).\n"
+                "- Câu 3 bắt đầu bằng “Tuy nhiên,”: gợi ý bổ sung đúng theo đề (vd. thêm câu truy vấn sai gốc để đối chiếu trước–sau), tránh chung chung.\n\n"
                 "Dữ liệu bài chấm bên dưới. Không trích dẫn dài SQL tiếng Anh, chỉ diễn đạt bằng tiếng Việt.\n\n"
                 "=== CONTEXT ===\n"
                 + (assignment_text.strip() or "")
@@ -299,14 +327,15 @@ def comment_one(
     )
     cleaned2 = _vietnamese_comment_only(re.sub(r"\s+", " ", text2).strip())
     cleaned2 = cleaned2 or cleaned
-    if _looks_truncated_vi(cleaned2):
-        # Repair lần 2 chỉ để hoàn thiện câu cuối cho trọn ý.
+    if _looks_truncated_vi(cleaned2) or _violates_comment_structure(cleaned2):
+        # Repair lần 2 để sửa cấu trúc / hoàn thiện câu cuối cho trọn ý.
         repair2 = [
             {
                 "type": "text",
                 "text": (
-                    "Nhận xét dưới đây đang bị cụt câu cuối. Hãy viết lại hoàn chỉnh 2–3 câu tiếng Việt, "
-                    "giữ nguyên ý, kết thúc trọn câu có dấu chấm. Không tiếng Anh.\n\n"
+                    "Nhận xét dưới đây đang bị sai cấu trúc hoặc bị cụt. Hãy viết lại hoàn chỉnh 3 câu tiếng Việt, "
+                    "đúng thứ tự bắt buộc: (1) “Bài …” (2) “Điểm mạnh …” (3) “Tuy nhiên,”. "
+                    "Giữ đúng ý, nhưng phải cụ thể theo đề (Quận 1/Quận 3, rating > 4.0, AND/OR ưu tiên) và kết thúc trọn câu. Không tiếng Anh.\n\n"
                     "=== NHẬN XÉT BỊ CỤT ===\n"
                     + cleaned2
                 ),
