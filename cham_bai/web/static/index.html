@@ -168,13 +168,40 @@
             <input type="file" id="q-tpl" name="template_file" accept=".xlsx" />
           </div>
           <div class="field">
-            <label for="q-lecture-docs">Google Docs bài giảng (có thể nhiều link — mỗi dòng 1 link, tương ứng các lesson)</label>
-            <textarea
-              id="q-lecture-docs"
-              name="lecture_gdocs_urls_text"
-              rows="4"
-              placeholder="https://docs.google.com/document/d/.../edit&#10;https://docs.google.com/document/d/.../edit"
-            ></textarea>
+            <label>Google Docs bài giảng (có thể nhiều link)</label>
+            <div id="quiz-lecture-warmup" style="display: none">
+              <div class="row2">
+                <div class="field" style="margin: 0">
+                  <label for="q-lecture-prev-docs">Docs session cũ (mỗi dòng 1 link)</label>
+                  <textarea
+                    id="q-lecture-prev-docs"
+                    name="lecture_prev_gdocs_urls_text"
+                    rows="3"
+                    placeholder="https://docs.google.com/document/d/.../edit"
+                  ></textarea>
+                </div>
+                <div class="field" style="margin: 0">
+                  <label for="q-lecture-curr-docs">Docs session hiện tại (mỗi dòng 1 link)</label>
+                  <textarea
+                    id="q-lecture-curr-docs"
+                    name="lecture_current_gdocs_urls_text"
+                    rows="3"
+                    placeholder="https://docs.google.com/document/d/.../edit"
+                  ></textarea>
+                </div>
+              </div>
+            </div>
+            <div id="quiz-lecture-single">
+              <label for="q-lecture-docs" class="small" style="display:block;margin:.25rem 0 .35rem">
+                (Các loại quiz khác) Docs bài giảng (mỗi dòng 1 link)
+              </label>
+              <textarea
+                id="q-lecture-docs"
+                name="lecture_gdocs_urls_text"
+                rows="4"
+                placeholder="https://docs.google.com/document/d/.../edit&#10;https://docs.google.com/document/d/.../edit"
+              ></textarea>
+            </div>
             <p class="small">Docs phải chia sẻ “Bất kỳ ai có liên kết” — Viewer.</p>
           </div>
           <div class="actions">
@@ -367,6 +394,6 @@
 
       <footer>Chạy local · OpenRouter · không lưu dữ liệu trên server sau khi tải file</footer>
     </div>
-    <script src="/static/app.js?v=20260421_6"></script>
+    <script src="/static/app.js?v=20260421_7"></script>
   </body>
 </html>

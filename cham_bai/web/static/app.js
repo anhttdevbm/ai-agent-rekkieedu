@@ -124,6 +124,12 @@
         delete qn.dataset.prevBeforeWarmup;
       }
     }
+
+    // Lecture docs UI: warmup uses prev/current; others use single
+    const lw = $("#quiz-lecture-warmup");
+    const ls = $("#quiz-lecture-single");
+    if (lw) lw.style.display = warmup ? "" : "none";
+    if (ls) ls.style.display = warmup ? "none" : "";
   }
 
   function tabsSetup() {
@@ -396,12 +402,13 @@
     try {
       const fd = new FormData(ev.target);
       const r = await fetch("/api/group-activity", { method: "POST", body: fd });
-      const data = await r.json().catch(() => ({}));
       if (!r.ok) {
+        const data = await r.json().catch(() => ({}));
         setLog("#gr-log", formatApiErr(data.detail) || JSON.stringify(data), true);
         return;
       }
-      setLog("#gr-log", JSON.stringify(data.result || data, null, 2), false);
+      const txt = await r.text().catch(() => "");
+      setLog("#gr-log", (txt || "").trim(), false);
       $("#gr-status").textContent = "Xong.";
     } catch (e) {
       setLog("#gr-log", String(e), true);

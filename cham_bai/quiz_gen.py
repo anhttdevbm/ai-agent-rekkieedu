@@ -723,7 +723,10 @@ class QuizGenParams:
     model: str
     output_xlsx: Path
     # Tài liệu bài giảng (ưu tiên Google Docs text từ web). Nếu rỗng thì sẽ fallback docx_path.
+    # Backward-compatible: lecture_text (một ô) + lecture_text_prev/current (2 ô cho warmup).
     lecture_text: str = ""
+    lecture_text_prev: str = ""
+    lecture_text_current: str = ""
     subject: str = ""
     session_prev: str = ""
     session_current: str = ""
@@ -856,8 +859,16 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
         if not (params.session or "").strip():
             return False, "Thiếu tên session."
 
-    # Tài liệu bài giảng: ưu tiên text (Google Docs), fallback DOCX (cũ).
+    # Tài liệu bài giảng: warmup có thể dùng 2 nguồn (prev/current).
+    lecture_prev = (params.lecture_text_prev or "").strip()
+    lecture_curr = (params.lecture_text_current or "").strip()
     lecture_text = (params.lecture_text or "").strip()
+    if not lecture_text:
+        # nếu UI dùng 2 ô thì gom lại để các mode khác vẫn có context
+        if lecture_prev and lecture_curr:
+            lecture_text = f"=== SESSION TRƯỚC ===\n{lecture_prev}\n\n=== SESSION HIỆN TẠI ===\n{lecture_curr}"
+        else:
+            lecture_text = lecture_curr or lecture_prev
     docx_text = ""
     if not lecture_text and params.docx_path:
         p = Path(params.docx_path)
@@ -881,7 +892,8 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
         subj = (params.subject or "").strip()
         prev_s = (params.session_prev or "").strip()
         curr_s = (params.session_current or "").strip()
-        docx_excerpt = lecture_text[:9000] if lecture_text.strip() else ""
+        prev_excerpt = (lecture_prev or lecture_text)[:9000] if (lecture_prev or lecture_text).strip() else ""
+        curr_excerpt = (lecture_curr or lecture_text)[:9000] if (lecture_curr or lecture_text).strip() else ""
         m = resolve_model(params.model or None)
         temp0 = max(0.0, min(2.0, float(params.temperature)))
 
@@ -898,6 +910,7 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
             for attempt in range(3):
                 if qkind == QUIZ_KIND_SESSION_WARMUP:
                     if attempt == 0:
+                        docx_excerpt = prev_excerpt if part == "prev" else curr_excerpt
                         msgs = _warmup_block_messages(
                             subject=subj,
                             session_prev=prev_s,
@@ -911,6 +924,7 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
                         msgs = _warmup_block_retry_messages(bad_raw=last_raw, n=n_need, part=part)
                 else:
                     if attempt == 0:
+                        docx_excerpt = curr_excerpt
                         msgs = _end_block_messages(
                             subject=subj,
                             session_current=curr_s,

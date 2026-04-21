@@ -17,7 +17,7 @@ from pathlib import Path
 
 import httpx
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from cham_bai import __version__
@@ -284,6 +284,8 @@ async def api_quiz(
     session_prev: str = Form(""),
     session_current: str = Form(""),
     lecture_gdocs_urls_text: str = Form(""),
+    lecture_prev_gdocs_urls_text: str = Form(""),
+    lecture_current_gdocs_urls_text: str = Form(""),
     num_questions: int = Form(5),
     model: str = Form(""),
     template_file: UploadFile | None = File(None),
@@ -304,38 +306,55 @@ async def api_quiz(
 
     # Lecture source (ưu tiên Google Docs nhiều link; fallback DOCX upload).
     # Allow long URLs to wrap/break into multiple lines: join continuation lines.
-    docs_urls: list[str] = []
-    buf = ""
-    for ln in (lecture_gdocs_urls_text or "").splitlines():
-        s = (ln or "").strip()
-        if not s or s.startswith("#"):
-            continue
-        if s.lower().startswith(("http://", "https://")):
-            if buf:
-                docs_urls.append(buf)
-            buf = s
-        else:
-            # continuation of previous URL (e.g. user pasted and it broke lines)
-            buf = (buf + s) if buf else s
-    if buf:
-        docs_urls.append(buf)
+    def _parse_docs_urls(text: str) -> list[str]:
+        out: list[str] = []
+        buf2 = ""
+        for ln in (text or "").splitlines():
+            s = (ln or "").strip()
+            if not s or s.startswith("#"):
+                continue
+            if s.lower().startswith(("http://", "https://")):
+                if buf2:
+                    out.append(buf2)
+                buf2 = s
+            else:
+                buf2 = (buf2 + s) if buf2 else s
+        if buf2:
+            out.append(buf2)
+        return out
 
-    lecture_text = ""
-    if docs_urls:
+    def _fetch_docs_text(urls: list[str], *, label: str) -> str:
+        if not urls:
+            return ""
         parts: list[str] = []
-        for idx, u in enumerate(docs_urls[:12], start=1):
+        for idx, u in enumerate(urls[:12], start=1):
             if not is_google_docs_url(u):
-                _cleanup_quiz_temp(tmp_tpl, None, None)
-                raise HTTPException(status_code=400, detail=f"Link Google Docs không hợp lệ ở dòng {idx}: {u[:180]}")
+                raise HTTPException(status_code=400, detail=f"Link Google Docs không hợp lệ ({label}, dòng {idx}): {u[:180]}")
             try:
                 txt = fetch_google_doc_plain_text(u)
             except Exception as e:
-                _cleanup_quiz_temp(tmp_tpl, None, None)
-                raise HTTPException(status_code=400, detail=f"Lỗi đọc Google Docs (dòng {idx}): {e}")
+                raise HTTPException(status_code=400, detail=f"Lỗi đọc Google Docs ({label}, dòng {idx}): {e}")
             txt = (txt or "").strip()
             if txt:
-                parts.append(f"=== LESSON DOC {idx} ===\nNguồn: {u}\n\n{txt}\n")
-        lecture_text = ("\n\n".join(parts)).strip()
+                parts.append(f"=== {label} DOC {idx} ===\nNguồn: {u}\n\n{txt}\n")
+        return ("\n\n".join(parts)).strip()
+
+    lecture_text = ""
+    lecture_prev_text = ""
+    lecture_curr_text = ""
+    try:
+        # Warmup: 2 nhóm link (session cũ / session hiện tại)
+        prev_urls = _parse_docs_urls(lecture_prev_gdocs_urls_text)
+        curr_urls = _parse_docs_urls(lecture_current_gdocs_urls_text)
+        lecture_prev_text = _fetch_docs_text(prev_urls, label="SESSION TRƯỚC") if prev_urls else ""
+        lecture_curr_text = _fetch_docs_text(curr_urls, label="SESSION HIỆN TẠI") if curr_urls else ""
+
+        # Fallback: ô 1 nhóm link (cũ)
+        urls_single = _parse_docs_urls(lecture_gdocs_urls_text)
+        lecture_text = _fetch_docs_text(urls_single, label="BÀI GIẢNG") if urls_single else ""
+    except HTTPException:
+        _cleanup_quiz_temp(tmp_tpl, None, None)
+        raise
 
     tmp_docx = await _save_upload_optional(docx_file, ".docx")
     docx_path = Path(tmp_docx) if tmp_docx else None
@@ -387,6 +406,8 @@ async def api_quiz(
         template_xlsx=template_path,
         docx_path=docx_path,
         lecture_text=lecture_text,
+        lecture_text_prev=lecture_prev_text,
+        lecture_text_current=lecture_curr_text,
         lesson=lesson_s,
         session=session_s,
         session_prev=prev_s,
@@ -655,7 +676,7 @@ async def api_group_activity(
     video_transcript: str = Form(...),
     report_file: UploadFile = File(...),
     model: str = Form(""),
-) -> JSONResponse:
+) -> PlainTextResponse:
     try:
         from cham_bai.settings import api_key as _need_key
 
@@ -693,7 +714,7 @@ async def api_group_activity(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    return JSONResponse({"ok": True, "result": result})
+    return PlainTextResponse(result or "", media_type="text/plain; charset=utf-8")
 
 
 @app.post("/api/reading")
