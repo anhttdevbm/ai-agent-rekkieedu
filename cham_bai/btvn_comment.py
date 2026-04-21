@@ -36,7 +36,7 @@ Bài SQL — sửa lỗi / phân tích độ ưu tiên AND–OR (khi đề hoặ
 
 Hình thức:
 - Không markdown, không gạch đầu dòng, không đánh số (1. 2.).
-- Độ dài khoảng 350–520 ký tự (đủ chi tiết nhưng không lan man).
+- Độ dài khoảng 350–520 ký tự (đủ chi tiết nhưng không lan man). TỐI THIỂU 320 ký tự.
 - Phong cách mục tiêu (SQL sửa lỗi ưu tiên AND/OR — chỉ bắt chước cấu trúc, nội dung theo bài thật): «Bài phân tích đúng nguyên nhân cốt lõi: … Điểm mạnh là câu đã sửa dùng ngoặc đơn … chuẩn xác. Tuy nhiên, nên bổ sung … (vd. câu truy vấn lỗi gốc để đối chiếu trước–sau) …»
 """
 
@@ -147,6 +147,10 @@ def _vietnamese_comment_only(raw: str) -> str:
             break
 
     out = " ".join(kept).strip()
+    # Nếu cắt xong quá ngắn (thường do model trả 1 câu hoặc ta lọc quá tay),
+    # ưu tiên trả về bản đã cắt anchor nhưng chưa lọc câu để giữ đủ ý.
+    if out and (len(out) < 240 or len(kept) < 2):
+        return s.strip()
     return out or s.strip()
 
 
@@ -208,7 +212,7 @@ def comment_one(
                 "(1) nêu rõ sinh viên đã nắm đúng **gì cốt lõi** (vd. bài SQL sửa lỗi thì nói thẳng nguyên nhân do thứ tự ưu tiên AND/OR nếu bài thể hiện) → "
                 "(2) điểm mạnh kỹ thuật cụ thể (vd. ngoặc đơn nhóm OR chuẩn) → "
                 "(3) “Tuy nhiên,” + một gợi ý làm bài **hoàn chỉnh hơn** (vd. nếu chỉ có câu đúng mà đề cần phân tích lỗi: gợi ý thêm câu truy vấn sai gốc để đối chiếu trước–sau). "
-                "Không tiếng Anh, không đoạn suy nghĩ đầu câu."
+                "Không tiếng Anh, không đoạn suy nghĩ đầu câu. Độ dài mục tiêu 350–520 ký tự, tối thiểu 320 ký tự."
             ),
         }
     )
