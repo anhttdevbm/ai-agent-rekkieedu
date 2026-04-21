@@ -402,9 +402,12 @@ def run_btvn_comments_json(params: BtvnCommentParams) -> tuple[bool, str, list[d
         repo_err = ""
         bundle = None
         if gh:
-            bundle, err = fetch_repo_sources_bundle(ref, github_token=(params.github_token or "").strip() or None)
+            bundle, err = fetch_repo_sources_bundle(gh, github_token=(params.github_token or "").strip() or None)
             if err:
                 repo_err = err
+                bundle = None
+            elif not bundle or not getattr(bundle, "files", None):
+                repo_err = "Repo không có file mã nguồn đọc được (hoặc toàn binary/ignored)."
                 bundle = None
         else:
             repo_err = "Chỉ hỗ trợ link GitHub (github.com / git@github.com)."

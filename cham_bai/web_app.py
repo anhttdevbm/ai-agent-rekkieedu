@@ -9,6 +9,7 @@ import json
 import os
 import re
 import html as _html
+import hashlib
 import shutil
 import tempfile
 import zipfile
@@ -668,7 +669,19 @@ async def api_btvn(
     if not ok or rows is None:
         raise HTTPException(status_code=500, detail=msg or "Lỗi không xác định.")
 
-    return JSONResponse({"ok": True, "rows": rows})
+    at = (assignment_text or "").strip()
+    fp = hashlib.sha1(at.encode("utf-8", errors="ignore")).hexdigest()[:10] if at else ""
+    return JSONResponse(
+        {
+            "ok": True,
+            "rows": rows,
+            "assignment_fingerprint": {
+                "chars": len(at),
+                "sha1_10": fp,
+                "head": at[:160],
+            },
+        }
+    )
 
 
 @app.post("/api/group-activity")

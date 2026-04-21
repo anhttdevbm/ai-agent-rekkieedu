@@ -332,6 +332,11 @@
       }
       const data = await r.json().catch(() => ({}));
       const rows = (data && data.rows) || [];
+      if (data && data.assignment_fingerprint) {
+        const af = data.assignment_fingerprint;
+        const note = `Đề bài đang dùng: ${af.chars || 0} ký tự, sha1=${af.sha1_10 || ""}\n${(af.head || "").trim()}`;
+        setLog("#b-status", note, false);
+      }
       if (resBody && Array.isArray(rows)) {
         rows.forEach((x) => {
           const tr = document.createElement("tr");
