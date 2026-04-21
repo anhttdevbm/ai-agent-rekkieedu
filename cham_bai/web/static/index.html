@@ -10,7 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/static/style.css?v=20260421_2" />
+    <link rel="stylesheet" href="/static/style.css?v=20260421_3" />
   </head>
   <body>
     <div class="wrap">
@@ -99,7 +99,7 @@
           <strong>Quizz Session đầu giờ</strong> và <strong>Quizz Session cuối giờ</strong> → mặc định
           <strong>example/Quizz_Session_Dau_Gio_Example.xlsx</strong>
           (đúng 45 câu; đầu giờ dùng difficulty 4/5/6/7/8/9; cuối giờ dùng 6/10/11).
-          Có thể kèm DOCX bài giảng (tuỳ chọn).
+          Tài liệu bài giảng: dùng Google Docs (khuyến nghị) để tránh tạo câu hỏi ngoài chương trình.
         </p>
         <details class="hint" id="warmup-dist-hint" style="display: none; margin: 0.5rem 0 0">
           <summary>Phân bổ 45 câu — Session đầu giờ</summary>
@@ -168,8 +168,14 @@
             <input type="file" id="q-tpl" name="template_file" accept=".xlsx" />
           </div>
           <div class="field">
-            <label for="q-docx">DOCX bài giảng (tuỳ chọn)</label>
-            <input type="file" id="q-docx" name="docx_file" accept=".docx" />
+            <label for="q-lecture-docs">Google Docs bài giảng (có thể nhiều link — mỗi dòng 1 link, tương ứng các lesson)</label>
+            <textarea
+              id="q-lecture-docs"
+              name="lecture_gdocs_urls_text"
+              rows="4"
+              placeholder="https://docs.google.com/document/d/.../edit&#10;https://docs.google.com/document/d/.../edit"
+            ></textarea>
+            <p class="small">Docs phải chia sẻ “Bất kỳ ai có liên kết” — Viewer.</p>
           </div>
           <div class="actions">
             <button type="submit" class="primary" id="q-submit">Tạo &amp; tải .xlsx</button>
@@ -336,7 +342,8 @@
         <h2>Chấm hoạt động nhóm</h2>
         <p class="hint">
           Nhập link <strong>báo cáo</strong> (Google Docs/Google Sheets hoặc URL <strong>.xlsx</strong>) và link <strong>video</strong>.
-          Nếu chỉ có link video mà không có transcript/ghi chú, hệ thống sẽ ghi “thiếu dữ liệu video” (không bịa).
+          Transcript tự động: thử Yescribe (có thể <strong>để trống</strong> cookie — server sẽ GET trang generator để lấy <code>uniqueId</code>; nếu vẫn lỗi hãy dán <strong>JSESSIONID</strong> + <strong>uniqueid</strong> từ DevTools hoặc API key), sau đó phụ đề YouTube.
+          Nếu vẫn không có dữ liệu video, hãy dán ghi chú/transcript vào ô bên dưới.
         </p>
         <form id="form-group">
           <div class="field">
@@ -346,6 +353,18 @@
           <div class="field">
             <label for="gr-video">Link video</label>
             <input type="url" id="gr-video" name="video_url" placeholder="https://..." required />
+          </div>
+          <div class="field">
+            <label for="gr-yescribe">Yescribe API key (tuỳ chọn — nếu tài khoản có cấp key)</label>
+            <input type="password" id="gr-yescribe" name="yescribe_token" autocomplete="off" placeholder="YESCRIBE_API_KEY trên server" />
+          </div>
+          <div class="field">
+            <label for="gr-yescribe-uid">Yescribe uniqueid (tuỳ chọn — copy từ Request Headers trên DevTools)</label>
+            <input type="text" id="gr-yescribe-uid" name="yescribe_uniqueid" autocomplete="off" spellcheck="false" placeholder="Ví dụ: 9bcf0c639c675368edc9bd71e93e1921" />
+          </div>
+          <div class="field">
+            <label for="gr-yescribe-cookie">Yescribe Cookie — JSESSIONID (tuỳ chọn, dán nguyên dòng Cookie hoặc chỉ JSESSIONID=...)</label>
+            <input type="password" id="gr-yescribe-cookie" name="yescribe_cookie" autocomplete="off" placeholder="JSESSIONID=A09F9EF1552C33A2..." />
           </div>
           <div class="field">
             <label for="gr-notes">Ghi chú / transcript video (tuỳ chọn nhưng khuyến nghị)</label>
@@ -365,6 +384,6 @@
 
       <footer>Chạy local · OpenRouter · không lưu dữ liệu trên server sau khi tải file</footer>
     </div>
-    <script src="/static/app.js?v=20260421_2"></script>
+    <script src="/static/app.js?v=20260421_5"></script>
   </body>
 </html>

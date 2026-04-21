@@ -353,7 +353,11 @@ def _end_block_messages(
         "Yêu cầu: mọi object phải có part='current'.\n"
     )
     if docx_excerpt.strip():
-        user += f"\nNội dung bài giảng (DOCX, trích):\n---\n{docx_excerpt}\n---\n"
+        user += f"\nNội dung bài giảng (trích từ tài liệu cung cấp):\n---\n{docx_excerpt}\n---\n"
+        user += (
+            "\nRàng buộc nội dung: chỉ tạo câu hỏi dựa trên thông tin có trong tài liệu. "
+            "Nếu tài liệu không có thì KHÔNG được tự bịa thêm ngoài chương trình.\n"
+        )
     sys = (
         "Chỉ output DUY NHẤT một mảng JSON hợp lệ gồm đúng "
         f"{n} object. Không markdown, không ```, không chữ ngoài mảng.\n"
@@ -497,7 +501,11 @@ def _warmup_block_messages(
         f"Yêu cầu: mọi object phải có part='{part_norm}'.\n"
     )
     if docx_excerpt.strip():
-        user += f"\nNội dung bài giảng (DOCX, trích):\n---\n{docx_excerpt}\n---\n"
+        user += f"\nNội dung bài giảng (trích từ tài liệu cung cấp):\n---\n{docx_excerpt}\n---\n"
+        user += (
+            "\nRàng buộc nội dung: chỉ tạo câu hỏi dựa trên thông tin có trong tài liệu. "
+            "Nếu tài liệu không có thì KHÔNG được tự bịa thêm ngoài chương trình.\n"
+        )
     sys = (
         "Chỉ output DUY NHẤT một mảng JSON hợp lệ gồm đúng "
         f"{n} object. Không markdown, không ```, không chữ ngoài mảng.\n"
@@ -714,6 +722,8 @@ class QuizGenParams:
     num_questions: int
     model: str
     output_xlsx: Path
+    # Tài liệu bài giảng (ưu tiên Google Docs text từ web). Nếu rỗng thì sẽ fallback docx_path.
+    lecture_text: str = ""
     subject: str = ""
     session_prev: str = ""
     session_current: str = ""
@@ -846,8 +856,10 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
         if not (params.session or "").strip():
             return False, "Thiếu tên session."
 
+    # Tài liệu bài giảng: ưu tiên text (Google Docs), fallback DOCX (cũ).
+    lecture_text = (params.lecture_text or "").strip()
     docx_text = ""
-    if params.docx_path:
+    if not lecture_text and params.docx_path:
         p = Path(params.docx_path)
         if not p.is_file():
             return False, f"Không tìm thấy file DOCX: {p}"
@@ -855,6 +867,7 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
             docx_text = _extract_docx_plain(p)
         except Exception as e:
             return False, f"Lỗi đọc DOCX: {e}"
+        lecture_text = (docx_text or "").strip()
 
     # Quizz session đầu giờ / cuối giờ: 45 câu, 1 hàng / câu theo header warmup
     if qkind in (QUIZ_KIND_SESSION_WARMUP, QUIZ_KIND_SESSION_END):
@@ -868,7 +881,7 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
         subj = (params.subject or "").strip()
         prev_s = (params.session_prev or "").strip()
         curr_s = (params.session_current or "").strip()
-        docx_excerpt = docx_text[:9000] if docx_text.strip() else ""
+        docx_excerpt = lecture_text[:9000] if lecture_text.strip() else ""
         m = resolve_model(params.model or None)
         temp0 = max(0.0, min(2.0, float(params.temperature)))
 
@@ -987,11 +1000,11 @@ Khung 5 câu — trên Excel, cột «Mức độ» đúng 5 nhãn (đã cố đ
 Chi tiết mục tiêu & mức độ từng câu:
 {spec_lines}
 """
-        if docx_text.strip():
+        if lecture_text.strip():
             user += f"""
-Nội dung bài giảng (DOCX):
+Nội dung bài giảng (tài liệu cung cấp):
 ---
-{docx_text[:12000]}
+{lecture_text[:12000]}
 ---
 """
         else:
@@ -1024,11 +1037,11 @@ Nội dung bài giảng (DOCX):
 Định dạng JSON xem system: mỗi câu là object với khóa stt, q, a, b, c, d, ans (chỉ ASCII).
 Chương trình sẽ tự ghép vào đúng cột Excel mẫu — không dùng tên cột tiếng Việt làm khóa JSON.
 """
-        if docx_text.strip():
+        if lecture_text.strip():
             user += f"""
-Nội dung bài giảng (DOCX):
+Nội dung bài giảng (tài liệu cung cấp):
 ---
-{docx_text[:12000]}
+{lecture_text[:12000]}
 ---
 """
         else:

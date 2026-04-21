@@ -21,7 +21,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from cham_bai import __version__
-from cham_bai.gdocs_reader import is_google_docs_url
+from cham_bai.gdocs_reader import fetch_google_doc_plain_text, is_google_docs_url
 from cham_bai.git_remote import normalize_github_repo_url
 from cham_bai.model_options import (
     DEFAULT_BTVN_MODEL,
@@ -283,6 +283,7 @@ async def api_quiz(
     session: str = Form(""),
     session_prev: str = Form(""),
     session_current: str = Form(""),
+    lecture_gdocs_urls_text: str = Form(""),
     num_questions: int = Form(5),
     model: str = Form(""),
     template_file: UploadFile | None = File(None),
@@ -300,6 +301,31 @@ async def api_quiz(
         template_path = ensure_session_warmup_quiz_example_template()
     else:
         template_path = ensure_default_quiz_template()
+
+    # Lecture source (ưu tiên Google Docs nhiều link; fallback DOCX upload).
+    docs_urls: list[str] = []
+    for ln in (lecture_gdocs_urls_text or "").splitlines():
+        u = ln.strip()
+        if not u or u.startswith("#"):
+            continue
+        docs_urls.append(u)
+
+    lecture_text = ""
+    if docs_urls:
+        parts: list[str] = []
+        for idx, u in enumerate(docs_urls[:12], start=1):
+            if not is_google_docs_url(u):
+                _cleanup_quiz_temp(tmp_tpl, None, None)
+                raise HTTPException(status_code=400, detail=f"Link Google Docs không hợp lệ ở dòng {idx}: {u[:180]}")
+            try:
+                txt = fetch_google_doc_plain_text(u)
+            except Exception as e:
+                _cleanup_quiz_temp(tmp_tpl, None, None)
+                raise HTTPException(status_code=400, detail=f"Lỗi đọc Google Docs (dòng {idx}): {e}")
+            txt = (txt or "").strip()
+            if txt:
+                parts.append(f"=== LESSON DOC {idx} ===\nNguồn: {u}\n\n{txt}\n")
+        lecture_text = ("\n\n".join(parts)).strip()
 
     tmp_docx = await _save_upload_optional(docx_file, ".docx")
     docx_path = Path(tmp_docx) if tmp_docx else None
@@ -350,6 +376,7 @@ async def api_quiz(
     params = QuizGenParams(
         template_xlsx=template_path,
         docx_path=docx_path,
+        lecture_text=lecture_text,
         lesson=lesson_s,
         session=session_s,
         session_prev=prev_s,
@@ -618,6 +645,9 @@ async def api_group_activity(
     report_url: str = Form(""),
     video_url: str = Form(...),
     video_notes: str = Form(""),
+    yescribe_token: str = Form(""),
+    yescribe_uniqueid: str = Form(""),
+    yescribe_cookie: str = Form(""),
     model: str = Form(""),
 ) -> JSONResponse:
     try:
@@ -633,6 +663,9 @@ async def api_group_activity(
         video_url=(video_url or "").strip(),
         video_notes=(video_notes or "").strip(),
         model=m,
+        yescribe_token=(yescribe_token or "").strip(),
+        yescribe_uniqueid=(yescribe_uniqueid or "").strip(),
+        yescribe_cookie=(yescribe_cookie or "").strip(),
     )
 
     loop = asyncio.get_event_loop()

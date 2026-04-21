@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -18,6 +19,7 @@ from cham_bai.gdocs_reader import (
 )
 from cham_bai.openrouter import complete_chat_raw
 from cham_bai.schemas import parse_llm_json
+from cham_bai.video_transcript import fetch_youtube_transcript_plain
 
 
 @dataclass
@@ -26,6 +28,9 @@ class GroupGradeParams:
     video_url: str
     video_notes: str
     model: str
+    yescribe_token: str = ""
+    yescribe_uniqueid: str = ""
+    yescribe_cookie: str = ""
 
 
 _SYSTEM = """Bạn là giảng viên chấm HOẠT ĐỘNG NHÓM.
@@ -54,6 +59,7 @@ CHỈ trả về một JSON hợp lệ theo schema:
 """
 
 _YT_ID_RE = re.compile(r"(?:v=|/shorts/|youtu\.be/)(?P<id>[A-Za-z0-9_-]{6,})", re.I)
+_YESCRIBE_BOOTSTRAP_URL = "https://yescribe.ai/vi/youtube-transcript-generator"
 
 
 def _extract_youtube_id(url: str) -> str | None:
@@ -72,12 +78,20 @@ def _strip_xml_tags(s: str) -> str:
 
 def fetch_youtube_transcript_text(video_url: str) -> tuple[str, list[str]]:
     """
-    Best-effort: dùng timedtext public endpoint. Nếu video không có caption public -> trả rỗng.
+    Best-effort: youtube-transcript-api trước, rồi timedtext public. Nếu video không có caption -> trả rỗng.
     """
     warns: list[str] = []
+    text_lib, err_lib = fetch_youtube_transcript_plain(video_url, max_chars=22000)
+    if (text_lib or "").strip():
+        warns.append("Đã lấy transcript YouTube qua youtube-transcript-api.")
+        return text_lib.strip(), warns
+    if err_lib:
+        warns.append(f"youtube-transcript-api: {err_lib}")
+
     vid = _extract_youtube_id(video_url)
     if not vid:
-        return "", []
+        warns.append("Không nhận diện được ID video YouTube.")
+        return "", warns
     # thử tiếng Việt trước, rồi fallback English + auto
     candidates = [
         f"https://www.youtube.com/api/timedtext?lang=vi&v={vid}",
@@ -96,7 +110,7 @@ def fetch_youtube_transcript_text(video_url: str) -> tuple[str, list[str]]:
                     continue
                 text = _strip_xml_tags(t)
                 # timedtext thường rất ngắn nếu không có caption
-                if len(text) >= 200:
+                if len(text) >= 80:
                     if "lang=vi" in u:
                         warns.append("Đã lấy transcript YouTube (vi) từ timedtext.")
                     elif "lang=en" in u:
@@ -110,74 +124,198 @@ def fetch_youtube_transcript_text(video_url: str) -> tuple[str, list[str]]:
     return "", warns
 
 
-def fetch_yescribe_transcript_text(video_url: str) -> tuple[str, list[str]]:
+def _yescribe_auth_header_variants(token: str) -> list[dict[str, str]]:
+    t = (token or "").strip()
+    if not t:
+        return [{}]
+    low = t.lower()
+    out: list[dict[str, str]] = []
+    if low.startswith("bearer "):
+        out.append({"Authorization": t})
+    else:
+        out.append({"Authorization": f"Bearer {t}"})
+        out.append({"X-API-Key": t})
+        out.append({"Authorization": t})
+    # giữ thứ tự, bỏ trùng
+    seen: set[tuple[tuple[str, str], ...]] = set()
+    uniq: list[dict[str, str]] = []
+    for h in out:
+        key = tuple(sorted(h.items()))
+        if key not in seen:
+            seen.add(key)
+            uniq.append(h)
+    return uniq
+
+
+def _yescribe_read_uniqueid_from_cookies(client: httpx.Client) -> str:
+    for name in ("uniqueId", "uniqueid", "UniqueId"):
+        try:
+            v = client.cookies.get(name)
+            if v:
+                return str(v).strip()
+        except Exception:
+            continue
+    return ""
+
+
+def _yescribe_bootstrap_session(client: httpx.Client, *, user_agent: str, accept_language: str) -> list[str]:
+    """GET trang web để nhận cookie (uniqueId, v.v.). JSESSIONID thường do api.yescribe.ai set ở lần POST sau."""
+    w: list[str] = []
+    try:
+        r = client.get(
+            _YESCRIBE_BOOTSTRAP_URL,
+            headers={
+                "User-Agent": user_agent,
+                "Accept": (
+                    "text/html,application/xhtml+xml,application/xml;q=0.9,"
+                    "image/avif,image/webp,*/*;q=0.8"
+                ),
+                "Accept-Language": accept_language,
+                "Upgrade-Insecure-Requests": "1",
+                "Sec-Fetch-Dest": "document",
+                "Sec-Fetch-Mode": "navigate",
+                "Sec-Fetch-Site": "none",
+                "Referer": "https://yescribe.ai/",
+            },
+        )
+        if r.status_code != 200:
+            w.append(f"Yescribe bootstrap GET HTTP {r.status_code}.")
+        elif _yescribe_read_uniqueid_from_cookies(client):
+            w.append("Yescribe: đã tải trang generator — có cookie uniqueId cho API.")
+        else:
+            w.append(
+                "Yescribe bootstrap: không thấy cookie uniqueId (có thể trang tạo id bằng JS — hãy dán uniqueid thủ công)."
+            )
+    except Exception as e:
+        w.append(f"Yescribe bootstrap GET lỗi: {e}")
+    return w
+
+
+def fetch_yescribe_transcript_text(
+    video_url: str,
+    *,
+    api_token: str | None = None,
+    uniqueid: str | None = None,
+    cookie: str | None = None,
+) -> tuple[str, list[str]]:
     """
-    Lấy transcript qua API yescribe.ai (nếu có token/khả dụng).
-    Endpoint người dùng đưa: /api/v1/yescribe/record/getVideoDetail
+    Lấy transcript qua API yescribe.ai.
+
+    Trình duyệt thường gửi kèm header ``uniqueid`` và cookie phiên ``JSESSIONID`` (không phải Bearer).
+    Có thể dán từ DevTools → Request Headers, hoặc dùng API key qua ô token / YESCRIBE_API_KEY.
+
+    Nếu **không** dán cookie và **không** có API key: tự **GET** trang
+    ``/vi/youtube-transcript-generator`` để lấy cookie ``uniqueId`` (giống mở trang trên trình duyệt),
+    rồi POST — ``JSESSIONID`` có thể xuất hiện sau lần gọi API đầu (sẽ thử POST lại một lần).
     """
     warns: list[str] = []
     u = (video_url or "").strip()
     if not u:
         return "", warns
-    vid = _extract_youtube_id(u)
+    env_tok = (os.getenv("YESCRIBE_API_KEY") or os.getenv("YESCRIBE_TOKEN") or "").strip()
+    token = ((api_token or "").strip() or env_tok).strip()
+    env_uid = (os.getenv("YESCRIBE_UNIQUEID") or "").strip()
+    uid = ((uniqueid or "").strip() or env_uid).strip()
+    env_ck = (os.getenv("YESCRIBE_COOKIE") or "").strip()
+    ck = ((cookie or "").strip() or env_ck).strip()
+    use_manual_cookie = bool(ck)
+
+    if not token and not uid and not ck:
+        warns.append(
+            "Yescribe: chưa nhập gì — sẽ thử tải trang generator để lấy cookie; nếu vẫn Unauthorized hãy dán Cookie JSESSIONID + uniqueid từ DevTools."
+        )
+
     # Theo payload bạn đưa: {"videoUrl":"..."}
     payloads: list[dict[str, Any]] = [{"videoUrl": u}]
-    # Best-effort: bắt chước request từ browser để tránh bị chặn.
-    headers = {
-        "User-Agent": "AgentEdu/1.0",
+    ua = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+    )
+    accept_language = "vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7"
+    api_headers_base: dict[str, str] = {
+        "User-Agent": ua,
         "Content-Type": "application/json",
         "Accept": "application/json, text/plain, */*",
+        "Accept-Language": accept_language,
         "Origin": "https://yescribe.ai",
-        "Referer": "https://yescribe.ai/",
+        "Referer": "https://yescribe.ai/vi/youtube-transcript-generator",
+        "Sec-Fetch-Dest": "empty",
+        "Sec-Fetch-Mode": "cors",
+        "Sec-Fetch-Site": "same-site",
     }
 
     endpoint = "https://api.yescribe.ai/api/v1/yescribe/record/getVideoDetail"
+    auth_opts = _yescribe_auth_header_variants(token)
     with httpx.Client(timeout=60.0, follow_redirects=True) as client:
-        for p in payloads:
-            try:
-                r = client.post(endpoint, headers=headers, json=p)
-                if r.status_code != 200:
-                    warns.append(f"Yescribe HTTP {r.status_code}.")
-                    continue
-                data = r.json()
-            except Exception:
-                warns.append("Yescribe lỗi gọi API hoặc parse JSON.")
-                continue
-            try:
-                if int(data.get("code", 0)) != 200:
-                    warns.append(f"Yescribe code={data.get('code')}, msg={data.get('msg')}.")
-                    continue
-            except Exception:
-                continue
-            d = data.get("data")
-            if not isinstance(d, dict):
-                continue
-            ts = d.get("tranScript") or d.get("transcript") or d.get("tran_script")
-            if not isinstance(ts, list) or not ts:
-                continue
-            lines: list[str] = []
-            for item in ts[:1200]:
-                if not isinstance(item, dict):
-                    continue
-                text = str(item.get("text") or "").strip()
-                if not text:
-                    continue
-                start = item.get("start")
-                try:
-                    st = float(start)
-                    mm = int(st // 60)
-                    ss = int(st % 60)
-                    prefix = f"{mm:02d}:{ss:02d} "
-                except Exception:
-                    prefix = ""
-                lines.append(prefix + text)
-            body = "\n".join(lines).strip()
-            if len(body) >= 200:
-                warns.append("Đã lấy transcript từ Yescribe.")
-                return body, warns
-            break
+        if not token and not use_manual_cookie:
+            warns.extend(_yescribe_bootstrap_session(client, user_agent=ua, accept_language=accept_language))
+            if not uid:
+                uid = _yescribe_read_uniqueid_from_cookies(client)
 
-    warns.append("Không lấy được transcript từ Yescribe (không có transcript hoặc bị chặn).")
+        for auth_extra in auth_opts:
+            for p in payloads:
+                for attempt in range(2):
+                    headers = {**api_headers_base, **auth_extra}
+                    if uid:
+                        headers["uniqueid"] = uid
+                    if use_manual_cookie:
+                        headers["Cookie"] = ck
+                    try:
+                        r = client.post(endpoint, headers=headers, json=p)
+                        if r.status_code != 200:
+                            warns.append(f"Yescribe HTTP {r.status_code}.")
+                            break
+                        data = r.json()
+                    except Exception:
+                        warns.append("Yescribe lỗi gọi API hoặc parse JSON.")
+                        break
+                    try:
+                        code = int(data.get("code", 0))
+                    except Exception:
+                        code = 0
+                    msg = str(data.get("msg") or "")
+                    if code != 200:
+                        warns.append(f"Yescribe code={data.get('code')}, msg={data.get('msg')}.")
+                        low = msg.lower()
+                        if (
+                            attempt == 0
+                            and not use_manual_cookie
+                            and ("unauthorized" in low or code == 400)
+                        ):
+                            warns.append("Yescribe: thử POST lần 2 sau khi server có thể đã gửi JSESSIONID.")
+                            continue
+                        break
+                    d = data.get("data")
+                    if not isinstance(d, dict):
+                        break
+                    ts = d.get("tranScript") or d.get("transcript") or d.get("tran_script")
+                    if not isinstance(ts, list) or not ts:
+                        break
+                    lines: list[str] = []
+                    for item in ts[:1200]:
+                        if not isinstance(item, dict):
+                            continue
+                        text = str(item.get("text") or "").strip()
+                        if not text:
+                            continue
+                        start = item.get("start")
+                        try:
+                            st = float(start)
+                            mm = int(st // 60)
+                            ss = int(st % 60)
+                            prefix = f"{mm:02d}:{ss:02d} "
+                        except Exception:
+                            prefix = ""
+                        lines.append(prefix + text)
+                    body = "\n".join(lines).strip()
+                    if len(body) >= 80:
+                        warns.append("Đã lấy transcript từ Yescribe.")
+                        return body, warns
+                    break
+
+    warns.append(
+        "Không lấy được transcript từ Yescribe (thiếu phiên cookie/uniqueid, API key không hợp lệ, hoặc không có transcript)."
+    )
     return "", warns
 
 
@@ -243,7 +381,12 @@ def grade_group_activity(params: GroupGradeParams) -> dict[str, Any]:
     video_notes = (params.video_notes or "").strip()
     transcript_source = "none"
     if video_url and not video_notes:
-        t2, w2 = fetch_yescribe_transcript_text(video_url)
+        t2, w2 = fetch_yescribe_transcript_text(
+            video_url,
+            api_token=params.yescribe_token,
+            uniqueid=params.yescribe_uniqueid,
+            cookie=params.yescribe_cookie,
+        )
         warns.extend(w2)
         if t2:
             video_notes = t2

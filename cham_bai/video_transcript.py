@@ -25,7 +25,7 @@ def fetch_youtube_transcript_plain(url: str, *, max_chars: int = 14000) -> tuple
     Trả về (text, lỗi): nếu thành công, lỗi là chuỗi rỗng.
     """
     try:
-        from youtube_transcript_api import YouTubeTranscriptApi  # type: ignore[import-untyped]
+        from youtube_transcript_api import NoTranscriptFound, YouTubeTranscriptApi  # type: ignore[import-untyped]
     except ImportError:
         return None, (
             "Chưa cài thư viện youtube-transcript-api. Chạy: pip install youtube-transcript-api"
@@ -35,14 +35,30 @@ def fetch_youtube_transcript_plain(url: str, *, max_chars: int = 14000) -> tuple
     if not vid:
         return None, "Không nhận diện được ID video YouTube. Dùng link dạng youtube.com/watch?v=... hoặc youtu.be/..."
 
+    ytt = YouTubeTranscriptApi()
+    fetched = None
     try:
-        data = YouTubeTranscriptApi.get_transcript(vid, languages=["vi", "en"])
+        fetched = ytt.fetch(vid, languages=["vi", "en"])
+    except NoTranscriptFound:
+        try:
+            tl = ytt.list(vid)
+            try:
+                tr = tl.find_generated_transcript(["vi", "en"])
+            except Exception:
+                tr = next(iter(tl), None)
+            if tr is not None:
+                fetched = tr.fetch()
+        except Exception:
+            fetched = None
     except Exception as e:
         return None, (
-            f"Không lấy được phụ đề (video cần có phụ đề việt hoặc anh, không tắt transcript): {e}"
+            f"Không lấy được phụ đề (video cần có phụ đề/caption khả dụng, không tắt transcript): {e}"
         )
 
-    lines = [str(item.get("text", "")).strip() for item in data if item.get("text")]
+    if fetched is None:
+        return None, "Không lấy được phụ đề (không có bản vi/en hoặc video chặn transcript)."
+
+    lines = [str(s.text or "").strip() for s in fetched.snippets if s.text]
     text = "\n".join(lines).strip()
     if not text:
         return None, "Phụ đề rỗng."
