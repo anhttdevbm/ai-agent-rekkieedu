@@ -341,34 +341,17 @@
       <section class="panel" id="panel-group">
         <h2>Chấm hoạt động nhóm</h2>
         <p class="hint">
-          Nhập link <strong>báo cáo</strong> (Google Docs/Google Sheets hoặc URL <strong>.xlsx</strong>) và link <strong>video</strong>.
-          Transcript tự động: thử Yescribe (có thể <strong>để trống</strong> cookie — server sẽ GET trang generator để lấy <code>uniqueId</code>; nếu vẫn lỗi hãy dán <strong>JSESSIONID</strong> + <strong>uniqueid</strong> từ DevTools hoặc API key), sau đó phụ đề YouTube.
-          Nếu vẫn không có dữ liệu video, hãy dán ghi chú/transcript vào ô bên dưới.
+          Upload <strong>báo cáo</strong> và dán <strong>transcript/ghi chú video</strong>.
+          Hệ thống chỉ đánh giá dựa trên nội dung bạn cung cấp (không bịa nếu thiếu dữ liệu).
         </p>
-        <form id="form-group">
+        <form id="form-group" enctype="multipart/form-data">
           <div class="field">
-            <label for="gr-report">Link báo cáo (Docs/Sheets/.xlsx)</label>
-            <input type="url" id="gr-report" name="report_url" placeholder="(Tuỳ chọn) https://docs.google.com/... hoặc https://.../report.xlsx" />
+            <label for="gr-report-file">File báo cáo (DOCX hoặc XLSX)</label>
+            <input type="file" id="gr-report-file" name="report_file" accept=".docx,.xlsx" required />
           </div>
           <div class="field">
-            <label for="gr-video">Link video</label>
-            <input type="url" id="gr-video" name="video_url" placeholder="https://..." required />
-          </div>
-          <div class="field">
-            <label for="gr-yescribe">Yescribe API key (tuỳ chọn — nếu tài khoản có cấp key)</label>
-            <input type="password" id="gr-yescribe" name="yescribe_token" autocomplete="off" placeholder="YESCRIBE_API_KEY trên server" />
-          </div>
-          <div class="field">
-            <label for="gr-yescribe-uid">Yescribe uniqueid (tuỳ chọn — copy từ Request Headers trên DevTools)</label>
-            <input type="text" id="gr-yescribe-uid" name="yescribe_uniqueid" autocomplete="off" spellcheck="false" placeholder="Ví dụ: 9bcf0c639c675368edc9bd71e93e1921" />
-          </div>
-          <div class="field">
-            <label for="gr-yescribe-cookie">Yescribe Cookie — JSESSIONID (tuỳ chọn, dán nguyên dòng Cookie hoặc chỉ JSESSIONID=...)</label>
-            <input type="password" id="gr-yescribe-cookie" name="yescribe_cookie" autocomplete="off" placeholder="JSESSIONID=A09F9EF1552C33A2..." />
-          </div>
-          <div class="field">
-            <label for="gr-notes">Ghi chú / transcript video (tuỳ chọn nhưng khuyến nghị)</label>
-            <textarea id="gr-notes" name="video_notes" rows="6" placeholder="Dán transcript hoặc ghi chú quan sát..."></textarea>
+            <label for="gr-transcript">Transcript / ghi chú video</label>
+            <textarea id="gr-transcript" name="video_transcript" rows="10" placeholder="Dán transcript hoặc ghi chú quan sát..." required></textarea>
           </div>
           <div class="field">
             <label for="gr-model">Model OpenRouter</label>
@@ -384,6 +367,6 @@
 
       <footer>Chạy local · OpenRouter · không lưu dữ liệu trên server sau khi tải file</footer>
     </div>
-    <script src="/static/app.js?v=20260421_5"></script>
+    <script src="/static/app.js?v=20260421_6"></script>
   </body>
 </html>

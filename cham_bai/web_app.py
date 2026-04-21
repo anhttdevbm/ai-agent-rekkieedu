@@ -303,12 +303,22 @@ async def api_quiz(
         template_path = ensure_default_quiz_template()
 
     # Lecture source (ưu tiên Google Docs nhiều link; fallback DOCX upload).
+    # Allow long URLs to wrap/break into multiple lines: join continuation lines.
     docs_urls: list[str] = []
+    buf = ""
     for ln in (lecture_gdocs_urls_text or "").splitlines():
-        u = ln.strip()
-        if not u or u.startswith("#"):
+        s = (ln or "").strip()
+        if not s or s.startswith("#"):
             continue
-        docs_urls.append(u)
+        if s.lower().startswith(("http://", "https://")):
+            if buf:
+                docs_urls.append(buf)
+            buf = s
+        else:
+            # continuation of previous URL (e.g. user pasted and it broke lines)
+            buf = (buf + s) if buf else s
+    if buf:
+        docs_urls.append(buf)
 
     lecture_text = ""
     if docs_urls:
@@ -642,12 +652,8 @@ async def api_btvn(
 
 @app.post("/api/group-activity")
 async def api_group_activity(
-    report_url: str = Form(""),
-    video_url: str = Form(...),
-    video_notes: str = Form(""),
-    yescribe_token: str = Form(""),
-    yescribe_uniqueid: str = Form(""),
-    yescribe_cookie: str = Form(""),
+    video_transcript: str = Form(...),
+    report_file: UploadFile = File(...),
     model: str = Form(""),
 ) -> JSONResponse:
     try:
@@ -658,14 +664,23 @@ async def api_group_activity(
         raise HTTPException(status_code=400, detail=str(e))
 
     m = (model or os.getenv("OPENROUTER_MODEL", "anthropic/claude-sonnet-4.6")).strip()
+    vt = (video_transcript or "").strip()
+    if not vt:
+        raise HTTPException(status_code=400, detail="Thiếu transcript/ghi chú video.")
+
+    if not report_file or not report_file.filename:
+        raise HTTPException(status_code=400, detail="Thiếu file báo cáo.")
+    raw = await report_file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="File báo cáo rỗng.")
+    if len(raw) > 12_000_000:
+        raise HTTPException(status_code=400, detail="File báo cáo quá lớn (>12MB).")
+    fname = str(report_file.filename or "").strip()
     params = GroupGradeParams(
-        report_url=(report_url or "").strip(),
-        video_url=(video_url or "").strip(),
-        video_notes=(video_notes or "").strip(),
+        report_filename=fname,
+        report_bytes=raw,
+        video_transcript=vt,
         model=m,
-        yescribe_token=(yescribe_token or "").strip(),
-        yescribe_uniqueid=(yescribe_uniqueid or "").strip(),
-        yescribe_cookie=(yescribe_cookie or "").strip(),
     )
 
     loop = asyncio.get_event_loop()
