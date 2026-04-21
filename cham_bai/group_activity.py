@@ -17,6 +17,7 @@ from cham_bai.gdocs_reader import (
     is_google_sheet_url,
 )
 from cham_bai.openrouter import complete_chat_raw
+from cham_bai.schemas import parse_llm_json
 
 
 @dataclass
@@ -24,6 +25,7 @@ class GroupGradeParams:
     report_url: str
     video_url: str
     video_notes: str
+    yescribe_token: str
     model: str
 
 
@@ -109,6 +111,78 @@ def fetch_youtube_transcript_text(video_url: str) -> tuple[str, list[str]]:
     return "", warns
 
 
+def fetch_yescribe_transcript_text(
+    video_url: str, *, yescribe_token: str = ""
+) -> tuple[str, list[str]]:
+    """
+    Lấy transcript qua API yescribe.ai (nếu có token/khả dụng).
+    Endpoint người dùng đưa: /api/v1/yescribe/record/getVideoDetail
+    """
+    warns: list[str] = []
+    u = (video_url or "").strip()
+    if not u:
+        return "", warns
+    vid = _extract_youtube_id(u)
+    payloads: list[dict[str, Any]] = []
+    # best-effort nhiều key vì không có docs chính thức
+    payloads.append({"videoUrl": u})
+    if vid:
+        payloads.append({"videoId": vid})
+        payloads.append({"url": u, "videoId": vid})
+    payloads.append({"url": u})
+
+    headers = {"User-Agent": "AgentEdu/1.0", "Content-Type": "application/json"}
+    t = (yescribe_token or "").strip()
+    if t:
+        headers["Authorization"] = t if t.lower().startswith("bearer ") else ("Bearer " + t)
+
+    endpoint = "https://api.yescribe.ai/api/v1/yescribe/record/getVideoDetail"
+    with httpx.Client(timeout=60.0, follow_redirects=True) as client:
+        for p in payloads:
+            try:
+                r = client.post(endpoint, headers=headers, json=p)
+                if r.status_code != 200:
+                    continue
+                data = r.json()
+            except Exception:
+                continue
+            try:
+                if int(data.get("code", 0)) != 200:
+                    continue
+            except Exception:
+                continue
+            d = data.get("data")
+            if not isinstance(d, dict):
+                continue
+            ts = d.get("tranScript") or d.get("transcript") or d.get("tran_script")
+            if not isinstance(ts, list) or not ts:
+                continue
+            lines: list[str] = []
+            for item in ts[:1200]:
+                if not isinstance(item, dict):
+                    continue
+                text = str(item.get("text") or "").strip()
+                if not text:
+                    continue
+                start = item.get("start")
+                try:
+                    st = float(start)
+                    mm = int(st // 60)
+                    ss = int(st % 60)
+                    prefix = f"{mm:02d}:{ss:02d} "
+                except Exception:
+                    prefix = ""
+                lines.append(prefix + text)
+            body = "\n".join(lines).strip()
+            if len(body) >= 200:
+                warns.append("Đã lấy transcript từ Yescribe.")
+                return body, warns
+            break
+
+    warns.append("Không lấy được transcript từ Yescribe (thiếu token, không hỗ trợ video, hoặc bị chặn).")
+    return "", warns
+
+
 def _wb_to_text(xlsx_bytes: bytes, *, max_cells: int = 2500) -> str:
     wb = load_workbook(filename=io.BytesIO(xlsx_bytes), data_only=True)  # type: ignore[name-defined]
     parts: list[str] = []
@@ -170,10 +244,15 @@ def grade_group_activity(params: GroupGradeParams) -> dict[str, Any]:
     video_url = (params.video_url or "").strip()
     video_notes = (params.video_notes or "").strip()
     if video_url and not video_notes:
-        t, w = fetch_youtube_transcript_text(video_url)
-        warns.extend(w)
-        if t:
-            video_notes = t
+        t2, w2 = fetch_yescribe_transcript_text(video_url, yescribe_token=params.yescribe_token)
+        warns.extend(w2)
+        if t2:
+            video_notes = t2
+        else:
+            t, w = fetch_youtube_transcript_text(video_url)
+            warns.extend(w)
+            if t:
+                video_notes = t
 
     user_parts = [
         {
@@ -198,17 +277,23 @@ def grade_group_activity(params: GroupGradeParams) -> dict[str, Any]:
         timeout_s=300.0,
     )
     try:
-        blob = json.loads(text)
+        blob = parse_llm_json(text)
         if isinstance(blob, dict):
             return blob
     except Exception:
-        pass
+        try:
+            # fallback: đôi khi provider trả hẳn dict ở dạng string Python-ish hoặc rác
+            blob2 = json.loads((text or "").strip())
+            if isinstance(blob2, dict):
+                return blob2
+        except Exception:
+            pass
     return {
         "score": 0,
         "comment": "Không chấm được do model không trả JSON hợp lệ.",
         "video_evidence": "thieu",
         "leader_activity_ok": "khong_ro",
         "leader_report_match": "khong_ro",
-        "notes": (text or "")[:600],
+        "notes": (text or "")[:1200],
     }
 
