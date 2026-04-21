@@ -27,6 +27,7 @@
         <button type="button" data-tab="quiz">Quiz</button>
         <button type="button" data-tab="reading">Bài đọc</button>
         <button type="button" data-tab="btvn">Chấm BTVN (Rikkei)</button>
+        <button type="button" data-tab="group">Chấm hoạt động nhóm</button>
       </nav>
 
       <!-- Chấm bài -->
@@ -328,6 +329,38 @@
             </table>
           </div>
         </div>
+      </section>
+
+      <!-- Chấm hoạt động nhóm -->
+      <section class="panel" id="panel-group">
+        <h2>Chấm hoạt động nhóm</h2>
+        <p class="hint">
+          Nhập link <strong>báo cáo</strong> (Google Docs/Google Sheets hoặc URL <strong>.xlsx</strong>) và link <strong>video</strong>.
+          Nếu chỉ có link video mà không có transcript/ghi chú, hệ thống sẽ ghi “thiếu dữ liệu video” (không bịa).
+        </p>
+        <form id="form-group">
+          <div class="field">
+            <label for="gr-report">Link báo cáo (Docs/Sheets/.xlsx)</label>
+            <input type="url" id="gr-report" name="report_url" placeholder="(Tuỳ chọn) https://docs.google.com/... hoặc https://.../report.xlsx" />
+          </div>
+          <div class="field">
+            <label for="gr-video">Link video</label>
+            <input type="url" id="gr-video" name="video_url" placeholder="https://..." required />
+          </div>
+          <div class="field">
+            <label for="gr-notes">Ghi chú / transcript video (tuỳ chọn nhưng khuyến nghị)</label>
+            <textarea id="gr-notes" name="video_notes" rows="6" placeholder="Dán transcript hoặc ghi chú quan sát..."></textarea>
+          </div>
+          <div class="field">
+            <label for="gr-model">Model OpenRouter</label>
+            <select id="gr-model" name="model"></select>
+          </div>
+          <div class="actions">
+            <button type="submit" class="primary" id="gr-submit">Chấm hoạt động nhóm</button>
+          </div>
+          <p class="status" id="gr-status"></p>
+          <pre class="log" id="gr-log"></pre>
+        </form>
       </section>
 
       <footer>Chạy local · OpenRouter · không lưu dữ liệu trên server sau khi tải file</footer>

@@ -31,6 +31,7 @@
         meta.models,
         meta.default_btvn_model || meta.default_model
       );
+    if ($("#gr-model")) fillSelect($("#gr-model"), meta.models, meta.default_model);
 
     if (meta.default_learning_goals && !$("#r-goals").value.trim()) {
       $("#r-goals").value = meta.default_learning_goals;
@@ -386,11 +387,36 @@
     }
   }
 
+  async function postGroup(ev) {
+    ev.preventDefault();
+    const btn = $("#gr-submit");
+    setBusy(btn, true, "Đang chấm…");
+    $("#gr-status").textContent = "";
+    setLog("#gr-log", "", false);
+    try {
+      const fd = new FormData(ev.target);
+      const r = await fetch("/api/group-activity", { method: "POST", body: fd });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setLog("#gr-log", formatApiErr(data.detail) || JSON.stringify(data), true);
+        return;
+      }
+      setLog("#gr-log", JSON.stringify(data.result || data, null, 2), false);
+      $("#gr-status").textContent = "Xong.";
+    } catch (e) {
+      setLog("#gr-log", String(e), true);
+    } finally {
+      setBusy(btn, false);
+    }
+  }
+
   function init() {
     tabsSetup();
     $("#form-grade").addEventListener("submit", postGrade);
     $("#form-quiz").addEventListener("submit", postQuiz);
     $("#form-reading").addEventListener("submit", postReading);
+    const fg = $("#form-group");
+    if (fg) fg.addEventListener("submit", postGroup);
     const fb = $("#form-btvn");
     if (fb) fb.addEventListener("submit", postBtvn);
     const bLoad = $("#b-load-session");

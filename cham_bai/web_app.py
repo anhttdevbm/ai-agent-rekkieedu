@@ -51,6 +51,7 @@ from cham_bai.reading_gen import (
     sanitize_reading_filename_part,
 )
 from cham_bai.btvn_comment import BtvnCommentParams, run_btvn_comments_json
+from cham_bai.group_activity import GroupGradeParams, grade_group_activity
 from cham_bai.workflow import (
     GradeJobParams,
     GradeJobResult,
@@ -610,6 +611,41 @@ async def api_btvn(
         raise HTTPException(status_code=500, detail=msg or "Lỗi không xác định.")
 
     return JSONResponse({"ok": True, "rows": rows})
+
+
+@app.post("/api/group-activity")
+async def api_group_activity(
+    report_url: str = Form(""),
+    video_url: str = Form(...),
+    video_notes: str = Form(""),
+    model: str = Form(""),
+) -> JSONResponse:
+    try:
+        from cham_bai.settings import api_key as _need_key
+
+        _need_key()
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    m = (model or os.getenv("OPENROUTER_MODEL", "anthropic/claude-sonnet-4.6")).strip()
+    params = GroupGradeParams(
+        report_url=(report_url or "").strip(),
+        video_url=(video_url or "").strip(),
+        video_notes=(video_notes or "").strip(),
+        model=m,
+    )
+
+    loop = asyncio.get_event_loop()
+
+    def work():
+        return grade_group_activity(params)
+
+    try:
+        result = await loop.run_in_executor(_executor, work)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return JSONResponse({"ok": True, "result": result})
 
 
 @app.post("/api/reading")
