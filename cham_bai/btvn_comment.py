@@ -334,9 +334,10 @@ def comment_one(
                 "Hãy VIẾT LẠI nhận xét theo đúng yêu cầu (2–3 câu tiếng Việt, bắt đầu kiểu “Bài…”, có “Tuy nhiên,”), "
                 "độ dài 350–520 ký tự (tối thiểu 320). Không tiếng Anh.\n\n"
                 "CẤU TRÚC BẮT BUỘC (đúng thứ tự):\n"
-                "- Câu 1 bắt đầu bằng “Bài …”: nêu rõ nguyên nhân cốt lõi đã phân tích/đã sửa (vd. AND ưu tiên hơn OR làm điều kiện Quận 1/Quận 3 và rating bị hiểu sai).\n"
-                "- Câu 2 bắt đầu bằng “Điểm mạnh …”: nêu điểm mạnh kỹ thuật rất cụ thể (vd. thêm ngoặc đơn nhóm (Quận 1 OR Quận 3) rồi AND rating > 4.0).\n"
-                "- Câu 3 bắt đầu bằng “Tuy nhiên,”: gợi ý bổ sung đúng theo đề (vd. thêm câu truy vấn sai gốc để đối chiếu trước–sau), tránh chung chung.\n\n"
+                "- Câu 1 bắt đầu bằng “Bài …”: nêu đúng nguyên nhân cốt lõi theo ĐỀ BÀI và MÃ trong repo (không được dùng ví dụ khác đề).\n"
+                "- Câu 2 bắt đầu bằng “Điểm mạnh …”: nêu điểm mạnh kỹ thuật rất cụ thể mà repo có thể hiện.\n"
+                "- Câu 3 bắt đầu bằng “Tuy nhiên,”: chỉ ra đúng một thiếu sót theo đề và gợi ý hành động rõ ràng.\n\n"
+                "RÀNG BUỘC: Tuyệt đối không bịa nội dung ngoài đề/mã. Nếu không thấy bằng chứng trong repo thì nói thẳng “chưa thấy/thiếu”.\n\n"
                 "Dữ liệu bài chấm bên dưới. Không trích dẫn dài SQL tiếng Anh, chỉ diễn đạt bằng tiếng Việt.\n\n"
                 "=== CONTEXT ===\n"
                 + (assignment_text.strip() or "")
@@ -365,7 +366,7 @@ def comment_one(
                 "text": (
                     "Nhận xét dưới đây đang bị sai cấu trúc hoặc bị cụt. Hãy viết lại hoàn chỉnh 3 câu tiếng Việt, "
                     "đúng thứ tự bắt buộc: (1) “Bài …” (2) “Điểm mạnh …” (3) “Tuy nhiên,”. "
-                    "Giữ đúng ý, nhưng phải cụ thể theo đề (Quận 1/Quận 3, rating > 4.0, AND/OR ưu tiên) và kết thúc trọn câu. Không tiếng Anh.\n\n"
+                    "Giữ đúng ý, nhưng phải cụ thể theo đúng ĐỀ BÀI và MÃ trong repo (không dùng ví dụ khác đề) và kết thúc trọn câu. Không tiếng Anh.\n\n"
                     "=== NHẬN XÉT BỊ CỤT ===\n"
                     + cleaned2
                 ),
