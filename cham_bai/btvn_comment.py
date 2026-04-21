@@ -183,6 +183,23 @@ def _needs_vi_rewrite(s: str) -> bool:
     return any(b in (" " + low) for b in bad)
 
 
+def _looks_truncated_vi(s: str) -> bool:
+    t = (s or "").strip()
+    if not t:
+        return True
+    # Không có dấu kết câu ở cuối thường là bị cụt.
+    if t[-1] not in ".!?…":
+        return True
+    low = t.lower()
+    tail = low[-80:]
+    # Các đuôi hay gặp khi bị cắt giữa chừng
+    if "select" in tail and ("select ..." in tail or tail.endswith("select") or tail.endswith("select ...")):
+        return True
+    if tail.endswith(("(", "select ...", "vd.", "ví dụ:", ":", ";")):
+        return True
+    return False
+
+
 def _img_to_data_url(raw: bytes, content_type: str) -> str:
     b64 = base64.b64encode(raw).decode("ascii")
     return f"data:{content_type};base64,{b64}"
@@ -253,7 +270,7 @@ def comment_one(
         timeout_s=300.0,
     )
     cleaned = _vietnamese_comment_only(re.sub(r"\s+", " ", text).strip())
-    if not _needs_vi_rewrite(cleaned):
+    if not _needs_vi_rewrite(cleaned) and not _looks_truncated_vi(cleaned):
         return cleaned
 
     # Repair pass: yêu cầu viết lại đúng format tiếng Việt, dựa trên context + output vừa nhận.
@@ -277,11 +294,35 @@ def comment_one(
         [{"role": "system", "content": _SYSTEM}, {"role": "user", "content": repair_user}],
         model=model,
         temperature=0.2,
-        max_tokens=520,
+        max_tokens=700,
         timeout_s=300.0,
     )
     cleaned2 = _vietnamese_comment_only(re.sub(r"\s+", " ", text2).strip())
-    return cleaned2 or cleaned
+    cleaned2 = cleaned2 or cleaned
+    if _looks_truncated_vi(cleaned2):
+        # Repair lần 2 chỉ để hoàn thiện câu cuối cho trọn ý.
+        repair2 = [
+            {
+                "type": "text",
+                "text": (
+                    "Nhận xét dưới đây đang bị cụt câu cuối. Hãy viết lại hoàn chỉnh 2–3 câu tiếng Việt, "
+                    "giữ nguyên ý, kết thúc trọn câu có dấu chấm. Không tiếng Anh.\n\n"
+                    "=== NHẬN XÉT BỊ CỤT ===\n"
+                    + cleaned2
+                ),
+            }
+        ]
+        text3, _ = complete_chat_raw(
+            [{"role": "system", "content": _SYSTEM}, {"role": "user", "content": repair2}],
+            model=model,
+            temperature=0.2,
+            max_tokens=700,
+            timeout_s=300.0,
+        )
+        cleaned3 = _vietnamese_comment_only(re.sub(r"\s+", " ", text3).strip())
+        return cleaned3 or cleaned2
+
+    return cleaned2
 
 
 def run_btvn_comments_json(params: BtvnCommentParams) -> tuple[bool, str, list[dict[str, Any]] | None]:
