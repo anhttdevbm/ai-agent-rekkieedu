@@ -384,7 +384,7 @@
     }
   }
 
-  document.addEventListener("DOMContentLoaded", () => {
+  function init() {
     tabsSetup();
     $("#form-grade").addEventListener("submit", postGrade);
     $("#form-quiz").addEventListener("submit", postQuiz);
@@ -399,5 +399,11 @@
       $("#ver-pill").textContent = "lỗi tải meta";
       console.error(e);
     });
-  });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
 })();
