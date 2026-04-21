@@ -79,15 +79,75 @@ def _vietnamese_comment_only(raw: str) -> str:
     s = re.sub(r"\s+", " ", (raw or "").strip())
     if not s:
         return s
-    head = s[:520].lower()
-    looks_en_meta = any(m in head for m in _EN_HEAD_MARKERS) or any(
-        head.startswith(p) for p in _EN_HEAD_MARKERS[:12]
+
+    # 1) Nếu có các "mỏ neo" nhận xét tiếng Việt, ưu tiên cắt từ đó (tránh cắt nhầm ở chữ "Quận")
+    anchors = (
+        "Bài ",
+        "Bài làm",
+        "Bài phân tích",
+        "Điểm mạnh",
+        "Tuy nhiên",
+        "Tuy nhiên,",
+        "Tuy nhiên cần",
     )
-    m_vn = _VN_MARKED.search(s)
-    if m_vn and m_vn.start() > 0:
-        if looks_en_meta or m_vn.start() > 25:
-            s = s[m_vn.start() :].strip(" ,.;:\u2014-")
-    return s.strip()
+    cut_at = -1
+    for a in anchors:
+        i = s.find(a)
+        if i >= 0:
+            cut_at = i if cut_at < 0 else min(cut_at, i)
+    if cut_at >= 0:
+        s = s[cut_at:].strip(" ,.;:\u2014-")
+    else:
+        # fallback: cắt từ chỗ có ký tự tiếng Việt có dấu (nhưng tránh cắt quá sớm)
+        head = s[:520].lower()
+        looks_en_meta = any(m in head for m in _EN_HEAD_MARKERS) or any(
+            head.startswith(p) for p in _EN_HEAD_MARKERS[:12]
+        )
+        m_vn = _VN_MARKED.search(s)
+        if m_vn and m_vn.start() > 0:
+            if looks_en_meta or m_vn.start() > 60:
+                s = s[m_vn.start() :].strip(" ,.;:\u2014-")
+
+    # 2) Loại các câu rõ ràng là tiếng Anh / meta. Giữ lại 2–3 câu tiếng Việt.
+    en_words = (
+        " wait",
+        " district",
+        " interpreted",
+        " precedence",
+        " that means",
+        " the query",
+        " in sql",
+        " select ",
+        " where ",
+        " rating ",
+        " repo",
+        " sample data",
+        " should be",
+        " incorrect",
+        " correct",
+        " looking back",
+        " maybe",
+        " let me",
+        " i need",
+        " the user",
+    )
+    sentences = re.split(r"(?<=[.!?])\s+", s)
+    kept: list[str] = []
+    for sent in sentences:
+        t = sent.strip()
+        if not t:
+            continue
+        low = " " + t.lower() + " "
+        if any(w in low for w in en_words):
+            continue
+        # yêu cầu tiếng Việt: có ký tự có dấu hoặc bắt đầu bằng các anchor
+        if _VN_MARKED.search(t) or any(t.startswith(a) for a in anchors):
+            kept.append(t)
+        if len(kept) >= 3:
+            break
+
+    out = " ".join(kept).strip()
+    return out or s.strip()
 
 
 def _img_to_data_url(raw: bytes, content_type: str) -> str:
