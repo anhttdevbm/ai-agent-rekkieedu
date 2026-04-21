@@ -122,7 +122,14 @@ def fetch_yescribe_transcript_text(video_url: str) -> tuple[str, list[str]]:
     vid = _extract_youtube_id(u)
     # Theo payload bạn đưa: {"videoUrl":"..."}
     payloads: list[dict[str, Any]] = [{"videoUrl": u}]
-    headers = {"User-Agent": "AgentEdu/1.0", "Content-Type": "application/json"}
+    # Best-effort: bắt chước request từ browser để tránh bị chặn.
+    headers = {
+        "User-Agent": "AgentEdu/1.0",
+        "Content-Type": "application/json",
+        "Accept": "application/json, text/plain, */*",
+        "Origin": "https://yescribe.ai",
+        "Referer": "https://yescribe.ai/",
+    }
 
     endpoint = "https://api.yescribe.ai/api/v1/yescribe/record/getVideoDetail"
     with httpx.Client(timeout=60.0, follow_redirects=True) as client:
@@ -130,12 +137,15 @@ def fetch_yescribe_transcript_text(video_url: str) -> tuple[str, list[str]]:
             try:
                 r = client.post(endpoint, headers=headers, json=p)
                 if r.status_code != 200:
+                    warns.append(f"Yescribe HTTP {r.status_code}.")
                     continue
                 data = r.json()
             except Exception:
+                warns.append("Yescribe lỗi gọi API hoặc parse JSON.")
                 continue
             try:
                 if int(data.get("code", 0)) != 200:
+                    warns.append(f"Yescribe code={data.get('code')}, msg={data.get('msg')}.")
                     continue
             except Exception:
                 continue
@@ -167,7 +177,7 @@ def fetch_yescribe_transcript_text(video_url: str) -> tuple[str, list[str]]:
                 return body, warns
             break
 
-    warns.append("Không lấy được transcript từ Yescribe (không hỗ trợ video hoặc bị chặn).")
+    warns.append("Không lấy được transcript từ Yescribe (không có transcript hoặc bị chặn).")
     return "", warns
 
 
@@ -231,16 +241,19 @@ def grade_group_activity(params: GroupGradeParams) -> dict[str, Any]:
     report_text, warns = fetch_report_text(params.report_url)
     video_url = (params.video_url or "").strip()
     video_notes = (params.video_notes or "").strip()
+    transcript_source = "none"
     if video_url and not video_notes:
         t2, w2 = fetch_yescribe_transcript_text(video_url)
         warns.extend(w2)
         if t2:
             video_notes = t2
+            transcript_source = "yescribe"
         else:
             t, w = fetch_youtube_transcript_text(video_url)
             warns.extend(w)
             if t:
                 video_notes = t
+                transcript_source = "youtube_timedtext"
 
     user_parts = [
         {
@@ -267,12 +280,18 @@ def grade_group_activity(params: GroupGradeParams) -> dict[str, Any]:
     try:
         blob = parse_llm_json(text)
         if isinstance(blob, dict):
+            blob.setdefault("_fetch_warnings", warns)
+            blob.setdefault("_transcript_source", transcript_source)
+            blob.setdefault("_transcript_chars", len(video_notes or ""))
             return blob
     except Exception:
         try:
             # fallback: đôi khi provider trả hẳn dict ở dạng string Python-ish hoặc rác
             blob2 = json.loads((text or "").strip())
             if isinstance(blob2, dict):
+                blob2.setdefault("_fetch_warnings", warns)
+                blob2.setdefault("_transcript_source", transcript_source)
+                blob2.setdefault("_transcript_chars", len(video_notes or ""))
                 return blob2
         except Exception:
             pass
@@ -283,5 +302,8 @@ def grade_group_activity(params: GroupGradeParams) -> dict[str, Any]:
         "leader_activity_ok": "khong_ro",
         "leader_report_match": "khong_ro",
         "notes": (text or "")[:1200],
+        "_fetch_warnings": warns,
+        "_transcript_source": transcript_source,
+        "_transcript_chars": len(video_notes or ""),
     }
 
