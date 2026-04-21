@@ -618,7 +618,6 @@ async def api_group_activity(
     report_url: str = Form(""),
     video_url: str = Form(...),
     video_notes: str = Form(""),
-    yescribe_token: str = Form(""),
     model: str = Form(""),
 ) -> JSONResponse:
     try:
@@ -633,7 +632,6 @@ async def api_group_activity(
         report_url=(report_url or "").strip(),
         video_url=(video_url or "").strip(),
         video_notes=(video_notes or "").strip(),
-        yescribe_token=(yescribe_token or "").strip(),
         model=m,
     )
 

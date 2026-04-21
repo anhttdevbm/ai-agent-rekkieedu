@@ -25,7 +25,6 @@ class GroupGradeParams:
     report_url: str
     video_url: str
     video_notes: str
-    yescribe_token: str
     model: str
 
 
@@ -111,9 +110,7 @@ def fetch_youtube_transcript_text(video_url: str) -> tuple[str, list[str]]:
     return "", warns
 
 
-def fetch_yescribe_transcript_text(
-    video_url: str, *, yescribe_token: str = ""
-) -> tuple[str, list[str]]:
+def fetch_yescribe_transcript_text(video_url: str) -> tuple[str, list[str]]:
     """
     Lấy transcript qua API yescribe.ai (nếu có token/khả dụng).
     Endpoint người dùng đưa: /api/v1/yescribe/record/getVideoDetail
@@ -123,18 +120,9 @@ def fetch_yescribe_transcript_text(
     if not u:
         return "", warns
     vid = _extract_youtube_id(u)
-    payloads: list[dict[str, Any]] = []
-    # best-effort nhiều key vì không có docs chính thức
-    payloads.append({"videoUrl": u})
-    if vid:
-        payloads.append({"videoId": vid})
-        payloads.append({"url": u, "videoId": vid})
-    payloads.append({"url": u})
-
+    # Theo payload bạn đưa: {"videoUrl":"..."}
+    payloads: list[dict[str, Any]] = [{"videoUrl": u}]
     headers = {"User-Agent": "AgentEdu/1.0", "Content-Type": "application/json"}
-    t = (yescribe_token or "").strip()
-    if t:
-        headers["Authorization"] = t if t.lower().startswith("bearer ") else ("Bearer " + t)
 
     endpoint = "https://api.yescribe.ai/api/v1/yescribe/record/getVideoDetail"
     with httpx.Client(timeout=60.0, follow_redirects=True) as client:
@@ -179,7 +167,7 @@ def fetch_yescribe_transcript_text(
                 return body, warns
             break
 
-    warns.append("Không lấy được transcript từ Yescribe (thiếu token, không hỗ trợ video, hoặc bị chặn).")
+    warns.append("Không lấy được transcript từ Yescribe (không hỗ trợ video hoặc bị chặn).")
     return "", warns
 
 
@@ -244,7 +232,7 @@ def grade_group_activity(params: GroupGradeParams) -> dict[str, Any]:
     video_url = (params.video_url or "").strip()
     video_notes = (params.video_notes or "").strip()
     if video_url and not video_notes:
-        t2, w2 = fetch_yescribe_transcript_text(video_url, yescribe_token=params.yescribe_token)
+        t2, w2 = fetch_yescribe_transcript_text(video_url)
         warns.extend(w2)
         if t2:
             video_notes = t2
