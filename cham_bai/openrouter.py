@@ -37,6 +37,56 @@ def _chat_headers_minimal() -> dict[str, str]:
     }
 
 
+def _normalize_content_part_to_text(part: Any) -> str:
+    if isinstance(part, str):
+        return part
+    if not isinstance(part, dict):
+        return ""
+    ptype = str(part.get("type", "")).lower().replace("-", "_")
+    if ptype in ("text", "output_text", "input_text"):
+        t = part.get("text")
+        if isinstance(t, str):
+            return t
+        if isinstance(t, dict):
+            for k in ("value", "content", "text"):
+                v = t.get(k)
+                if isinstance(v, str):
+                    return v
+    return ""
+
+
+def message_content_to_assistant_text(message: dict[str, Any]) -> str:
+    """
+    OpenRouter / một số provider trả `content` là str, null, hoặc list các part (text/…).
+    Gom thành một chuỗi để downstream luôn nhận text.
+    """
+    if not isinstance(message, dict):
+        return ""
+    raw = message.get("content")
+    if raw is None:
+        parts_out: list[str] = []
+    elif isinstance(raw, str):
+        parts_out = [raw] if raw else []
+    elif isinstance(raw, list):
+        parts_out = [_normalize_content_part_to_text(p) for p in raw]
+        parts_out = [p for p in parts_out if p]
+    else:
+        parts_out = [str(raw)] if raw is not False else []
+
+    text = "\n".join(parts_out).strip()
+
+    if not text:
+        ref = message.get("refusal")
+        if isinstance(ref, str) and ref.strip():
+            return ref.strip()
+        for key in ("reasoning", "reasoning_content", "thinking"):
+            v = message.get(key)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+
+    return text
+
+
 def post_chat_completions(body: dict[str, Any], *, timeout_s: float = 300.0) -> dict[str, Any]:
     with httpx.Client(timeout=timeout_s) as client:
         h = _chat_headers()
@@ -71,12 +121,24 @@ def complete_chat(
     data = post_chat_completions(body, timeout_s=timeout_s)
 
     try:
-        content = data["choices"][0]["message"]["content"]
+        msg = data["choices"][0]["message"]
     except (KeyError, IndexError, TypeError) as e:
         raise RuntimeError(f"Phản hồi OpenRouter không hợp lệ: {data!r}") from e
 
-    if not isinstance(content, str):
-        raise RuntimeError(f"Nội dung model không phải chuỗi: {type(content)}")
+    if not isinstance(msg, dict):
+        raise RuntimeError(f"Phản hồi OpenRouter không hợp lệ (message): {data!r}") from None
+
+    content = message_content_to_assistant_text(msg)
+    if not content:
+        fr = None
+        try:
+            fr = data["choices"][0].get("finish_reason")
+        except (KeyError, IndexError, TypeError):
+            pass
+        raise RuntimeError(
+            "Model trả về nội dung trống (content=null hoặc không có phần text). "
+            f"finish_reason={fr!r}, message_keys={list(msg.keys())!r}"
+        )
 
     return content.strip(), data
 
@@ -104,11 +166,22 @@ def complete_chat_raw(
         body.update(extra_body)
     data = post_chat_completions(body, timeout_s=timeout_s)
     try:
-        content = data["choices"][0]["message"]["content"]
+        msg = data["choices"][0]["message"]
     except (KeyError, IndexError, TypeError) as e:
         raise RuntimeError(f"Phản hồi OpenRouter không hợp lệ: {data!r}") from e
-    if not isinstance(content, str):
-        raise RuntimeError(f"Nội dung model không phải chuỗi: {type(content)}")
+    if not isinstance(msg, dict):
+        raise RuntimeError(f"Phản hồi OpenRouter không hợp lệ (message): {data!r}") from None
+    content = message_content_to_assistant_text(msg)
+    if not content:
+        fr = None
+        try:
+            fr = data["choices"][0].get("finish_reason")
+        except (KeyError, IndexError, TypeError):
+            pass
+        raise RuntimeError(
+            "Model trả về nội dung trống (content=null hoặc không có phần text). "
+            f"finish_reason={fr!r}, message_keys={list(msg.keys())!r}"
+        )
     return content.strip(), data
 
 
