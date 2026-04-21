@@ -154,6 +154,35 @@ def _vietnamese_comment_only(raw: str) -> str:
     return out or s.strip()
 
 
+def _needs_vi_rewrite(s: str) -> bool:
+    """
+    Heuristic: nếu output không có dấu tiếng Việt hoặc còn nhiều marker tiếng Anh/meta
+    thì chạy 1 lượt rewrite để ra nhận xét tiếng Việt chuẩn.
+    """
+    t = (s or "").strip()
+    if not t:
+        return True
+    if not _VN_MARKED.search(t):
+        return True
+    low = t.lower()
+    bad = (
+        " wait",
+        " in sql",
+        " the query",
+        " interpreted",
+        " precedence",
+        " district",
+        " that means",
+        " maybe",
+        " hmm",
+        " let me",
+        " i need",
+        " the user",
+        " should be",
+    )
+    return any(b in (" " + low) for b in bad)
+
+
 def _img_to_data_url(raw: bytes, content_type: str) -> str:
     b64 = base64.b64encode(raw).decode("ascii")
     return f"data:{content_type};base64,{b64}"
@@ -223,7 +252,36 @@ def comment_one(
         max_tokens=480,
         timeout_s=300.0,
     )
-    return _vietnamese_comment_only(re.sub(r"\s+", " ", text).strip())
+    cleaned = _vietnamese_comment_only(re.sub(r"\s+", " ", text).strip())
+    if not _needs_vi_rewrite(cleaned):
+        return cleaned
+
+    # Repair pass: yêu cầu viết lại đúng format tiếng Việt, dựa trên context + output vừa nhận.
+    repair_user = [
+        {
+            "type": "text",
+            "text": (
+                "Hãy VIẾT LẠI nhận xét theo đúng yêu cầu (2–3 câu tiếng Việt, bắt đầu kiểu “Bài…”, có “Tuy nhiên,”), "
+                "độ dài 350–520 ký tự (tối thiểu 320). Không tiếng Anh.\n\n"
+                "Dữ liệu bài chấm bên dưới. Không trích dẫn dài SQL tiếng Anh, chỉ diễn đạt bằng tiếng Việt.\n\n"
+                "=== CONTEXT ===\n"
+                + (assignment_text.strip() or "")
+                + "\n\n=== BÀI NỘP (mã nguồn, có thể trích) ===\n"
+                + _bundle_text(submission_bundle)
+                + "\n\n=== OUTPUT SAI (cần sửa) ===\n"
+                + (text or "")
+            ),
+        }
+    ]
+    text2, _ = complete_chat_raw(
+        [{"role": "system", "content": _SYSTEM}, {"role": "user", "content": repair_user}],
+        model=model,
+        temperature=0.2,
+        max_tokens=520,
+        timeout_s=300.0,
+    )
+    cleaned2 = _vietnamese_comment_only(re.sub(r"\s+", " ", text2).strip())
+    return cleaned2 or cleaned
 
 
 def run_btvn_comments_json(params: BtvnCommentParams) -> tuple[bool, str, list[dict[str, Any]] | None]:
