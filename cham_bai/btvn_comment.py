@@ -38,7 +38,34 @@ Hình thức:
 - Không markdown, không gạch đầu dòng, không đánh số (1. 2.).
 - Độ dài khoảng 350–520 ký tự (đủ chi tiết nhưng không lan man). TỐI THIỂU 320 ký tự.
 - Phong cách mục tiêu (SQL sửa lỗi ưu tiên AND/OR — chỉ bắt chước cấu trúc, nội dung theo bài thật): «Bài phân tích đúng nguyên nhân cốt lõi: … Điểm mạnh là câu đã sửa dùng ngoặc đơn … chuẩn xác. Tuy nhiên, nên bổ sung … (vd. câu truy vấn lỗi gốc để đối chiếu trước–sau) …»
+
+ĐÁNH GIÁ NGHI NGỜ DÙNG AI (bắt buộc):
+- Sau phần nhận xét 2–3 câu ở trên, xuống dòng và in đúng 1 dòng theo mẫu:
+  Nghi ngờ dùng AI: Có
+  hoặc
+  Nghi ngờ dùng AI: Không
+- Chỉ chọn Có khi có dấu hiệu mạnh (văn phong tutorial quá “mượt”, giải thích không bám mã, pattern AI phổ biến, hoặc code/giải thích vượt xa mức bài). Nếu không chắc thì chọn Không.
 """
+
+
+_AI_LINE_RE = re.compile(
+    r"(?im)^\s*Nghi\s*ngờ\s*dùng\s*AI\s*:\s*(?P<flag>Có|Không)\s*$"
+)
+
+
+def _split_comment_and_ai_flag(raw: str) -> tuple[str, str]:
+    """
+    Tách 1 dòng 'Nghi ngờ dùng AI: Có/Không' khỏi nội dung.
+    Trả về (comment_text, flag) với flag luôn là 'Có' hoặc 'Không' (default: 'Không').
+    """
+    s = (raw or "").strip()
+    flag = "Không"
+    m = _AI_LINE_RE.search(s)
+    if m:
+        flag = "Có" if m.group("flag").strip().lower().startswith("c") else "Không"
+        # remove that line
+        s = _AI_LINE_RE.sub("", s).strip()
+    return s, flag
 
 # Âm tiết có dấu — dùng để cắt phần tiếng Anh dạo đầu nếu model vẫn lẫn.
 _VN_MARKED = re.compile(
@@ -254,7 +281,7 @@ def comment_one(
     submission_ref: str,
     submission_bundle: CollectedBundle | None,
     model: str,
-) -> str:
+) -> tuple[str, str]:
     parts: list[dict[str, Any]] = []
     parts.append(
         {
@@ -278,7 +305,8 @@ def comment_one(
                 "(1) nêu rõ sinh viên đã nắm đúng **gì cốt lõi** (vd. bài SQL sửa lỗi thì nói thẳng nguyên nhân do thứ tự ưu tiên AND/OR nếu bài thể hiện) → "
                 "(2) điểm mạnh kỹ thuật cụ thể (vd. ngoặc đơn nhóm OR chuẩn) → "
                 "(3) “Tuy nhiên,” + một gợi ý làm bài **hoàn chỉnh hơn** (vd. nếu chỉ có câu đúng mà đề cần phân tích lỗi: gợi ý thêm câu truy vấn sai gốc để đối chiếu trước–sau). "
-                "Không tiếng Anh, không đoạn suy nghĩ đầu câu. Độ dài mục tiêu 350–520 ký tự, tối thiểu 320 ký tự."
+                "Không tiếng Anh, không đoạn suy nghĩ đầu câu. Độ dài mục tiêu 350–520 ký tự, tối thiểu 320 ký tự.\n"
+                "Sau đó xuống dòng in đúng 1 dòng: 'Nghi ngờ dùng AI: Có' hoặc 'Nghi ngờ dùng AI: Không'."
             ),
         }
     )
@@ -289,13 +317,14 @@ def comment_one(
         max_tokens=480,
         timeout_s=300.0,
     )
-    cleaned = _vietnamese_comment_only(re.sub(r"\s+", " ", text).strip())
+    raw1, flag1 = _split_comment_and_ai_flag(text)
+    cleaned = _vietnamese_comment_only(re.sub(r"\s+", " ", raw1).strip())
     if (
         not _needs_vi_rewrite(cleaned)
         and not _looks_truncated_vi(cleaned)
         and not _violates_comment_structure(cleaned)
     ):
-        return cleaned
+        return cleaned, flag1
 
     # Repair pass: yêu cầu viết lại đúng format tiếng Việt, dựa trên context + output vừa nhận.
     repair_user = [
@@ -325,7 +354,8 @@ def comment_one(
         max_tokens=700,
         timeout_s=300.0,
     )
-    cleaned2 = _vietnamese_comment_only(re.sub(r"\s+", " ", text2).strip())
+    raw2, flag2 = _split_comment_and_ai_flag(text2)
+    cleaned2 = _vietnamese_comment_only(re.sub(r"\s+", " ", raw2).strip())
     cleaned2 = cleaned2 or cleaned
     if _looks_truncated_vi(cleaned2) or _violates_comment_structure(cleaned2):
         # Repair lần 2 để sửa cấu trúc / hoàn thiện câu cuối cho trọn ý.
@@ -348,10 +378,11 @@ def comment_one(
             max_tokens=700,
             timeout_s=300.0,
         )
-        cleaned3 = _vietnamese_comment_only(re.sub(r"\s+", " ", text3).strip())
-        return cleaned3 or cleaned2
+        raw3, flag3 = _split_comment_and_ai_flag(text3)
+        cleaned3 = _vietnamese_comment_only(re.sub(r"\s+", " ", raw3).strip())
+        return cleaned3 or cleaned2, flag3 or flag2 or flag1
 
-    return cleaned2
+    return cleaned2, flag2 or flag1
 
 
 def run_btvn_comments_json(params: BtvnCommentParams) -> tuple[bool, str, list[dict[str, Any]] | None]:
@@ -379,10 +410,11 @@ def run_btvn_comments_json(params: BtvnCommentParams) -> tuple[bool, str, list[d
             repo_err = "Chỉ hỗ trợ link GitHub (github.com / git@github.com)."
 
         comment = ""
+        ai_suspected = "Không"
         ai_err = ""
         if not repo_err:
             try:
-                comment = comment_one(
+                comment, ai_suspected = comment_one(
                     assignment_text=params.assignment_text,
                     assignment_images=params.assignment_images,
                     submission_ref=gh or ref,
@@ -397,6 +429,7 @@ def run_btvn_comments_json(params: BtvnCommentParams) -> tuple[bool, str, list[d
                 "repo": gh or "",
                 "repo_error": repo_err,
                 "comment": comment,
+                "ai_suspected": ai_suspected,
                 "ai_error": ai_err,
             }
         )
@@ -415,7 +448,7 @@ def run_btvn_comments(params: BtvnCommentParams) -> tuple[bool, str, Path | None
     wb = Workbook()
     ws = wb.active
     ws.title = "BTVN"
-    headers = ["submission", "repo", "repo_error", "comment", "ai_error"]
+    headers = ["submission", "repo", "repo_error", "comment", "ai_suspected", "ai_error"]
     ws.append(headers)
     for c in range(1, len(headers) + 1):
         ws.cell(row=1, column=c).font = Font(bold=True)
@@ -425,7 +458,8 @@ def run_btvn_comments(params: BtvnCommentParams) -> tuple[bool, str, Path | None
     ws.column_dimensions["B"].width = 34
     ws.column_dimensions["C"].width = 32
     ws.column_dimensions["D"].width = 70
-    ws.column_dimensions["E"].width = 28
+    ws.column_dimensions["E"].width = 14
+    ws.column_dimensions["F"].width = 28
     wb.save(out)
     return True, "", out
 

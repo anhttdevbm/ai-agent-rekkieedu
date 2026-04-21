@@ -331,6 +331,7 @@
           const repo = (x.repo || x.submission || "").trim();
           const repoErr = (x.repo_error || "").trim();
           const cmt = (x.comment || "").trim();
+          const aiSus = (x.ai_suspected || "").trim();
           const aiErr = (x.ai_error || "").trim();
           const td = (t) => {
             const el = document.createElement("td");
@@ -342,6 +343,7 @@
           tr.appendChild(td(repo));
           tr.appendChild(td(repoErr));
           tr.appendChild(td(cmt));
+          tr.appendChild(td(aiSus));
           tr.appendChild(td(aiErr));
           resBody.appendChild(tr);
           
