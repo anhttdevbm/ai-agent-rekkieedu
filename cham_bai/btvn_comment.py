@@ -17,19 +17,22 @@ from cham_bai.git_remote import fetch_repo_sources_bundle, normalize_github_repo
 from cham_bai.openrouter import complete_chat_raw
 
 
-_SYSTEM = """Bạn là giảng viên chấm bài tập về nhà. Chỉ xuất NHẬN XÉT cho học viên, không chấm điểm.
+_SYSTEM = """Bạn là giảng viên chấm bài tập về nhà. Chỉ xuất NHẬN XÉT cho học viên (sinh viên đọc trực tiếp), không chấm điểm.
 
 Ngôn ngữ (bắt buộc):
-- Toàn bộ nội dung xuất ra CHỈ được là tiếng Việt. Cấm tiếng Anh hoặc ngôn ngữ khác.
-- Cấm đoạn mở đầu kiểu suy nghĩ: "Okay", "Let's", "First", "I need to", "The user", "We need to", v.v.
-- Cấm liệt kê bước chấm, cấm tóm tắt đề bài cho chính mình; viết trực tiếp như đang nói với sinh viên.
+- Toàn bộ nội dung xuất ra CHỈ là tiếng Việt. Cấm mọi câu tiếng Anh, cấm trích dẫn dài câu SQL/đề bằng tiếng Anh; nếu cần nhắc kỹ thuật thì diễn đạt bằng tiếng Việt (vd. “điều kiện OR”, “ngoặc đơn”, “độ ưu tiên AND/OR”).
+- Cấm đoạn suy nghĩ dạo đầu: "Okay", "Let's", "The issue", "In SQL", "First", "I need", "That means", "The query", "The corrected query", v.v.
+- Cấm giải thích từng bước như đang tự nhủ; không lặp lại toàn bộ đề hay dạy lý thuyết dài.
+
+Cấu trúc nhận xét (bắt buộc, 2–3 câu liền mạch, giọng tự nhiên):
+1) Câu mở: đánh giá mức độ bài làm đã đáp ứng yêu cầu đề (logic, chức năng, hoặc hướng xử lý đúng/sai so với đề).
+2) Câu tiếp: nêu rõ một điểm mạnh nổi bật (cụ thể: đúng cú pháp, đúng nhóm điều kiện, phân trang, v.v. — bám vào mã/đề thật).
+3) Câu cuối bắt đầu bằng “Tuy nhiên,” hoặc “Tuy nhiên cần lưu ý:”: một điểm còn thiếu hoặc cần làm rõ theo đề + gợi ý hành động cụ thể (vd. bổ sung phần giải thích trong comment SQL, bản vẽ logic, kiểm thử thêm…).
 
 Hình thức:
-- ĐÚNG 2 câu ngắn, tự nhiên như người chấm thật.
-- Không markdown, không gạch đầu dòng, không đánh số.
-- Câu 1: đúng/chưa đúng ý chính + một điểm mạnh (nếu có).
-- Câu 2: một điểm cần sửa/thiếu quan trọng nhất + gợi ý ngắn.
-- Tổng khoảng 180–260 ký tự, không lan man.
+- Không markdown, không gạch đầu dòng, không đánh số (1. 2.).
+- Độ dài khoảng 350–520 ký tự (đủ chi tiết nhưng không lan man).
+- Mẫu trích phong cách (nội dung thật phải theo bài nộp, không copy máy móc): «Bài làm đã đáp ứng đúng yêu cầu về … Điểm mạnh nổi bật là … Tuy nhiên, cần bổ sung … theo đề; nên …»
 """
 
 # Âm tiết có dấu — dùng để cắt phần tiếng Anh dạo đầu nếu model vẫn lẫn.
@@ -38,36 +41,46 @@ _VN_MARKED = re.compile(
     r"ÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸĐ]+"
 )
 
+# Đoạn mở kiểu giải thích SQL/lý thuyết bằng tiếng Anh (model hay lẫn trước nhận xét tiếng Việt).
+_EN_HEAD_MARKERS = (
+    "okay",
+    "ok,",
+    "ok.",
+    "let's",
+    "let ",
+    "first,",
+    "first ",
+    "the user",
+    "i need",
+    "i'll",
+    "we need",
+    "to tackle",
+    "let me",
+    "the issue",
+    "operator precedence",
+    "in sql,",
+    "in sql ",
+    "that means",
+    "the query is",
+    "the query would",
+    "the corrected query",
+    "interpreted as",
+    "higher precedence",
+)
+
+
 def _vietnamese_comment_only(raw: str) -> str:
     """Giữ phần nhận xét tiếng Việt; bỏ đoạn tiếng Anh / reasoning ở đầu nếu có."""
     s = re.sub(r"\s+", " ", (raw or "").strip())
     if not s:
         return s
-    low = s[:120].lower()
-    if any(
-        low.startswith(p)
-        for p in (
-            "okay",
-            "ok,",
-            "ok.",
-            "let's",
-            "let ",
-            "first,",
-            "first ",
-            "the user",
-            "i need",
-            "i'll",
-            "we need",
-            "to tackle",
-            "let me",
-        )
-    ):
-        m_vn = _VN_MARKED.search(s)
-        if m_vn and m_vn.start() > 0:
-            s = s[m_vn.start() :].strip(" ,.;:\u2014-")
-    else:
-        m_vn = _VN_MARKED.search(s)
-        if m_vn and m_vn.start() > 40:
+    head = s[:520].lower()
+    looks_en_meta = any(m in head for m in _EN_HEAD_MARKERS) or any(
+        head.startswith(p) for p in _EN_HEAD_MARKERS[:12]
+    )
+    m_vn = _VN_MARKED.search(s)
+    if m_vn and m_vn.start() > 0:
+        if looks_en_meta or m_vn.start() > 25:
             s = s[m_vn.start() :].strip(" ,.;:\u2014-")
     return s.strip()
 
@@ -126,16 +139,17 @@ def comment_one(
         {
             "type": "text",
             "text": (
-                "\n\n---\nYÊU CẦU XUẤT (bắt buộc): Chỉ trả lời ĐÚNG hai câu nhận xét bằng tiếng Việt, "
-                "viết trực tiếp cho sinh viên. Không tiếng Anh. Không giải thích cách chấm hay suy nghĩ từng bước."
+                "\n\n---\nYÊU CẦU XUẤT (bắt buộc): Viết 2–3 câu nhận xét tiếng Việt liền mạch cho sinh viên, "
+                "đúng cấu trúc: (1) mức độ đáp ứng đề → (2) điểm mạnh cụ thể → (3) “Tuy nhiên,” + điều cần sửa/bổ sung + gợi ý. "
+                "Không tiếng Anh, không giải thích SQL bằng tiếng Anh, không đoạn suy nghĩ đầu câu."
             ),
         }
     )
     text, _ = complete_chat_raw(
         [{"role": "system", "content": _SYSTEM}, {"role": "user", "content": parts}],
         model=model,
-        temperature=0.25,
-        max_tokens=220,
+        temperature=0.2,
+        max_tokens=480,
         timeout_s=300.0,
     )
     return _vietnamese_comment_only(re.sub(r"\s+", " ", text).strip())
