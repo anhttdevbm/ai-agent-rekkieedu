@@ -254,17 +254,21 @@
       <section class="panel" id="panel-btvn">
         <h2>Chấm BTVN (nhận xét)</h2>
         <p class="hint">
-          Nhập <strong>đề bài dạng văn bản</strong> (có thể kèm ảnh) và danh sách <strong>link GitHub</strong> bài nộp (mỗi dòng 1 link).
+          <strong>Một ô đề bài:</strong> dán trực tiếp cả văn bản và hình (Ctrl+V từ trang web, Word, ảnh chụp màn hình…). Danh sách <strong>link GitHub</strong> bài nộp (mỗi dòng 1 link).
           Hệ thống sẽ clone repo, đọc mã nguồn (có giới hạn) và tạo <strong>nhận xét ngắn</strong>. Không chấm điểm.
+          Ảnh lấy từ link ngoài có thể bị chặn trình duyệt — khi đó hãy dán ảnh trực tiếp hoặc chụp màn hình rồi dán.
         </p>
         <form id="form-btvn">
           <div class="field">
-            <label for="b-assignment">Đề bài (văn bản)</label>
-            <textarea id="b-assignment" name="assignment_text" rows="8" placeholder="Dán nội dung đề ở đây…"></textarea>
-          </div>
-          <div class="field">
-            <label for="b-images">Ảnh trong đề (tuỳ chọn)</label>
-            <input type="file" id="b-images" name="assignment_images" accept="image/*" multiple />
+            <label for="b-assignment-editor">Đề bài (dán văn bản và hình vào đây)</label>
+            <div
+              id="b-assignment-editor"
+              class="btvn-editor"
+              contenteditable="true"
+              role="textbox"
+              aria-multiline="true"
+              data-placeholder="Dán toàn bộ đề (chữ + ảnh) vào đây…"
+            ></div>
           </div>
           <div class="field">
             <label for="b-gh-token">GitHub Token (tuỳ chọn — dùng cho repo private / tránh 401)</label>

@@ -195,6 +195,46 @@ textarea {
   resize: vertical;
 }
 
+/* BTVN: một ô contenteditable thay textarea + file ảnh */
+.btvn-editor {
+  min-height: 8rem;
+  max-height: 50vh;
+  overflow: auto;
+  resize: vertical;
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.95rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.btvn-editor:empty::before {
+  content: attr(data-placeholder);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.btvn-editor:focus {
+  outline: none;
+  border-color: rgba(200, 255, 77, 0.45);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+
+.btvn-editor img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 0.5rem 0;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
 input:focus,
 select:focus,
 textarea:focus {

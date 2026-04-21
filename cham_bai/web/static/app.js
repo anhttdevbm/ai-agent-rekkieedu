@@ -25,7 +25,12 @@
     fillSelect($("#q-model"), meta.models, meta.default_model);
     fillSelect($("#r-text-model"), meta.models, meta.default_model);
     fillSelect($("#r-image-model"), meta.image_models, meta.default_image_model);
-    if ($("#b-model")) fillSelect($("#b-model"), meta.models, meta.default_model);
+    if ($("#b-model"))
+      fillSelect(
+        $("#b-model"),
+        meta.models,
+        meta.default_btvn_model || meta.default_model
+      );
 
     if (meta.default_learning_goals && !$("#r-goals").value.trim()) {
       $("#r-goals").value = meta.default_learning_goals;
@@ -192,6 +197,120 @@
     }
   }
 
+  function btvnEditorPlainTextWithPlaceholders() {
+    const ed = $("#b-assignment-editor");
+    if (!ed) return "";
+    const clone = ed.cloneNode(true);
+    let n = 0;
+    clone.querySelectorAll("img").forEach((img) => {
+      n += 1;
+      const tn = document.createTextNode("\n[Hình " + n + " trong đề]\n");
+      img.parentNode.replaceChild(tn, img);
+    });
+    return clone.innerText
+      .replace(/\u00a0/g, " ")
+      .replace(/\r\n/g, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+
+  async function imgSrcToBlob(src) {
+    if (!src || String(src).startsWith("javascript:")) return null;
+    try {
+      const r = await fetch(src);
+      if (!r.ok) return null;
+      const blob = await r.blob();
+      if (!blob.type.startsWith("image/")) return null;
+      return blob;
+    } catch {
+      return null;
+    }
+  }
+
+  async function btvnBuildFormData() {
+    const fd = new FormData();
+    const ed = $("#b-assignment-editor");
+    const text = btvnEditorPlainTextWithPlaceholders();
+    fd.set("assignment_text", text);
+    let failed = 0;
+    const totalImg = ed ? ed.querySelectorAll("img").length : 0;
+    if (ed) {
+      let idx = 0;
+      for (const img of ed.querySelectorAll("img")) {
+        idx += 1;
+        const blob = await imgSrcToBlob(img.src);
+        if (!blob || blob.size > 5_000_000) {
+          failed += 1;
+          continue;
+        }
+        const ext = (blob.type.split("/")[1] || "png").replace(/[^a-z0-9]/gi, "") || "png";
+        fd.append("assignment_images", blob, "de-bai-hinh-" + idx + "." + ext);
+      }
+    }
+    fd.set("submissions_text", ($("#b-subs") && $("#b-subs").value) || "");
+    fd.set("model", ($("#b-model") && $("#b-model").value) || "");
+    fd.set("github_token", ($("#b-gh-token") && $("#b-gh-token").value) || "");
+    return { fd, failed, totalImg };
+  }
+
+  function setupBtvnEditor() {
+    const ed = $("#b-assignment-editor");
+    if (!ed) return;
+    ed.addEventListener("paste", (e) => {
+      const cd = e.clipboardData;
+      if (!cd) return;
+      const files = Array.from(cd.files || []).filter((f) => f.type.startsWith("image/"));
+      if (!files.length) return;
+      e.preventDefault();
+      const sel = window.getSelection();
+      if (!sel || !sel.rangeCount) return;
+      const range = sel.getRangeAt(0);
+      range.deleteContents();
+      const plain = cd.getData("text/plain");
+      if (plain) {
+        range.insertNode(document.createTextNode(plain));
+        range.collapse(false);
+      }
+      for (const file of files) {
+        if (file.size > 5_000_000) continue;
+        const url = URL.createObjectURL(file);
+        const img = document.createElement("img");
+        img.src = url;
+        img.alt = "";
+        range.insertNode(img);
+        range.setStartAfter(img);
+        range.collapse(true);
+      }
+    });
+    ed.addEventListener("dragover", (e) => e.preventDefault());
+    ed.addEventListener("drop", (e) => {
+      e.preventDefault();
+      const files = Array.from(e.dataTransfer && e.dataTransfer.files ? e.dataTransfer.files : []).filter(
+        (f) => f.type.startsWith("image/")
+      );
+      if (!files.length) return;
+      const sel = window.getSelection();
+      let range;
+      if (sel && sel.rangeCount && ed.contains(sel.anchorNode)) {
+        range = sel.getRangeAt(0);
+      } else {
+        range = document.createRange();
+        range.selectNodeContents(ed);
+        range.collapse(false);
+      }
+      for (const file of files) {
+        if (file.size > 5_000_000) continue;
+        const url = URL.createObjectURL(file);
+        const img = document.createElement("img");
+        img.src = url;
+        img.alt = "";
+        range.insertNode(img);
+        range.setStartAfter(img);
+        range.collapse(true);
+      }
+    });
+  }
+
   async function postBtvn(ev) {
     ev.preventDefault();
     const btn = $("#b-submit");
@@ -202,7 +321,7 @@
     if (resWrap) resWrap.style.display = "none";
     if (resBody) resBody.innerHTML = "";
     try {
-      const fd = new FormData(ev.target);
+      const { fd, failed, totalImg } = await btvnBuildFormData();
       const r = await fetch("/api/btvn", { method: "POST", body: fd });
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
@@ -234,7 +353,16 @@
         });
         if (resWrap) resWrap.style.display = "";
       }
-      $("#b-status").textContent = "Xong.";
+      let statusMsg = "Xong.";
+      if (totalImg > 0 && failed > 0) {
+        statusMsg +=
+          " Cảnh báo: " +
+          failed +
+          "/" +
+          totalImg +
+          " ảnh trong đề không gửi được (link bị chặn hoặc quá 5MB) — thử dán ảnh trực tiếp hoặc chụp màn hình.";
+      }
+      $("#b-status").textContent = statusMsg;
     } catch (e) {
       alert(String(e));
     } finally {
@@ -277,6 +405,7 @@
     $("#form-reading").addEventListener("submit", postReading);
     const fb = $("#form-btvn");
     if (fb) fb.addEventListener("submit", postBtvn);
+    setupBtvnEditor();
     loadMeta().catch((e) => {
       $("#ver-pill").textContent = "lỗi tải meta";
       console.error(e);

@@ -12,12 +12,16 @@ QUIZ_KIND_OPTIONS: tuple[tuple[str, str], ...] = (
     ("Quizz Session cuối giờ", QUIZ_KIND_SESSION_END),
 )
 
+# Vision–language, free; phù hợp Chấm BTVN (đề có ảnh + đọc repo).
+DEFAULT_BTVN_MODEL = "nvidia/nemotron-nano-12b-v2-vl:free"
+
 MODEL_OPTIONS: tuple[str, ...] = (
     "anthropic/claude-sonnet-4.6",
     "anthropic/claude-opus-4.6",
     "deepseek/deepseek-v3.2",
     "minimax/minimax-m2.7",
     "google/gemini-3-flash-preview",
+    "nvidia/nemotron-nano-12b-v2-vl:free",
     "nvidia/nemotron-3-super-120b-a12b:free",
 )
 
