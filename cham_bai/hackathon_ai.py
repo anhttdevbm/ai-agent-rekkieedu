@@ -57,17 +57,27 @@ def generate_hackathon_exam_spec(
     header_top: str,
     header_sub: str,
     duration_minutes: int,
-    topic: str,
+    subject: str,
+    outline_text: str,
     technology: str,
     ide: str,
     exam_code: str,
     extra_notes: str = "",
 ) -> dict[str, Any]:
+    outlines = [
+        ln.strip()
+        for ln in (outline_text or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")
+        if ln.strip() and not ln.strip().startswith("#")
+    ]
+    if not outlines:
+        outlines = ["Tạo CSDL và các bảng", "Truy vấn dữ liệu cơ bản", "Truy vấn dữ liệu nâng cao"]
+
     user = {
         "header_top": header_top,
         "header_sub": header_sub,
         "duration_minutes": duration_minutes,
-        "topic": topic,
+        "subject": subject,
+        "outline": outlines,
         "technology": technology,
         "ide": ide,
         "exam_code": exam_code,

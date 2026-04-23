@@ -832,7 +832,8 @@ async def api_hackathon(
     header_sub: str = Form(""),
     duration_minutes: int = Form(120),
     mode: str = Form("manual"),  # manual | ai
-    topic: str = Form(""),
+    subject: str = Form(""),
+    outline_text: str = Form(""),
     technology: str = Form("MySQL"),
     ide: str = Form("MySQL Workbench"),
     exam_code: str = Form("006"),
@@ -853,15 +854,21 @@ async def api_hackathon(
         except RuntimeError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
+        subj = (subject or "").strip()
+        ex_code = (exam_code or "").strip() or "006"
+        # If user doesn't type header_sub, build like mẫu: "<MÔN> - Đề 006"
+        hs = (header_sub or "").strip() or (f"{subj} - Đề {ex_code}" if subj else f"Đề {ex_code}")
+
         spec = generate_hackathon_exam_spec(
             model=m,
             header_top=(header_top or "").strip() or "KIỂM TRA HACKATHON",
-            header_sub=(header_sub or "").strip(),
+            header_sub=hs,
             duration_minutes=mins,
-            topic=(topic or "").strip(),
+            subject=subj,
+            outline_text=(outline_text or "").strip(),
             technology=(technology or "").strip() or "MySQL",
             ide=(ide or "").strip() or "MySQL Workbench",
-            exam_code=(exam_code or "").strip() or "006",
+            exam_code=ex_code,
             extra_notes=(extra_notes or "").strip(),
         )
         raw = build_hackathon_exam_docx_from_spec(spec)

@@ -319,8 +319,8 @@
           <div id="hackathon-ai-fields" style="display:none">
             <div class="row2">
               <div class="field">
-                <label for="h-topic">Chủ đề / phạm vi đề</label>
-                <input type="text" id="h-topic" name="topic" placeholder="vd. MySQL: Library Management + CRUD + Join + Subquery" />
+                <label for="h-subject">Tên môn học</label>
+                <input type="text" id="h-subject" name="subject" placeholder="vd. NHẬP MÔN CSDL MYSQL" />
               </div>
               <div class="field">
                 <label for="h-model">Model OpenRouter</label>
@@ -347,9 +347,19 @@
                 <input type="text" id="h-notes" name="extra_notes" placeholder="vd. Tập trung JOIN, GROUP BY, HAVING" />
               </div>
             </div>
+            <div class="field">
+              <label for="h-outline">Các phần/nội dung đề (mỗi dòng 1 phần)</label>
+              <textarea
+                id="h-outline"
+                name="outline_text"
+                rows="5"
+                placeholder="Tạo CSDL và các bảng&#10;Truy vấn dữ liệu cơ bản&#10;Truy vấn dữ liệu nâng cao"
+              ></textarea>
+              <p class="small">AI sẽ sinh đầy đủ PHẦN 1/2/3 theo danh sách này (có bảng cấu trúc, dữ liệu mẫu, thang điểm).</p>
+            </div>
           </div>
 
-          <div class="field">
+          <div class="field" id="hackathon-manual-body">
             <label for="h-body">Nội dung đề (dán toàn bộ)</label>
             <textarea
               id="h-body"

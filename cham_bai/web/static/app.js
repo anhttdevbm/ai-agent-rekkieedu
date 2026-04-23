@@ -472,6 +472,8 @@
         const on = hAI.checked;
         const box = $("#hackathon-ai-fields");
         if (box) box.style.display = on ? "" : "none";
+        const mb = $("#hackathon-manual-body");
+        if (mb) mb.style.display = on ? "none" : "";
         const body = $("#h-body");
         if (body) body.required = !on;
       });
