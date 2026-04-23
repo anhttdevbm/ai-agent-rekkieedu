@@ -293,18 +293,8 @@
         </p>
         <form id="form-hackathon">
           <div class="checkline">
-            <input type="checkbox" id="h-ai" name="mode" value="ai" />
-            <label for="h-ai" style="margin: 0">Dùng AI tạo đề theo chủ đề</label>
-          </div>
-          <div class="row2">
-            <div class="field">
-              <label for="h-top">Dòng tiêu đề 1</label>
-              <input type="text" id="h-top" name="header_top" value="KIỂM TRA HACKATHON" required />
-            </div>
-            <div class="field">
-              <label for="h-sub">Dòng tiêu đề 2</label>
-              <input type="text" id="h-sub" name="header_sub" placeholder="NHẬP MÔN CSDL MYSQL - Đề 006" />
-            </div>
+            <input type="checkbox" id="h-ai" name="mode" value="ai" checked />
+            <label for="h-ai" style="margin: 0">Dùng AI tạo đề (mặc định)</label>
           </div>
           <div class="row2">
             <div class="field">
@@ -319,8 +309,8 @@
           <div id="hackathon-ai-fields" style="display:none">
             <div class="row2">
               <div class="field">
-                <label for="h-subject">Tên môn học</label>
-                <input type="text" id="h-subject" name="subject" placeholder="vd. NHẬP MÔN CSDL MYSQL" />
+                <label for="h-code">Số đề</label>
+                <input type="number" id="h-code" name="exam_code" min="1" max="999" value="6" />
               </div>
               <div class="field">
                 <label for="h-model">Model OpenRouter</label>
@@ -337,15 +327,9 @@
                 <input type="text" id="h-ide" name="ide" value="MySQL Workbench" />
               </div>
             </div>
-            <div class="row2">
-              <div class="field">
-                <label for="h-code">Mã đề</label>
-                <input type="text" id="h-code" name="exam_code" value="006" />
-              </div>
-              <div class="field">
-                <label for="h-notes">Ghi chú thêm (tuỳ chọn)</label>
-                <input type="text" id="h-notes" name="extra_notes" placeholder="vd. Tập trung JOIN, GROUP BY, HAVING" />
-              </div>
+            <div class="field">
+              <label for="h-notes">Ghi chú thêm (tuỳ chọn)</label>
+              <input type="text" id="h-notes" name="extra_notes" placeholder="vd. Tập trung JOIN, GROUP BY, HAVING" />
             </div>
             <div class="field">
               <label for="h-outline">Các phần/nội dung đề (mỗi dòng 1 phần)</label>
@@ -488,6 +472,6 @@
 
       <footer>Chạy local · OpenRouter · không lưu dữ liệu trên server sau khi tải file</footer>
     </div>
-    <script src="/static/app.js?v=20260421_8"></script>
+    <script src="/static/app.js?v=20260421_10"></script>
   </body>
 </html>

@@ -828,11 +828,8 @@ async def api_reading(
 
 @app.post("/api/hackathon")
 async def api_hackathon(
-    header_top: str = Form("KIỂM TRA HACKATHON"),
-    header_sub: str = Form(""),
     duration_minutes: int = Form(120),
     mode: str = Form("manual"),  # manual | ai
-    subject: str = Form(""),
     outline_text: str = Form(""),
     technology: str = Form("MySQL"),
     ide: str = Form("MySQL Workbench"),
@@ -854,14 +851,20 @@ async def api_hackathon(
         except RuntimeError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-        subj = (subject or "").strip()
-        ex_code = (exam_code or "").strip() or "006"
-        # If user doesn't type header_sub, build like mẫu: "<MÔN> - Đề 006"
-        hs = (header_sub or "").strip() or (f"{subj} - Đề {ex_code}" if subj else f"Đề {ex_code}")
+        # Fixed header like mẫu
+        header_top = "KIỂM TRA HACKATHON"
+        subj = "NHẬP MÔN CSDL MYSQL"
+        try:
+            ex_int = int(str(exam_code or "").strip() or "6")
+        except Exception:
+            ex_int = 6
+        ex_int = max(1, min(999, ex_int))
+        ex_code = f"{ex_int:03d}"
+        hs = f"{subj} - Đề {ex_code}"
 
         spec = generate_hackathon_exam_spec(
             model=m,
-            header_top=(header_top or "").strip() or "KIỂM TRA HACKATHON",
+            header_top=header_top,
             header_sub=hs,
             duration_minutes=mins,
             subject=subj,
@@ -876,9 +879,18 @@ async def api_hackathon(
         body = (body_text or "").strip()
         if not body:
             raise HTTPException(status_code=400, detail="Thiếu nội dung đề.")
+        header_top = "KIỂM TRA HACKATHON"
+        subj = "NHẬP MÔN CSDL MYSQL"
+        try:
+            ex_int = int(str(exam_code or "").strip() or "6")
+        except Exception:
+            ex_int = 6
+        ex_int = max(1, min(999, ex_int))
+        ex_code = f"{ex_int:03d}"
+        hs = f"{subj} - Đề {ex_code}"
         params = HackathonExamParams(
-            header_top=(header_top or "").strip() or "KIỂM TRA HACKATHON",
-            header_sub=(header_sub or "").strip(),
+            header_top=header_top,
+            header_sub=hs,
             duration_minutes=mins,
             body_text=body,
         )
