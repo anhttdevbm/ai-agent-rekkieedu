@@ -32,6 +32,7 @@
         meta.default_btvn_model || meta.default_model
       );
     if ($("#gr-model")) fillSelect($("#gr-model"), meta.models, meta.default_model);
+    if ($("#h-model")) fillSelect($("#h-model"), meta.models, meta.default_model);
 
     if (meta.default_learning_goals && !$("#r-goals").value.trim()) {
       $("#r-goals").value = meta.default_learning_goals;
@@ -398,6 +399,42 @@
     }
   }
 
+  async function postHackathon(ev) {
+    ev.preventDefault();
+    const btn = $("#h-submit");
+    setBusy(btn, true, "Đang tạo…");
+    $("#h-status").textContent = "";
+    try {
+      const fd = new FormData(ev.target);
+      // checkbox mode
+      fd.set("mode", $("#h-ai") && $("#h-ai").checked ? "ai" : "manual");
+      if ($("#h-ai") && $("#h-ai").checked) {
+        fd.delete("body_text");
+      }
+      const r = await fetch("/api/hackathon", { method: "POST", body: fd });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        alert(formatApiErr(err.detail) || "Lỗi tạo đề Hackathon");
+        return;
+      }
+      const blob = await r.blob();
+      const cd = r.headers.get("Content-Disposition") || "";
+      let name = "de_hackathon.docx";
+      const m = /filename\*?=(?:UTF-8'')?([^;\n]+)/i.exec(cd);
+      if (m) name = decodeURIComponent(m[1].replace(/['"]/g, "").trim());
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      $("#h-status").textContent = "Đã tải file DOCX.";
+    } catch (e) {
+      alert(String(e));
+    } finally {
+      setBusy(btn, false);
+    }
+  }
+
   async function postGroup(ev) {
     ev.preventDefault();
     const btn = $("#gr-submit");
@@ -427,6 +464,20 @@
     $("#form-grade").addEventListener("submit", postGrade);
     $("#form-quiz").addEventListener("submit", postQuiz);
     $("#form-reading").addEventListener("submit", postReading);
+    const fh = $("#form-hackathon");
+    if (fh) fh.addEventListener("submit", postHackathon);
+    const hAI = $("#h-ai");
+    if (hAI) {
+      hAI.addEventListener("change", () => {
+        const on = hAI.checked;
+        const box = $("#hackathon-ai-fields");
+        if (box) box.style.display = on ? "" : "none";
+        const body = $("#h-body");
+        if (body) body.required = !on;
+      });
+      // init state
+      hAI.dispatchEvent(new Event("change"));
+    }
     const fg = $("#form-group");
     if (fg) fg.addEventListener("submit", postGroup);
     const fb = $("#form-btvn");

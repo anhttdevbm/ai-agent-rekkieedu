@@ -26,6 +26,7 @@
         <button type="button" class="active" data-tab="grade">Chấm bài</button>
         <button type="button" data-tab="quiz">Quiz</button>
         <button type="button" data-tab="reading">Bài đọc</button>
+        <button type="button" data-tab="hackathon">Làm đề thi Hackathon</button>
         <button type="button" data-tab="btvn">Chấm BTVN (Rikkei)</button>
         <button type="button" data-tab="group">Chấm hoạt động nhóm</button>
       </nav>
@@ -284,6 +285,89 @@
         </form>
       </section>
 
+      <!-- Làm đề thi Hackathon -->
+      <section class="panel" id="panel-hackathon">
+        <h2>Làm đề thi Hackathon (DOCX)</h2>
+        <p class="hint">
+          Chỉ có <strong>Đề tự luận</strong>. Bạn có thể <strong>dùng AI</strong> để sinh đề theo chủ đề, hoặc dán tay để xuất Word theo form.
+        </p>
+        <form id="form-hackathon">
+          <div class="checkline">
+            <input type="checkbox" id="h-ai" name="mode" value="ai" />
+            <label for="h-ai" style="margin: 0">Dùng AI tạo đề theo chủ đề</label>
+          </div>
+          <div class="row2">
+            <div class="field">
+              <label for="h-top">Dòng tiêu đề 1</label>
+              <input type="text" id="h-top" name="header_top" value="KIỂM TRA HACKATHON" required />
+            </div>
+            <div class="field">
+              <label for="h-sub">Dòng tiêu đề 2</label>
+              <input type="text" id="h-sub" name="header_sub" placeholder="NHẬP MÔN CSDL MYSQL - Đề 006" />
+            </div>
+          </div>
+          <div class="row2">
+            <div class="field">
+              <label for="h-mins">Thời gian (phút)</label>
+              <input type="number" id="h-mins" name="duration_minutes" min="1" max="360" value="120" />
+            </div>
+            <div class="field" style="align-self:end">
+              <div class="hint" style="margin:0">Đầu ra: <strong>.docx</strong></div>
+            </div>
+          </div>
+
+          <div id="hackathon-ai-fields" style="display:none">
+            <div class="row2">
+              <div class="field">
+                <label for="h-topic">Chủ đề / phạm vi đề</label>
+                <input type="text" id="h-topic" name="topic" placeholder="vd. MySQL: Library Management + CRUD + Join + Subquery" />
+              </div>
+              <div class="field">
+                <label for="h-model">Model OpenRouter</label>
+                <select id="h-model" name="model"></select>
+              </div>
+            </div>
+            <div class="row2">
+              <div class="field">
+                <label for="h-tech">Công nghệ</label>
+                <input type="text" id="h-tech" name="technology" value="MySQL" />
+              </div>
+              <div class="field">
+                <label for="h-ide">IDE</label>
+                <input type="text" id="h-ide" name="ide" value="MySQL Workbench" />
+              </div>
+            </div>
+            <div class="row2">
+              <div class="field">
+                <label for="h-code">Mã đề</label>
+                <input type="text" id="h-code" name="exam_code" value="006" />
+              </div>
+              <div class="field">
+                <label for="h-notes">Ghi chú thêm (tuỳ chọn)</label>
+                <input type="text" id="h-notes" name="extra_notes" placeholder="vd. Tập trung JOIN, GROUP BY, HAVING" />
+              </div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="h-body">Nội dung đề (dán toàn bộ)</label>
+            <textarea
+              id="h-body"
+              name="body_text"
+              rows="14"
+              placeholder="Dán nội dung đề và thang chấm điểm ở đây..."
+            ></textarea>
+            <p class="small">
+              Mẹo: mục “Thang chấm điểm” nếu dán theo dạng mỗi dòng <code>&lt;số câu&gt; &lt;nội dung&gt; &lt;điểm&gt;</code> thì hệ thống sẽ dựng bảng tự động.
+            </p>
+          </div>
+          <div class="actions">
+            <button type="submit" class="primary" id="h-submit">Tạo &amp; tải .docx</button>
+          </div>
+          <p class="status" id="h-status"></p>
+        </form>
+      </section>
+
       <!-- Chấm BTVN (nhận xét repo) -->
       <section class="panel" id="panel-btvn">
         <h2>Chấm BTVN (nhận xét)</h2>
@@ -394,6 +478,6 @@
 
       <footer>Chạy local · OpenRouter · không lưu dữ liệu trên server sau khi tải file</footer>
     </div>
-    <script src="/static/app.js?v=20260421_7"></script>
+    <script src="/static/app.js?v=20260421_8"></script>
   </body>
 </html>

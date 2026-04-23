@@ -53,6 +53,12 @@ from cham_bai.reading_gen import (
 )
 from cham_bai.btvn_comment import BtvnCommentParams, run_btvn_comments_json
 from cham_bai.group_activity import GroupGradeParams, grade_group_activity
+from cham_bai.hackathon_exam import (
+    HackathonExamParams,
+    build_hackathon_exam_docx_bytes,
+    build_hackathon_exam_docx_from_spec,
+)
+from cham_bai.hackathon_ai import generate_hackathon_exam_spec
 from cham_bai.workflow import (
     GradeJobParams,
     GradeJobResult,
@@ -817,6 +823,73 @@ async def api_reading(
         path=str(zip_p),
         filename=zip_name,
         media_type="application/zip",
+    )
+
+
+@app.post("/api/hackathon")
+async def api_hackathon(
+    header_top: str = Form("KIỂM TRA HACKATHON"),
+    header_sub: str = Form(""),
+    duration_minutes: int = Form(120),
+    mode: str = Form("manual"),  # manual | ai
+    topic: str = Form(""),
+    technology: str = Form("MySQL"),
+    ide: str = Form("MySQL Workbench"),
+    exam_code: str = Form("006"),
+    extra_notes: str = Form(""),
+    model: str = Form(""),
+    body_text: str = Form(""),
+) -> FileResponse:
+    mins = max(1, int(duration_minutes or 0))
+    m = (model or os.getenv("OPENROUTER_MODEL", "anthropic/claude-sonnet-4.6")).strip()
+
+    raw: bytes
+    if (mode or "").strip().lower() == "ai":
+        # Need OpenRouter key
+        try:
+            from cham_bai.settings import api_key as _need_key
+
+            _need_key()
+        except RuntimeError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+        spec = generate_hackathon_exam_spec(
+            model=m,
+            header_top=(header_top or "").strip() or "KIỂM TRA HACKATHON",
+            header_sub=(header_sub or "").strip(),
+            duration_minutes=mins,
+            topic=(topic or "").strip(),
+            technology=(technology or "").strip() or "MySQL",
+            ide=(ide or "").strip() or "MySQL Workbench",
+            exam_code=(exam_code or "").strip() or "006",
+            extra_notes=(extra_notes or "").strip(),
+        )
+        raw = build_hackathon_exam_docx_from_spec(spec)
+    else:
+        body = (body_text or "").strip()
+        if not body:
+            raise HTTPException(status_code=400, detail="Thiếu nội dung đề.")
+        params = HackathonExamParams(
+            header_top=(header_top or "").strip() or "KIỂM TRA HACKATHON",
+            header_sub=(header_sub or "").strip(),
+            duration_minutes=mins,
+            body_text=body,
+        )
+        raw = build_hackathon_exam_docx_bytes(params)
+
+    if not raw:
+        raise HTTPException(status_code=500, detail="Không tạo được file DOCX.")
+
+    out_dir = tempfile.mkdtemp(prefix="hackathon_out_")
+    out_path = Path(out_dir) / "de_hackathon.docx"
+    out_path.write_bytes(raw)
+    background_tasks = BackgroundTasks()
+    background_tasks.add_task(shutil.rmtree, out_dir, True)
+    return FileResponse(
+        path=str(out_path),
+        filename=out_path.name,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        background=background_tasks,
     )
 
 
