@@ -830,6 +830,7 @@ async def api_reading(
 async def api_hackathon(
     duration_minutes: int = Form(120),
     mode: str = Form("manual"),  # manual | ai
+    subject: str = Form(""),
     outline_text: str = Form(""),
     technology: str = Form("MySQL"),
     ide: str = Form("MySQL Workbench"),
@@ -853,7 +854,7 @@ async def api_hackathon(
 
         # Fixed header like mẫu
         header_top = "KIỂM TRA HACKATHON"
-        subj = "NHẬP MÔN CSDL MYSQL"
+        subj = (subject or "").strip() or "NHẬP MÔN CSDL MYSQL"
         try:
             ex_int = int(str(exam_code or "").strip() or "6")
         except Exception:
@@ -880,7 +881,7 @@ async def api_hackathon(
         if not body:
             raise HTTPException(status_code=400, detail="Thiếu nội dung đề.")
         header_top = "KIỂM TRA HACKATHON"
-        subj = "NHẬP MÔN CSDL MYSQL"
+        subj = (subject or "").strip() or "NHẬP MÔN CSDL MYSQL"
         try:
             ex_int = int(str(exam_code or "").strip() or "6")
         except Exception:
