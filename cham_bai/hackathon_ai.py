@@ -15,6 +15,12 @@ Mục tiêu:
 - Chủ đề và nội dung phải bám theo input của người dùng (môn/chủ đề/công nghệ/IDE/mã đề).
 - Ngôn ngữ: tiếng Việt.
 
+GIỚI HẠN ĐỘ DÀI (để tránh lỗi JSON/cụt):
+- Mỗi bảng cấu trúc (schema table): tối đa 8 dòng cột.
+- Mỗi bảng dữ liệu mẫu: tối đa 6 dòng dữ liệu.
+- Thang chấm điểm: đúng 6 dòng (1..6) và total=100.
+- Không nhồi quá nhiều chữ trong 1 ô bảng (<= 80 ký tự/ô).
+
 YÊU CẦU XUẤT:
 - Chỉ output 1 JSON object hợp lệ (không markdown, không ```).
 - JSON phải theo schema:
@@ -58,6 +64,7 @@ YÊU CẦU XUẤT:
 - Chỉ output 1 JSON object HỢP LỆ theo đúng schema đã nêu.
 - Không markdown, không ``` , không giải thích, không chữ ngoài JSON.
 - JSON phải bắt đầu bằng '{' và kết thúc bằng '}'.
+- Tuyệt đối không thiếu dấu phẩy giữa các field/array item.
 """
 
 
@@ -136,6 +143,7 @@ def generate_hackathon_exam_spec(
         },
     }
 
+    extra = {"response_format": {"type": "json_object"}}
     text, _ = complete_chat_raw(
         [
             {"role": "system", "content": _SYSTEM},
@@ -152,6 +160,7 @@ def generate_hackathon_exam_spec(
         temperature=0.35,
         max_tokens=3500,
         timeout_s=420.0,
+        extra_body=extra,
     )
     try:
         return _parse_json_best_effort(text)
@@ -178,6 +187,7 @@ def generate_hackathon_exam_spec(
             temperature=0.15,
             max_tokens=3500,
             timeout_s=420.0,
+            extra_body=extra,
         )
         try:
             return _parse_json_best_effort(text2)
@@ -206,6 +216,7 @@ def generate_hackathon_exam_spec(
                 temperature=0.05,
                 max_tokens=3500,
                 timeout_s=420.0,
+                extra_body=extra,
             )
             return _parse_json_best_effort(text3)
 
