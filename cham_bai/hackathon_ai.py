@@ -51,6 +51,15 @@ Quy tắc bảng:
 """
 
 
+_REPAIR_SYSTEM = """Bạn đang sửa lỗi output.
+
+YÊU CẦU XUẤT:
+- Chỉ output 1 JSON object HỢP LỆ theo đúng schema đã nêu.
+- Không markdown, không ``` , không giải thích, không chữ ngoài JSON.
+- JSON phải bắt đầu bằng '{' và kết thúc bằng '}'.
+"""
+
+
 def generate_hackathon_exam_spec(
     *,
     model: str,
@@ -105,5 +114,31 @@ def generate_hackathon_exam_spec(
         max_tokens=3500,
         timeout_s=420.0,
     )
-    return parse_llm_json(text)
+    try:
+        return parse_llm_json(text)
+    except Exception:
+        # Repair pass: model đôi khi trả thiếu/cụt hoặc lẫn chữ.
+        bad = (text or "").strip()
+        tail = bad[-4500:] if len(bad) > 4500 else bad
+        text2, _ = complete_chat_raw(
+            [
+                {"role": "system", "content": _REPAIR_SYSTEM},
+                {
+                    "role": "user",
+                    "content": (
+                        "Output JSON trước bị lỗi hoặc không parse được. "
+                        "Hãy output LẠI 1 JSON object hợp lệ theo schema, dựa trên input.\n\n"
+                        "=== INPUT ===\n"
+                        + json.dumps(user, ensure_ascii=False)
+                        + "\n\n=== OUTPUT LỖI (trích) ===\n"
+                        + tail
+                    ),
+                },
+            ],
+            model=model,
+            temperature=0.2,
+            max_tokens=3500,
+            timeout_s=420.0,
+        )
+        return parse_llm_json(text2)
 

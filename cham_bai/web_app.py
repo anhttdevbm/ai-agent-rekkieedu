@@ -863,19 +863,24 @@ async def api_hackathon(
         ex_code = f"{ex_int:03d}"
         hs = f"{subj} - Đề {ex_code}"
 
-        spec = generate_hackathon_exam_spec(
-            model=m,
-            header_top=header_top,
-            header_sub=hs,
-            duration_minutes=mins,
-            subject=subj,
-            outline_text=(outline_text or "").strip(),
-            technology=(technology or "").strip() or "MySQL",
-            ide=(ide or "").strip() or "MySQL Workbench",
-            exam_code=ex_code,
-            extra_notes=(extra_notes or "").strip(),
-        )
-        raw = build_hackathon_exam_docx_from_spec(spec)
+        try:
+            spec = generate_hackathon_exam_spec(
+                model=m,
+                header_top=header_top,
+                header_sub=hs,
+                duration_minutes=mins,
+                subject=subj,
+                outline_text=(outline_text or "").strip(),
+                technology=(technology or "").strip() or "MySQL",
+                ide=(ide or "").strip() or "MySQL Workbench",
+                exam_code=ex_code,
+                extra_notes=(extra_notes or "").strip(),
+            )
+            raw = build_hackathon_exam_docx_from_spec(spec)
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Lỗi tạo đề bằng AI: {e}")
     else:
         body = (body_text or "").strip()
         if not body:
