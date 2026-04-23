@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from cham_bai.openrouter import complete_chat_raw
@@ -60,6 +61,44 @@ YÊU CẦU XUẤT:
 """
 
 
+def _extract_json_object_candidate(text: str) -> str:
+    raw = (text or "").strip()
+    # strip fenced blocks
+    m = re.search(r"```(?:json)?\s*([\s\S]*?)```", raw, re.I)
+    if m:
+        raw = (m.group(1) or "").strip()
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return raw
+    return raw[start : end + 1].strip()
+
+
+def _fix_common_json_issues(s: str) -> str:
+    t = (s or "").strip()
+    if not t:
+        return t
+    # normalize smart quotes
+    t = t.replace("“", '"').replace("”", '"').replace("’", "'").replace("–", "-")
+    # remove trailing commas before } or ]
+    t = re.sub(r",\s*([}\]])", r"\1", t)
+    # remove null bytes/control chars
+    t = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", t)
+    return t
+
+
+def _parse_json_best_effort(text: str) -> dict[str, Any]:
+    # 1) normal parser (handles ```json fences)
+    try:
+        return parse_llm_json(text)
+    except Exception:
+        pass
+    # 2) extract + fix common issues
+    cand = _extract_json_object_candidate(text)
+    cand2 = _fix_common_json_issues(cand)
+    return json.loads(cand2)
+
+
 def generate_hackathon_exam_spec(
     *,
     model: str,
@@ -115,9 +154,9 @@ def generate_hackathon_exam_spec(
         timeout_s=420.0,
     )
     try:
-        return parse_llm_json(text)
-    except Exception:
-        # Repair pass: model đôi khi trả thiếu/cụt hoặc lẫn chữ.
+        return _parse_json_best_effort(text)
+    except Exception as e1:
+        # Repair pass 1: model đôi khi trả thiếu/cụt hoặc lẫn chữ.
         bad = (text or "").strip()
         tail = bad[-4500:] if len(bad) > 4500 else bad
         text2, _ = complete_chat_raw(
@@ -136,9 +175,37 @@ def generate_hackathon_exam_spec(
                 },
             ],
             model=model,
-            temperature=0.2,
+            temperature=0.15,
             max_tokens=3500,
             timeout_s=420.0,
         )
-        return parse_llm_json(text2)
+        try:
+            return _parse_json_best_effort(text2)
+        except Exception as e2:
+            # Repair pass 2: gửi kèm lỗi decode để model sửa đúng vị trí
+            err_msg = f"{type(e2).__name__}: {e2}"
+            tail2 = (text2 or "").strip()
+            tail2 = tail2[-4500:] if len(tail2) > 4500 else tail2
+            text3, _ = complete_chat_raw(
+                [
+                    {"role": "system", "content": _REPAIR_SYSTEM},
+                    {
+                        "role": "user",
+                        "content": (
+                            "JSON vẫn lỗi. Hãy sửa và output lại JSON hợp lệ theo schema.\n"
+                            "Quan trọng: output chỉ 1 JSON object, không chữ thừa.\n\n"
+                            f"Lỗi parse: {err_msg}\n\n"
+                            "=== INPUT ===\n"
+                            + json.dumps(user, ensure_ascii=False)
+                            + "\n\n=== OUTPUT LỖI (trích) ===\n"
+                            + tail2
+                        ),
+                    },
+                ],
+                model=model,
+                temperature=0.05,
+                max_tokens=3500,
+                timeout_s=420.0,
+            )
+            return _parse_json_best_effort(text3)
 
