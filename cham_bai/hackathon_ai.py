@@ -61,6 +61,9 @@ QUAN TRỌNG CHO PHẦN 2 / PHẦN 3:
 - KHÔNG dùng dạng "2.1/2.2/3.1". Thay vào đó, TOÀN BỘ câu hỏi trong PHẦN 1/2/3 phải đánh số LIÊN TỤC:
   1., 2., 3., ... đến N (vd tổng 17 câu thì từ 1 đến 17), không reset theo phần.
 - Các câu hỏi phải đưa vào field "lines" (mỗi dòng là 1 câu), và mỗi dòng phải bắt đầu bằng "k. " (k là số thứ tự).
+- MỖI câu hỏi bắt buộc có điểm ngay trong dòng, theo đúng mẫu: kết thúc bằng "(X điểm)".
+  Ví dụ: "1. Tạo 4 bảng ... (15 điểm)".
+- Tổng điểm các câu phải cộng lại đúng 100 (không tính dòng bonus ở cuối file).
 - Không dùng list-number tự đánh số (vì Word có thể reset số).
 - Với PHẦN 2 và PHẦN 3: "tables" phải để rỗng [] (chỉ văn bản).
 """
