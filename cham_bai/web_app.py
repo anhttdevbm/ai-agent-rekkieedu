@@ -58,7 +58,7 @@ from cham_bai.hackathon_exam import (
     build_hackathon_exam_docx_bytes,
     build_hackathon_exam_docx_from_spec,
 )
-from cham_bai.hackathon_ai import generate_hackathon_exam_spec
+from cham_bai.hackathon_ai import ensure_practice_section, ensure_required_section, generate_hackathon_exam_spec
 from cham_bai.workflow import (
     GradeJobParams,
     GradeJobResult,
@@ -876,6 +876,18 @@ async def api_hackathon(
                 exam_code=ex_code,
                 extra_notes=(extra_notes or "").strip(),
             )
+            # Ensure required "Yêu cầu" always exists (AI sometimes omits).
+            req_bullets = [
+                "Tạo github repository theo cú pháp :  [Tên lớp]_[Họ Tên]_[Mã đề]",
+                "Ví dụ: HN-K24-CNTT1_NguyenVanA_001",
+                "Sau khi hoàn thành, đẩy code lên github repo và nộp link cho người phụ trách",
+                f"Công nghệ sử dụng: {(technology or '').strip() or 'MySQL'}",
+                f"IDE : {(ide or '').strip() or 'MySQL Workbench'}",
+                "Thực hành bài trong script, lưu thành file tên hackathon.sql trong repository đã tạo ở trên.",
+                "Lưu ý tuyệt đối không sử dụng Chat-GPT hay AI để làm bài, không copy bài người khác , nếu bị phát hiện sẽ lập biên bản và xử lý theo qui định.",
+            ]
+            spec = ensure_required_section(spec, required_bullets=req_bullets)
+            spec = ensure_practice_section(spec)
             raw = build_hackathon_exam_docx_from_spec(spec)
         except HTTPException:
             raise

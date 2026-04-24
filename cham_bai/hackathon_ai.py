@@ -31,6 +31,7 @@ YÊU CẦU XUẤT:
   "sections": [
     {
       "title": "Yêu cầu:",
+      "lines": [],
       "paragraphs": [],
       "bullets": ["...", "..."],
       "numbered": [],
@@ -38,6 +39,7 @@ YÊU CẦU XUẤT:
     },
     {
       "title": "Thực hành:",
+      "lines": [],
       "paragraphs": [],
       "bullets": [],
       "numbered": [],
@@ -55,6 +57,20 @@ YÊU CẦU XUẤT:
 Quy tắc bảng:
 - Mỗi table: { "title": "...", "headers": [...], "rows": [[...], ...] }
 - Các ô là string; dùng "✅" nếu muốn.
+
+RÀNG BUỘC BỐ CỤC (bắt buộc):
+- Trong các section có bảng (đặc biệt PHẦN 1), hãy đặt bảng trong "tables" trước, và đặt các yêu cầu dạng câu hỏi trong "numbered" để hiển thị NGAY BÊN DƯỚI bảng.
+- Ví dụ đúng (ý tưởng): sau các bảng cấu trúc, "numbered" phải có các dòng như:
+  "Tạo bảng (15 điểm) ...",
+  "Chèn dữ liệu (10 điểm) ...",
+  và sau các bảng dữ liệu mẫu cũng có dòng yêu cầu tương ứng.
+
+QUAN TRỌNG CHO PHẦN 2 / PHẦN 3:
+- KHÔNG dùng dạng "2.1/2.2/3.1". Thay vào đó, TOÀN BỘ câu hỏi trong PHẦN 1/2/3 phải đánh số LIÊN TỤC:
+  1., 2., 3., ... đến N (vd tổng 17 câu thì từ 1 đến 17), không reset theo phần.
+- Các câu hỏi phải đưa vào field "lines" (mỗi dòng là 1 câu), và mỗi dòng phải bắt đầu bằng "k. " (k là số thứ tự).
+- Không dùng list-number tự đánh số (vì Word có thể reset số).
+- Với PHẦN 2 và PHẦN 3: "tables" phải để rỗng [] (chỉ văn bản).
 """
 
 
@@ -127,16 +143,30 @@ def generate_hackathon_exam_spec(
     if not outlines:
         outlines = ["Tạo CSDL và các bảng", "Truy vấn dữ liệu cơ bản", "Truy vấn dữ liệu nâng cao"]
 
+    # Fixed "Yêu cầu" block (must appear right after header)
+    subj = (subject or "").strip() or "NHẬP MÔN CSDL MYSQL"
+    code3 = (exam_code or "").strip() or "006"
+    required_bullets = [
+        "Tạo github repository theo cú pháp :  [Tên lớp]_[Họ Tên]_[Mã đề]",
+        "Ví dụ: HN-K24-CNTT1_NguyenVanA_001",
+        "Sau khi hoàn thành, đẩy code lên github repo và nộp link cho người phụ trách",
+        f"Công nghệ sử dụng: {technology.strip() or 'MySQL'}",
+        f"IDE : {ide.strip() or 'MySQL Workbench'}",
+        "Thực hành bài trong script, lưu thành file tên hackathon.sql trong repository đã tạo ở trên.",
+        "Lưu ý tuyệt đối không sử dụng Chat-GPT hay AI để làm bài, không copy bài người khác , nếu bị phát hiện sẽ lập biên bản và xử lý theo qui định.",
+    ]
+
     user = {
         "header_top": header_top,
         "header_sub": header_sub,
         "duration_minutes": duration_minutes,
-        "subject": subject,
+        "subject": subj,
         "outline": outlines,
         "technology": technology,
         "ide": ide,
         "exam_code": exam_code,
         "extra_notes": extra_notes,
+        "required_section": {"title": "Yêu cầu:", "bullets": required_bullets},
         "constraints": {
             "must_include_sections": ["Yêu cầu:", "Thực hành:", "PHẦN 1", "PHẦN 2", "PHẦN 3", "Thang chấm điểm"],
             "total_points": 100,
@@ -219,4 +249,80 @@ def generate_hackathon_exam_spec(
                 extra_body=extra,
             )
             return _parse_json_best_effort(text3)
+
+
+def ensure_required_section(spec: dict[str, Any], *, required_bullets: list[str]) -> dict[str, Any]:
+    """
+    Ensure 'Yêu cầu:' section exists and contains required bullets.
+    If missing, inject it as the first section.
+    """
+    if not isinstance(spec, dict):
+        return spec
+    secs = spec.get("sections")
+    if not isinstance(secs, list):
+        secs = []
+    # find existing
+    idx = None
+    for i, s in enumerate(secs):
+        if isinstance(s, dict) and str(s.get("title") or "").strip().lower().startswith("yêu cầu"):
+            idx = i
+            break
+    block = {
+        "title": "Yêu cầu:",
+        "paragraphs": [],
+        "bullets": required_bullets,
+        "numbered": [],
+        "tables": [],
+    }
+    if idx is None:
+        secs = [block] + secs
+    else:
+        # merge bullets
+        cur = secs[idx] if isinstance(secs[idx], dict) else {}
+        cur_b = cur.get("bullets")
+        if not isinstance(cur_b, list):
+            cur_b = []
+        # overwrite with required (stable)
+        cur["title"] = "Yêu cầu:"
+        cur["bullets"] = required_bullets
+        cur.setdefault("paragraphs", [])
+        cur.setdefault("numbered", [])
+        cur.setdefault("tables", [])
+        secs[idx] = cur
+    spec["sections"] = secs
+    return spec
+
+
+def ensure_practice_section(spec: dict[str, Any]) -> dict[str, Any]:
+    """
+    Ensure there is a 'Thực hành:' title before PHẦN 1/2/3.
+    If missing, inject it right before the first section whose title starts with 'PHẦN'.
+    """
+    if not isinstance(spec, dict):
+        return spec
+    secs = spec.get("sections")
+    if not isinstance(secs, list):
+        secs = []
+
+    def _is_practice(s: Any) -> bool:
+        return isinstance(s, dict) and str(s.get("title") or "").strip().lower().startswith("thực hành")
+
+    def _is_part(s: Any) -> bool:
+        return isinstance(s, dict) and str(s.get("title") or "").strip().upper().startswith("PHẦN")
+
+    if any(_is_practice(s) for s in secs):
+        return spec
+
+    insert_at = None
+    for i, s in enumerate(secs):
+        if _is_part(s):
+            insert_at = i
+            break
+    block = {"title": "Thực hành:", "paragraphs": [], "bullets": [], "numbered": [], "tables": []}
+    if insert_at is None:
+        secs.append(block)
+    else:
+        secs.insert(insert_at, block)
+    spec["sections"] = secs
+    return spec
 

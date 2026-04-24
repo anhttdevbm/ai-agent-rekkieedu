@@ -19,6 +19,10 @@ class HackathonExamParams:
     body_text: str
 
 
+_BONUS_NOTE_1 = "Bonus điểm : clean code, đầy đủ comment, trình bày đẹp cộng tối đa 5 điểm."
+_BONUS_NOTE_2 = "Lưu ý: Chỉ tính điểm khi thực hiện đúng theo yêu cầu"
+
+
 def build_hackathon_exam_docx_from_spec(spec: dict[str, Any]) -> bytes:
     """
     Render DOCX from a structured JSON spec (AI output).
@@ -66,6 +70,14 @@ def build_hackathon_exam_docx_from_spec(spec: dict[str, Any]) -> bytes:
             if p.runs:
                 p.runs[0].bold = True
 
+        # Plain lines (no bullets/no numbering). Useful for "2.1 ...", "3.2 ..." requirements.
+        lines = sec.get("lines") or []
+        if isinstance(lines, list):
+            for t in lines:
+                s = str(t or "").strip()
+                if s:
+                    doc.add_paragraph(s)
+
         paras = sec.get("paragraphs") or []
         if isinstance(paras, list):
             for t in paras:
@@ -79,13 +91,6 @@ def build_hackathon_exam_docx_from_spec(spec: dict[str, Any]) -> bytes:
                 s = str(t or "").strip()
                 if s:
                     doc.add_paragraph(s, style="List Bullet")
-
-        numbered = sec.get("numbered") or []
-        if isinstance(numbered, list):
-            for t in numbered:
-                s = str(t or "").strip()
-                if s:
-                    doc.add_paragraph(s, style="List Number")
 
         tables = sec.get("tables") or []
         if isinstance(tables, list):
@@ -115,6 +120,14 @@ def build_hackathon_exam_docx_from_spec(spec: dict[str, Any]) -> bytes:
                         cells[i].text = str(r[i] if i < len(r) else "")
                 doc.add_paragraph("")
 
+        # Numbered tasks should appear AFTER schema/sample tables (đúng bố cục mẫu).
+        numbered = sec.get("numbered") or []
+        if isinstance(numbered, list):
+            for t in numbered:
+                s = str(t or "").strip()
+                if s:
+                    doc.add_paragraph(s, style="List Number")
+
     rubric = spec.get("rubric")
     if isinstance(rubric, dict):
         rrows = rubric.get("rows") or []
@@ -137,9 +150,8 @@ def build_hackathon_exam_docx_from_spec(spec: dict[str, Any]) -> bytes:
                 doc.add_paragraph(f"Tổng điểm : {total}")
 
     doc.add_paragraph("")
-    p = doc.add_paragraph(f"(Tạo bởi Agent Edu · {datetime.now().strftime('%Y-%m-%d %H:%M')})")
-    p.runs[0].italic = True
-    p.runs[0].font.size = Pt(9)
+    doc.add_paragraph(_BONUS_NOTE_1)
+    doc.add_paragraph(_BONUS_NOTE_2)
 
     buf = io.BytesIO()
     doc.save(buf)
@@ -279,11 +291,10 @@ def build_hackathon_exam_docx_bytes(params: HackathonExamParams) -> bytes:
         _add_paragraph(doc, ln)
         i += 1
 
-    # footer note (optional)
+    # Bonus note at the end (like mẫu)
     doc.add_paragraph("")
-    p = doc.add_paragraph(f"(Tạo bởi Agent Edu · {datetime.now().strftime('%Y-%m-%d %H:%M')})")
-    p.runs[0].italic = True
-    p.runs[0].font.size = Pt(9)
+    doc.add_paragraph(_BONUS_NOTE_1)
+    doc.add_paragraph(_BONUS_NOTE_2)
 
     buf = io.BytesIO()
     doc.save(buf)
