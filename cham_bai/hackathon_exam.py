@@ -38,7 +38,6 @@ def build_hackathon_exam_docx_from_spec(spec: dict[str, Any]) -> bytes:
           ]
         }, ...
       ]
-    - rubric: { "rows": [ { "q": "1", "content": "...", "points": 15 }, ...], "total": 100? }
     """
     doc = Document()
 
@@ -69,14 +68,6 @@ def build_hackathon_exam_docx_from_spec(spec: dict[str, Any]) -> bytes:
             p = doc.add_paragraph(title)
             if p.runs:
                 p.runs[0].bold = True
-
-        # Plain lines (no bullets/no numbering). Useful for "2.1 ...", "3.2 ..." requirements.
-        lines = sec.get("lines") or []
-        if isinstance(lines, list):
-            for t in lines:
-                s = str(t or "").strip()
-                if s:
-                    doc.add_paragraph(s)
 
         paras = sec.get("paragraphs") or []
         if isinstance(paras, list):
@@ -120,34 +111,23 @@ def build_hackathon_exam_docx_from_spec(spec: dict[str, Any]) -> bytes:
                         cells[i].text = str(r[i] if i < len(r) else "")
                 doc.add_paragraph("")
 
-        # Numbered tasks should appear AFTER schema/sample tables (đúng bố cục mẫu).
+        # Plain lines (no bullets/no Word numbering).
+        # Important: lines must appear AFTER tables so questions sit right under tables.
+        lines = sec.get("lines") or []
+        if isinstance(lines, list):
+            for t in lines:
+                s = str(t or "").strip()
+                if s:
+                    doc.add_paragraph(s)
+
+        # Back-compat: if older specs still produce "numbered", render as plain lines
+        # (NOT Word "List Number", to avoid auto-renumber/reset).
         numbered = sec.get("numbered") or []
         if isinstance(numbered, list):
             for t in numbered:
                 s = str(t or "").strip()
                 if s:
-                    doc.add_paragraph(s, style="List Number")
-
-    rubric = spec.get("rubric")
-    if isinstance(rubric, dict):
-        rrows = rubric.get("rows") or []
-        if isinstance(rrows, list) and rrows:
-            _add_paragraph(doc, "Thang chấm điểm :", bold=True)
-            table = doc.add_table(rows=1, cols=3)
-            hdr = table.rows[0].cells
-            hdr[0].text = "Câu"
-            hdr[1].text = "Nội dung"
-            hdr[2].text = "Điểm"
-            for rr in rrows[:60]:
-                if not isinstance(rr, dict):
-                    continue
-                row = table.add_row().cells
-                row[0].text = str(rr.get("q") or "")
-                row[1].text = str(rr.get("content") or "")
-                row[2].text = str(rr.get("points") or "")
-            total = rubric.get("total")
-            if total is not None:
-                doc.add_paragraph(f"Tổng điểm : {total}")
+                    doc.add_paragraph(s)
 
     doc.add_paragraph("")
     doc.add_paragraph(_BONUS_NOTE_1)
@@ -226,46 +206,12 @@ def build_hackathon_exam_docx_bytes(params: HackathonExamParams) -> bytes:
 
     lines = _clean_lines(params.body_text)
 
-    # Try detect rubric section to render table
-    rubric_start = None
-    for i, ln in enumerate(lines):
-        if _RUBRIC_HEADER_RE.match(ln.strip()):
-            rubric_start = i
-            break
-
-    rubric_rows: list[tuple[str, str, str]] = []
-    if rubric_start is not None:
-        rubric_rows = _iter_rubric_rows(lines[rubric_start + 1 :])
-
     i = 0
     while i < len(lines):
         ln = lines[i].strip()
         if not ln:
             doc.add_paragraph("")
             i += 1
-            continue
-
-        # Render rubric table if found header line
-        if rubric_start is not None and i == rubric_start:
-            _add_paragraph(doc, "Thang chấm điểm :", bold=True)
-            if rubric_rows:
-                table = doc.add_table(rows=1, cols=3)
-                hdr = table.rows[0].cells
-                hdr[0].text = "Câu"
-                hdr[1].text = "Nội dung"
-                hdr[2].text = "Điểm"
-                for q, content, pts in rubric_rows:
-                    row = table.add_row().cells
-                    row[0].text = q
-                    row[1].text = content
-                    row[2].text = pts
-            else:
-                _add_paragraph(doc, "(Chưa nhận diện được bảng — hãy dán theo dạng mỗi dòng: <số câu> <nội dung> <điểm>)")
-            # skip the rest rubric lines; we already rendered recognized rows
-            i += 1
-            # still write remaining non-row lines until next blank? keep simple: skip contiguous rubric rows
-            while i < len(lines) and _RUBRIC_ROW_RE.match(lines[i].strip() or ""):
-                i += 1
             continue
 
         if _PART_RE.match(ln) or re.match(r"^\s*\d+\.\s*[^:]+:\s*$", ln):
@@ -283,8 +229,8 @@ def build_hackathon_exam_docx_bytes(params: HackathonExamParams) -> bytes:
 
         # numbered item "1." "2." etc
         if _SECTION_RE.match(ln):
-            text = re.sub(r"^\s*\d+\.\s+", "", ln).strip()
-            doc.add_paragraph(text, style="List Number")
+            # render as plain line to preserve 1..N numbering written in text
+            doc.add_paragraph(ln)
             i += 1
             continue
 

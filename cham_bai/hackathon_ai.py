@@ -11,14 +11,13 @@ from cham_bai.schemas import parse_llm_json
 _SYSTEM = """Bạn là giảng viên ra đề thi Hackathon (ĐỀ TỰ LUẬN) cho sinh viên.
 
 Mục tiêu:
-- Sinh đề đúng chuẩn form kiểu mẫu: có phần Yêu cầu (bullet), phần Thực hành chia PHẦN 1/2/3, có bảng mô tả cấu trúc bảng, bảng dữ liệu mẫu, và thang chấm điểm (bảng).
+- Sinh đề đúng chuẩn form kiểu mẫu: có phần Yêu cầu (bullet), phần Thực hành chia PHẦN 1/2/3, có bảng mô tả cấu trúc bảng và bảng dữ liệu mẫu.
 - Chủ đề và nội dung phải bám theo input của người dùng (môn/chủ đề/công nghệ/IDE/mã đề).
 - Ngôn ngữ: tiếng Việt.
 
 GIỚI HẠN ĐỘ DÀI (để tránh lỗi JSON/cụt):
 - Mỗi bảng cấu trúc (schema table): tối đa 8 dòng cột.
 - Mỗi bảng dữ liệu mẫu: tối đa 6 dòng dữ liệu.
-- Thang chấm điểm: đúng 6 dòng (1..6) và total=100.
 - Không nhồi quá nhiều chữ trong 1 ô bảng (<= 80 ký tự/ô).
 
 YÊU CẦU XUẤT:
@@ -45,13 +44,7 @@ YÊU CẦU XUẤT:
       "numbered": [],
       "tables": []
     }
-  ],
-  "rubric": {
-    "rows": [
-      { "q": "1", "content": "....", "points": 15 }
-    ],
-    "total": 100
-  }
+  ]
 }
 
 Quy tắc bảng:
@@ -59,11 +52,10 @@ Quy tắc bảng:
 - Các ô là string; dùng "✅" nếu muốn.
 
 RÀNG BUỘC BỐ CỤC (bắt buộc):
-- Trong các section có bảng (đặc biệt PHẦN 1), hãy đặt bảng trong "tables" trước, và đặt các yêu cầu dạng câu hỏi trong "numbered" để hiển thị NGAY BÊN DƯỚI bảng.
-- Ví dụ đúng (ý tưởng): sau các bảng cấu trúc, "numbered" phải có các dòng như:
-  "Tạo bảng (15 điểm) ...",
-  "Chèn dữ liệu (10 điểm) ...",
-  và sau các bảng dữ liệu mẫu cũng có dòng yêu cầu tương ứng.
+- Với section có bảng (đặc biệt PHẦN 1): luôn đặt bảng trong "tables" TRƯỚC, và đặt câu hỏi/yêu cầu NGAY BÊN DƯỚI bằng field "lines".
+- Tách riêng khối "Cấu trúc bảng" và khối "Dữ liệu mẫu" thành 2 section LIÊN TIẾP, ví dụ:
+  - "Mô tả cấu trúc các bảng:" (tables = schema, lines = câu hỏi tạo bảng)
+  - "Dữ liệu mẫu:" (tables = sample data, lines = câu hỏi chèn/cập nhật/xoá liên quan dữ liệu)
 
 QUAN TRỌNG CHO PHẦN 2 / PHẦN 3:
 - KHÔNG dùng dạng "2.1/2.2/3.1". Thay vào đó, TOÀN BỘ câu hỏi trong PHẦN 1/2/3 phải đánh số LIÊN TỤC:
@@ -168,7 +160,7 @@ def generate_hackathon_exam_spec(
         "extra_notes": extra_notes,
         "required_section": {"title": "Yêu cầu:", "bullets": required_bullets},
         "constraints": {
-            "must_include_sections": ["Yêu cầu:", "Thực hành:", "PHẦN 1", "PHẦN 2", "PHẦN 3", "Thang chấm điểm"],
+            "must_include_sections": ["Yêu cầu:", "Thực hành:", "PHẦN 1", "PHẦN 2", "PHẦN 3"],
             "total_points": 100,
         },
     }
