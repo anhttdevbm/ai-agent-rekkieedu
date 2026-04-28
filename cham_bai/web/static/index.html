@@ -113,6 +113,22 @@
                 <button type="button" class="primary" id="g-rk-load-submits">Tải danh sách bài nộp</button>
               </div>
             </div>
+            <div class="checkline" style="margin-top: 0.35rem">
+              <input type="checkbox" id="g-rk-post" checked />
+              <label for="g-rk-post" style="margin: 0">Sau khi chấm xong, post điểm + nhận xét lên Rikkei</label>
+            </div>
+            <div class="row2" style="margin-top: 0.35rem; align-items: end">
+              <div class="field" style="margin: 0">
+                <div class="checkline" style="margin: 0">
+                  <input type="checkbox" id="g-rk-include-graded" />
+                  <label for="g-rk-include-graded" style="margin: 0">Hiện + chấm cả bài đã có điểm/nhận xét</label>
+                </div>
+              </div>
+              <div class="field" style="margin: 0">
+                <label for="g-rk-limit">Số bài chấm (từ trên xuống)</label>
+                <input type="number" id="g-rk-limit" min="1" max="200" value="20" />
+              </div>
+            </div>
             <p class="status" id="g-rk-submit-status"></p>
             <div style="overflow:auto; max-height: 55vh; border: 1px solid #e5e7eb; border-radius: 12px">
               <table class="tbl" style="width: 100%; border-collapse: collapse">
@@ -134,6 +150,7 @@
           <!-- hidden fields vẫn gửi sang /api/grade (tự build từ bảng ở trên) -->
           <textarea id="g-subs" name="submissions_text" style="display:none"></textarea>
           <textarea id="g-report-repos" name="report_repos_text" style="display:none"></textarea>
+          <textarea id="g-rk-practice-ids" style="display:none"></textarea>
           <div class="field">
             <label for="g-model">Model OpenRouter</label>
             <select id="g-model" name="model"></select>
@@ -582,6 +599,6 @@
 
       <footer>Chạy local · OpenRouter · không lưu dữ liệu trên server sau khi tải file</footer>
     </div>
-    <script src="/static/app.js?v=20260428_9"></script>
+    <script src="/static/app.js?v=20260428_11"></script>
   </body>
 </html>

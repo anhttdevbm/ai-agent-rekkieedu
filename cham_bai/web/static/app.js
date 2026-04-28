@@ -249,6 +249,7 @@
       await Promise.all(workers);
 
       // merge logs in original order
+      const mergedResults = [];
       for (let ci = 0; ci < results.length; ci++) {
         const res = results[ci] || { ok: false, data: { detail: "Không có kết quả" } };
         if (!res.ok) {
@@ -257,16 +258,89 @@
         } else {
           mergedLog += (res.data.log || "").trim() + "\n\n";
           allOk = allOk && !!res.data.ok;
+          const rr = (res.data && res.data.results) || [];
+          if (Array.isArray(rr)) mergedResults.push(...rr);
         }
       }
       setLog("#g-log", mergedLog.trim(), !allOk);
 
       $("#g-status").textContent = allOk ? "Xong." : "Có lỗi — xem log.";
+
+      // Post back to Rikkei if enabled
+      const doPost = $("#g-rk-post") && $("#g-rk-post").checked;
+      if (doPost) {
+        await gradePostScoresToRikkei(mergedResults);
+      }
     } catch (e) {
       setLog("#g-log", String(e), true);
     } finally {
       setBusy(btn, false);
       $("#g-status").classList.remove("run");
+    }
+  }
+
+  function _commentToHtmlP(text) {
+    const s = String(text || "").trim();
+    if (!s) return "";
+    if (/<\s*p[\s>]/i.test(s) || /<br\s*\/?>/i.test(s)) return s;
+    return "<p>" + escapeHtml(s).replace(/\n/g, "<br/>") + "</p>";
+  }
+
+  async function gradePostScoresToRikkei(gradeResults) {
+    const token = ($("#g-rk-token") && $("#g-rk-token").value) || "";
+    const statusEl = $("#g-rk-submit-status");
+    const idsEl = $("#g-rk-practice-ids");
+    if (!token.trim()) {
+      if (statusEl) statusEl.textContent = "Không có token để post điểm lên Rikkei.";
+      return;
+    }
+    let ids = [];
+    try {
+      ids = JSON.parse((idsEl && idsEl.value) || "[]");
+    } catch {
+      ids = [];
+    }
+    if (!Array.isArray(ids) || ids.length === 0) {
+      if (statusEl) statusEl.textContent = "Chưa có danh sách practice-resource ids (hãy bấm Tải danh sách bài nộp trước).";
+      return;
+    }
+
+    // results align with visible table rows (selected/unselected kept as blank lines)
+    const patches = [];
+    for (let i = 0; i < ids.length; i++) {
+      const prId = ids[i];
+      if (!prId) continue;
+      const r = gradeResults[i];
+      if (!r || !r.ok || !r.result) continue;
+      const score = r.result.final_score;
+      const comment = r.result.final_comment;
+      if (typeof score !== "number" && typeof score !== "string") continue;
+      const sc = parseInt(String(score), 10);
+      if (!Number.isFinite(sc)) continue;
+      patches.push({ id: prId, score: sc, comment_html: _commentToHtmlP(comment) });
+    }
+
+    if (patches.length === 0) {
+      if (statusEl) statusEl.textContent = "Không có dòng nào đủ dữ liệu để post (cần ok + có điểm/nhận xét).";
+      return;
+    }
+    if (statusEl) statusEl.textContent = `Đang post ${patches.length} dòng lên Rikkei…`;
+
+    try {
+      const fd = new FormData();
+      fd.set("rikkei_token", token.trim());
+      fd.set("patches_json", JSON.stringify(patches));
+      const r = await fetch("/api/rikkei/practice-resource/patch-batch", { method: "POST", body: fd });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        if (statusEl) statusEl.textContent = formatApiErr(data.detail) || "Lỗi post điểm lên Rikkei.";
+        return;
+      }
+      const okCount = (data && data.ok_count) || 0;
+      const failCount = (data && data.fail_count) || 0;
+      if (statusEl) statusEl.textContent = `Post xong: OK=${okCount}, lỗi=${failCount}.`;
+    } catch (e) {
+      if (statusEl) statusEl.textContent = String(e);
     }
   }
 
@@ -279,6 +353,10 @@
     const body = $("#g-rk-submit-body");
     const hSubs = $("#g-subs");
     const hReps = $("#g-report-repos");
+    const hIds = $("#g-rk-practice-ids");
+    const includeGraded = $("#g-rk-include-graded") && $("#g-rk-include-graded").checked;
+    const limitUi = parseInt((($("#g-rk-limit") && $("#g-rk-limit").value) || "0").toString(), 10);
+    const limitN = Number.isFinite(limitUi) && limitUi > 0 ? limitUi : 0;
     if (!token.trim() || !String(classId).trim() || !String(sessionId).trim()) {
       if (statusEl) statusEl.textContent = "Cần có token + chọn lớp + chọn session thực hành trước.";
       return;
@@ -304,16 +382,33 @@
       }
 
       const esc = (s) => escapeHtml(String(s || ""));
+      const isBlankComment = (c) => {
+        const t = String(c || "").trim();
+        if (!t) return true;
+        // treat empty html paragraphs as blank
+        if (/^<p>\s*(?:<br\s*\/?>)?\s*<\/p>$/i.test(t)) return true;
+        if (/^<p>\s*&nbsp;\s*<\/p>$/i.test(t)) return true;
+        return false;
+      };
+      const isUngraded = (x) => x.score == null && isBlankComment(x.comment);
+
+      // Filter: default only ungraded rows; optional include graded
+      let visible = includeGraded ? items.slice() : items.filter(isUngraded);
+      if (limitN > 0) visible = visible.slice(0, limitN);
 
       const subsLines = [];
       const repLines = [];
-      items.forEach((x, idx) => {
+      const idLines = [];
+      visible.forEach((x, idx) => {
         const sid = esc(x.studentCode || "");
         const name = esc(x.fullName || "");
         const git = String(x.link || "").trim();
         const rep = String(x.reportLink || "").trim();
         const score = x.score == null ? "" : String(x.score);
-        const checked = !!(git || rep);
+        // Default selection:
+        // - If not including graded: all visible rows are ungraded → auto-check
+        // - If including graded: auto-check top rows (visible list), regardless graded/ungraded
+        const checked = true;
 
         const tr = document.createElement("tr");
         const td = (html) => {
@@ -339,30 +434,38 @@
 
         subsLines.push(git);
         repLines.push(rep);
+        idLines.push(x.id || null);
       });
 
       if (hSubs) hSubs.value = subsLines.join("\n");
       if (hReps) hReps.value = repLines.join("\n");
+      if (hIds) hIds.value = JSON.stringify(idLines);
 
       // hook checkboxes to rebuild hidden fields
       const rebuild = () => {
         const checks = Array.from(document.querySelectorAll("input.g-rk-row"));
         const s2 = [];
         const r2 = [];
+        const ids2 = [];
         checks.forEach((c) => {
           const i = parseInt(c.getAttribute("data-idx") || "0", 10);
           const on = c.checked;
           s2.push(on ? subsLines[i] : "");
           r2.push(on ? repLines[i] : "");
+          ids2.push(on ? idLines[i] : null);
         });
         if (hSubs) hSubs.value = s2.join("\n");
         if (hReps) hReps.value = r2.join("\n");
+        if (hIds) hIds.value = JSON.stringify(ids2);
       };
       document.querySelectorAll("input.g-rk-row").forEach((c) => {
         c.addEventListener("change", rebuild);
       });
 
-      if (statusEl) statusEl.textContent = `Đã tải ${items.length} dòng.`;
+      if (statusEl)
+        statusEl.textContent = `Đã tải ${visible.length} dòng${
+          includeGraded ? " (gồm cả bài đã chấm)" : " (chỉ bài chưa chấm)"
+        }.`;
     } catch (e) {
       if (statusEl) statusEl.textContent = String(e);
     } finally {

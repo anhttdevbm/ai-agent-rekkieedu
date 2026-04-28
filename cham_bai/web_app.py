@@ -925,6 +925,77 @@ async def api_rikkei_practice_resource(
         raise HTTPException(status_code=502, detail=f"Lỗi gọi API Rikkei (practice-resource): {e}")
 
 
+def _looks_html(s: str) -> bool:
+    t = (s or "").strip()
+    return bool(re.search(r"<\s*(p|br|div|span|ul|li)\b", t, re.I))
+
+
+@app.post("/api/rikkei/practice-resource/patch-batch")
+async def api_rikkei_practice_resource_patch_batch(
+    rikkei_token: str = Form(...),
+    patches_json: str = Form(...),
+) -> JSONResponse:
+    tok = (rikkei_token or "").strip()
+    if not tok:
+        raise HTTPException(status_code=400, detail="Thiếu token Rikkei.")
+    try:
+        patches = json.loads(patches_json or "[]")
+    except Exception:
+        raise HTTPException(status_code=400, detail="patches_json không phải JSON hợp lệ.")
+    if not isinstance(patches, list) or not patches:
+        raise HTTPException(status_code=400, detail="Danh sách patch rỗng.")
+
+    ok_count = 0
+    fails: list[dict] = []
+    async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+        for p in patches[:500]:
+            if not isinstance(p, dict):
+                continue
+            pid = p.get("id")
+            score = p.get("score")
+            comment_html = str(p.get("comment_html") or "").strip()
+            try:
+                pid_int = int(pid)
+            except Exception:
+                fails.append({"id": pid, "error": "id không hợp lệ"})
+                continue
+            try:
+                score_int = int(score)
+            except Exception:
+                fails.append({"id": pid_int, "error": "score không hợp lệ"})
+                continue
+            body = {"score": score_int}
+            if comment_html:
+                body["comment"] = comment_html if _looks_html(comment_html) else f"<p>{_html.escape(comment_html)}</p>"
+            url = f"https://apiportal.rikkei.edu.vn/practice-resource/{pid_int}"
+            try:
+                r = await client.patch(
+                    url,
+                    json=body,
+                    headers={
+                        "Authorization": _rk_bearer(tok),
+                        "User-Agent": "AgentEdu/1.0",
+                        "Accept": "application/json",
+                    },
+                )
+                if r.status_code in (401, 403):
+                    fails.append({"id": pid_int, "error": "Token không hợp lệ hoặc không có quyền"})
+                    continue
+                r.raise_for_status()
+                ok_count += 1
+            except Exception as e:
+                fails.append({"id": pid_int, "error": str(e)[:240]})
+
+    return JSONResponse(
+        {
+            "ok": True,
+            "ok_count": ok_count,
+            "fail_count": len(fails),
+            "fails": fails[:50],
+        }
+    )
+
+
 @app.post("/api/btvn")
 async def api_btvn(
     background_tasks: BackgroundTasks,
