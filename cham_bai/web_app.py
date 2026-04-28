@@ -635,7 +635,7 @@ def _unwrap_list_payload(payload: object) -> list[dict]:
     if isinstance(payload, list):
         return [x for x in payload if isinstance(x, dict)]
     if isinstance(payload, dict):
-        for k in ("data", "items", "content", "records", "result", "rows"):
+        for k in ("data", "items", "content", "records", "result", "rows", "resultTest", "result_test"):
             v = payload.get(k)
             if isinstance(v, list):
                 return [x for x in v if isinstance(x, dict)]
