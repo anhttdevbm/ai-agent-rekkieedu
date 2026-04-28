@@ -996,6 +996,146 @@ async def api_rikkei_practice_resource_patch_batch(
     )
 
 
+def _norm_test_schedule_item(x: dict) -> dict:
+    test = x.get("test") if isinstance(x.get("test"), dict) else {}
+    cls = x.get("class") if isinstance(x.get("class"), dict) else {}
+    return {
+        "id": _pick_first_int(x, ["id"]) or x.get("id"),
+        "type": _pick_first_str(x, ["type"]),
+        "testId": _pick_first_int(test, ["id"]) or test.get("id"),
+        "testName": _pick_first_str(test, ["testName", "name", "title"]),
+        "classCode": _pick_first_str(cls, ["classCode", "class_code", "code"]),
+        "className": _pick_first_str(cls, ["name", "className"]),
+        "testStart": _pick_first_str(x, ["testStart", "start"]),
+        "testEnd": _pick_first_str(x, ["testEnd", "end"]),
+        "_raw": x,
+    }
+
+
+def _extract_exam_docs_from_html(html: str) -> dict[str, str]:
+    """
+    Return mapping {"01": url, "02": url, ...} from test question HTML.
+    Looks for "Đề 01" around google docs links.
+    """
+    s = html or ""
+    out: dict[str, str] = {}
+    # find all anchor hrefs to google docs
+    for m in re.finditer(r'href="(?P<u>https?://docs\.google\.com/document/d/[^"]+)"', s, re.I):
+        u = (m.group("u") or "").strip()
+        # look back window for "Đề xx"
+        start = max(0, m.start() - 120)
+        chunk = s[start : m.start()]
+        m2 = re.search(r"Đề\s*0?([0-9]{1,3})", chunk, re.I)
+        if m2:
+            k = int(m2.group(1))
+            if 1 <= k <= 99:
+                out[f"{k:02d}"] = u
+    return out
+
+
+def _norm_test_detail(data: dict) -> dict:
+    qts = data.get("questionTests") if isinstance(data.get("questionTests"), list) else []
+    docs: dict[str, str] = {}
+    for q in qts:
+        if not isinstance(q, dict):
+            continue
+        content = str(q.get("content") or "")
+        docs.update(_extract_exam_docs_from_html(content))
+    return {"id": data.get("id"), "testName": data.get("testName"), "docs": docs}
+
+
+def _norm_test_schedule_detail_item(x: dict) -> dict:
+    st = x.get("student") if isinstance(x.get("student"), dict) else {}
+    return {
+        "id": _pick_first_int(x, ["id"]) or x.get("id"),
+        "point": x.get("point"),
+        "link": _pick_first_str(x, ["link"]),
+        "studentCode": _pick_first_str(st, ["studentCode", "student_code", "code"]),
+        "fullName": _pick_first_str(st, ["fullName", "full_name", "name"]),
+        "_raw": x,
+    }
+
+
+@app.post("/api/rikkei/test-schedules")
+async def api_rikkei_test_schedules(
+    rikkei_token: str = Form(...),
+) -> JSONResponse:
+    tok = (rikkei_token or "").strip()
+    if not tok:
+        raise HTTPException(status_code=400, detail="Thiếu token Rikkei.")
+    url = "https://apiportal.rikkei.edu.vn/test-schedule/user/my-schedules/me"
+    try:
+        async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+            r = await client.get(url, headers={"Authorization": _rk_bearer(tok), "User-Agent": "AgentEdu/1.0"})
+        if r.status_code in (401, 403):
+            raise HTTPException(status_code=401, detail="Token không hợp lệ hoặc không có quyền.")
+        r.raise_for_status()
+        raw_items = _unwrap_list_payload(r.json())
+        items = [_norm_test_schedule_item(x) for x in raw_items if isinstance(x, dict)]
+        return JSONResponse({"ok": True, "items": items})
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Lỗi gọi API Rikkei (test-schedules): {e}")
+
+
+@app.post("/api/rikkei/test")
+async def api_rikkei_test(
+    rikkei_token: str = Form(...),
+    test_id: str = Form(""),
+) -> JSONResponse:
+    tok = (rikkei_token or "").strip()
+    tid = (test_id or "").strip()
+    if not tok:
+        raise HTTPException(status_code=400, detail="Thiếu token Rikkei.")
+    if not tid:
+        raise HTTPException(status_code=400, detail="Thiếu test_id.")
+    url = f"https://apiportal.rikkei.edu.vn/tests/{tid}"
+    try:
+        async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+            r = await client.get(url, headers={"Authorization": _rk_bearer(tok), "User-Agent": "AgentEdu/1.0"})
+        if r.status_code in (401, 403):
+            raise HTTPException(status_code=401, detail="Token không hợp lệ hoặc không có quyền.")
+        r.raise_for_status()
+        payload = r.json()
+        d = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(d, dict):
+            raise HTTPException(status_code=502, detail="Response tests/{id} không có field data.")
+        out = _norm_test_detail(d)
+        return JSONResponse({"ok": True, **out})
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Lỗi gọi API Rikkei (test): {e}")
+
+
+@app.post("/api/rikkei/test-schedule-detail")
+async def api_rikkei_test_schedule_detail(
+    rikkei_token: str = Form(...),
+    schedule_id: str = Form(""),
+) -> JSONResponse:
+    tok = (rikkei_token or "").strip()
+    sid = (schedule_id or "").strip()
+    if not tok:
+        raise HTTPException(status_code=400, detail="Thiếu token Rikkei.")
+    if not sid:
+        raise HTTPException(status_code=400, detail="Thiếu schedule_id.")
+    url = f"https://apiportal.rikkei.edu.vn/test-schedule/detail/{sid}"
+    try:
+        async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+            r = await client.get(url, headers={"Authorization": _rk_bearer(tok), "User-Agent": "AgentEdu/1.0"})
+        if r.status_code in (401, 403):
+            raise HTTPException(status_code=401, detail="Token không hợp lệ hoặc không có quyền.")
+        r.raise_for_status()
+        raw_items = _unwrap_list_payload(r.json())
+        items = [_norm_test_schedule_detail_item(x) for x in raw_items if isinstance(x, dict)]
+        return JSONResponse({"ok": True, "items": items})
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Lỗi gọi API Rikkei (test-schedule-detail): {e}")
+
+
 @app.post("/api/btvn")
 async def api_btvn(
     background_tasks: BackgroundTasks,

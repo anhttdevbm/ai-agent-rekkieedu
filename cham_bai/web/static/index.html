@@ -27,6 +27,7 @@
         <button type="button" data-tab="quiz">Quiz</button>
         <button type="button" data-tab="reading">Bài đọc</button>
         <button type="button" data-tab="hackathon">Làm đề thi Hackathon</button>
+        <button type="button" data-tab="hackathon-grade">Chấm bài Hackathon</button>
         <button type="button" data-tab="btvn">Chấm BTVN (Rikkei)</button>
         <button type="button" data-tab="group">Chấm hoạt động nhóm</button>
       </nav>
@@ -472,6 +473,78 @@
         </form>
       </section>
 
+      <!-- Chấm bài Hackathon (Rikkei) -->
+      <section class="panel" id="panel-hackathon-grade">
+        <h2>Chấm bài Hackathon (Rikkei)</h2>
+        <p class="hint">
+          Dán <strong>token Rikkei</strong> → tải danh sách lịch thi → chọn cuộc thi → hệ thống tự lấy <strong>đề (Docs)</strong> và <strong>bài nộp</strong>,
+          map đề theo hậu tố <code>_001.._005</code> trong link GitHub. Bài sai format sẽ được ghi chú.
+        </p>
+        <form id="form-hackathon-grade">
+          <div class="field">
+            <label for="hg-token">Token Rikkei</label>
+            <input type="password" id="hg-token" autocomplete="off" placeholder="Dán token..." />
+            <p class="small">Có thể dùng token đã lưu ở tab Chấm bài.</p>
+          </div>
+          <div class="row2">
+            <div class="field">
+              <button type="button" class="primary" id="hg-load">Tải danh sách cuộc thi</button>
+            </div>
+            <div class="field" style="align-self:end">
+              <div class="checkline">
+                <input type="checkbox" id="hg-include-graded" />
+                <label for="hg-include-graded" style="margin:0">Chấm cả bài đã có điểm</label>
+              </div>
+            </div>
+          </div>
+          <p class="status" id="hg-status"></p>
+          <div class="field">
+            <label for="hg-schedule">Chọn cuộc thi</label>
+            <select id="hg-schedule">
+              <option value="">(Chưa tải)</option>
+            </select>
+          </div>
+          <div class="row2">
+            <div class="field">
+              <label for="hg-limit">Số bài chấm (từ trên xuống)</label>
+              <input type="number" id="hg-limit" min="1" max="500" value="50" />
+            </div>
+            <div class="field">
+              <label for="hg-par">Chạy song song</label>
+              <input type="number" id="hg-par" min="1" max="4" value="2" />
+            </div>
+          </div>
+          <div class="field">
+            <label>Danh sách bài nộp</label>
+            <div style="overflow:auto; max-height: 55vh; border: 1px solid #e5e7eb; border-radius: 12px">
+              <table class="tbl" style="width: 100%; border-collapse: collapse">
+                <thead>
+                  <tr>
+                    <th style="text-align:left; padding:10px; border-bottom:1px solid #e5e7eb">Chọn</th>
+                    <th style="text-align:left; padding:10px; border-bottom:1px solid #e5e7eb">Mã SV</th>
+                    <th style="text-align:left; padding:10px; border-bottom:1px solid #e5e7eb">Họ tên</th>
+                    <th style="text-align:left; padding:10px; border-bottom:1px solid #e5e7eb">Link Git</th>
+                    <th style="text-align:left; padding:10px; border-bottom:1px solid #e5e7eb">Đề</th>
+                    <th style="text-align:left; padding:10px; border-bottom:1px solid #e5e7eb">Ghi chú</th>
+                  </tr>
+                </thead>
+                <tbody id="hg-body"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="row2">
+            <div class="field">
+              <label for="hg-model">Model OpenRouter</label>
+              <select id="hg-model"></select>
+            </div>
+            <div class="field" style="align-self:end">
+              <button type="button" class="primary" id="hg-run">Chạy chấm Hackathon</button>
+            </div>
+          </div>
+          <pre class="log" id="hg-log"></pre>
+        </form>
+      </section>
+
       <!-- Chấm BTVN (nhận xét repo) -->
       <section class="panel" id="panel-btvn">
         <h2>Chấm BTVN (nhận xét)</h2>
@@ -599,6 +672,6 @@
 
       <footer>Chạy local · OpenRouter · không lưu dữ liệu trên server sau khi tải file</footer>
     </div>
-    <script src="/static/app.js?v=20260428_11"></script>
+    <script src="/static/app.js?v=20260429_1"></script>
   </body>
 </html>

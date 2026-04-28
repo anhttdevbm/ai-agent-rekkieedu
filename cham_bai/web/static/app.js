@@ -33,6 +33,7 @@
       );
     if ($("#gr-model")) fillSelect($("#gr-model"), meta.models, meta.default_model);
     if ($("#h-model")) fillSelect($("#h-model"), meta.models, meta.default_model);
+    if ($("#hg-model")) fillSelect($("#hg-model"), meta.models, meta.default_model);
 
     if (meta.default_learning_goals && !$("#r-goals").value.trim()) {
       $("#r-goals").value = meta.default_learning_goals;
@@ -1108,6 +1109,20 @@
     if (gSess) gSess.addEventListener("change", gradeOnPickPracticeSession);
     const gLoadSub = $("#g-rk-load-submits");
     if (gLoadSub) gLoadSub.addEventListener("click", gradeLoadPracticeResources);
+    // Hackathon grading
+    const hgToken = $("#hg-token");
+    if (hgToken) {
+      try {
+        const t = localStorage.getItem("rk_token") || "";
+        if (t && !hgToken.value.trim()) hgToken.value = t;
+      } catch {}
+    }
+    const hgLoad = $("#hg-load");
+    if (hgLoad) hgLoad.addEventListener("click", hgLoadSchedules);
+    const hgSel = $("#hg-schedule");
+    if (hgSel) hgSel.addEventListener("change", hgLoadScheduleDetail);
+    const hgRun = $("#hg-run");
+    if (hgRun) hgRun.addEventListener("click", hgRunGrading);
     const bSel = $("#b-homework");
     if (bSel) bSel.addEventListener("change", btvnOnPickHomework);
 
@@ -1121,6 +1136,233 @@
       $("#ver-pill").textContent = "lỗi tải meta";
       console.error(e);
     });
+  }
+
+  // ----------------------------
+  // Hackathon grading (Rikkei)
+  // ----------------------------
+
+  function extractExamCodeFromRepoLink(url) {
+    const s = String(url || "").trim();
+    if (!s) return null;
+    const m = /github\.com\/[^/]+\/([^/?#]+)/i.exec(s);
+    const repo = m ? m[1] : "";
+    if (!repo) return null;
+    const r = repo.replace(/\.git$/i, "");
+    const m2 = /(?:[_-])0*([0-9]{1,3})$/i.exec(r);
+    if (!m2) return null;
+    const n = parseInt(m2[1], 10);
+    if (!Number.isFinite(n) || n <= 0 || n > 999) return null;
+    return n;
+  }
+
+  function normalizeGithubRepo(url) {
+    const s = String(url || "").trim();
+    const m = /^https?:\/\/github\.com\/([^/]+)\/([^/?#]+)/i.exec(s);
+    if (!m) return s;
+    const repo = (m[2] || "").replace(/\.git$/i, "");
+    return `https://github.com/${m[1]}/${repo}`;
+  }
+
+  let hgCtx = { rows: [], docs: {} };
+
+  async function hgLoadSchedules() {
+    const token = ($("#hg-token") && $("#hg-token").value) || "";
+    const statusEl = $("#hg-status");
+    const btn = $("#hg-load");
+    const sel = $("#hg-schedule");
+    if (!token.trim()) {
+      if (statusEl) statusEl.textContent = "Nhập token Rikkei trước.";
+      return;
+    }
+    setBusy(btn, true, "Đang tải…");
+    if (statusEl) statusEl.textContent = "";
+    if (sel) {
+      sel.innerHTML = "<option value=''>Đang tải…</option>";
+      sel.disabled = true;
+    }
+    try {
+      const fd = new FormData();
+      fd.set("rikkei_token", token.trim());
+      const r = await fetch("/api/rikkei/test-schedules", { method: "POST", body: fd });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        if (statusEl) statusEl.textContent = formatApiErr(data.detail) || "Lỗi tải schedules.";
+        return;
+      }
+      const items = (data && data.items) || [];
+      if (!Array.isArray(items) || items.length === 0) {
+        if (statusEl) statusEl.textContent = "Không có lịch thi.";
+        return;
+      }
+      if (sel) {
+        sel.innerHTML = "<option value=''>-- Chọn cuộc thi --</option>";
+        items.forEach((x) => {
+          const o = document.createElement("option");
+          o.value = String(x.id || "");
+          o.textContent = `[${(x.type || "").trim()}] ${(x.classCode || "").trim()} — ${(x.testName || "").trim()} (id=${x.id})`;
+          o.dataset.testId = String(x.testId || "");
+          sel.appendChild(o);
+        });
+        sel.disabled = false;
+      }
+      if (statusEl) statusEl.textContent = `Đã tải ${items.length} lịch thi.`;
+      try {
+        localStorage.setItem("rk_token", token.trim());
+      } catch {}
+    } catch (e) {
+      if (statusEl) statusEl.textContent = String(e);
+    } finally {
+      setBusy(btn, false);
+    }
+  }
+
+  async function hgLoadScheduleDetail() {
+    const token = ($("#hg-token") && $("#hg-token").value) || "";
+    const scheduleId = ($("#hg-schedule") && $("#hg-schedule").value) || "";
+    const sel = $("#hg-schedule");
+    const statusEl = $("#hg-status");
+    const body = $("#hg-body");
+    if (!token.trim() || !String(scheduleId).trim()) return;
+    if (body) body.innerHTML = "";
+    if (statusEl) statusEl.textContent = "Đang tải chi tiết…";
+    try {
+      const testId = (sel && sel.selectedOptions && sel.selectedOptions[0] && sel.selectedOptions[0].dataset.testId) || "";
+      const fd1 = new FormData();
+      fd1.set("rikkei_token", token.trim());
+      fd1.set("test_id", String(testId || "").trim());
+      const fd2 = new FormData();
+      fd2.set("rikkei_token", token.trim());
+      fd2.set("schedule_id", String(scheduleId).trim());
+
+      const [rTest, rDet] = await Promise.all([
+        fetch("/api/rikkei/test", { method: "POST", body: fd1 }),
+        fetch("/api/rikkei/test-schedule-detail", { method: "POST", body: fd2 }),
+      ]);
+      const testData = await rTest.json().catch(() => ({}));
+      const detData = await rDet.json().catch(() => ({}));
+      if (!rTest.ok) throw new Error(formatApiErr(testData.detail) || "Lỗi tải test");
+      if (!rDet.ok) throw new Error(formatApiErr(detData.detail) || "Lỗi tải detail");
+
+      const docs = (testData && testData.docs) || {};
+      const rows = (detData && detData.items) || [];
+      hgCtx = { rows, docs };
+
+      const includeGraded = $("#hg-include-graded") && $("#hg-include-graded").checked;
+      const limitUi = parseInt((($("#hg-limit") && $("#hg-limit").value) || "0").toString(), 10);
+      const limitN = Number.isFinite(limitUi) && limitUi > 0 ? limitUi : 0;
+
+      const visible = [];
+      for (const x of rows) {
+        const already = x.point != null;
+        if (!includeGraded && already) continue;
+        visible.push(x);
+        if (limitN > 0 && visible.length >= limitN) break;
+      }
+
+      visible.forEach((x, idx) => {
+        const gitRaw = String(x.link || "").trim();
+        const git = normalizeGithubRepo(gitRaw);
+        const code = extractExamCodeFromRepoLink(gitRaw);
+        const key = code == null ? "" : String(code).padStart(2, "0");
+        const docUrl = key && docs[key] ? docs[key] : "";
+        let note = "";
+        if (!gitRaw) note = "Thiếu link GitHub.";
+        else if (!code) note = "Sai format link (cần hậu tố _001.._005).";
+        else if (!docUrl) note = `Không có link đề cho mã ${key}.`;
+
+        const tr = document.createElement("tr");
+        const td = (html) => {
+          const c = document.createElement("td");
+          c.style.padding = "10px";
+          c.style.borderBottom = "1px solid #e5e7eb";
+          c.innerHTML = html;
+          return c;
+        };
+        const checked = !!docUrl && !!git;
+        tr.appendChild(td(`<input type="checkbox" class="hg-row" data-idx="${idx}" ${checked ? "checked" : ""} />`));
+        tr.appendChild(td(escapeHtml(x.studentCode || "")));
+        tr.appendChild(td(escapeHtml(x.fullName || "")));
+        tr.appendChild(td(git ? `<a href="${escapeHtml(git)}" target="_blank" rel="noreferrer">${escapeHtml(git)}</a>` : "<span class='small'>(trống)</span>"));
+        tr.appendChild(td(docUrl ? `<a href="${escapeHtml(docUrl)}" target="_blank" rel="noreferrer">Đề ${key}</a>` : "<span class='small'>(không có)</span>"));
+        tr.appendChild(td(escapeHtml(note)));
+        if (body) body.appendChild(tr);
+      });
+      if (statusEl) statusEl.textContent = `Đã tải ${visible.length}/${rows.length} dòng.`;
+    } catch (e) {
+      if (statusEl) statusEl.textContent = String(e);
+    }
+  }
+
+  async function hgRunGrading() {
+    const model = ($("#hg-model") && $("#hg-model").value) || "";
+    const statusEl = $("#hg-status");
+    const logEl = $("#hg-log");
+    const rows = (hgCtx && hgCtx.rows) || [];
+    const docs = (hgCtx && hgCtx.docs) || {};
+    const checks = Array.from(document.querySelectorAll("input.hg-row"));
+    if (checks.length === 0) {
+      if (statusEl) statusEl.textContent = "Không có dòng để chấm.";
+      return;
+    }
+    const selected = [];
+    checks.forEach((c) => {
+      if (!c.checked) return;
+      const idx = parseInt(c.getAttribute("data-idx") || "0", 10);
+      const x = rows[idx];
+      if (!x) return;
+      const gitRaw = String(x.link || "").trim();
+      const git = normalizeGithubRepo(gitRaw);
+      const code = extractExamCodeFromRepoLink(gitRaw);
+      const key = code == null ? "" : String(code).padStart(2, "0");
+      const docUrl = key && docs[key] ? docs[key] : "";
+      if (!git || !docUrl) return;
+      selected.push({ docUrl, git });
+    });
+    if (selected.length === 0) {
+      if (statusEl) statusEl.textContent = "Không có dòng hợp lệ (thiếu link Git hoặc thiếu link đề).";
+      return;
+    }
+    const byDoc = new Map();
+    selected.forEach((x) => {
+      if (!byDoc.has(x.docUrl)) byDoc.set(x.docUrl, []);
+      byDoc.get(x.docUrl).push(x);
+    });
+    const parUi = parseInt((($("#hg-par") && $("#hg-par").value) || "2").toString(), 10);
+    const PAR = Number.isFinite(parUi) && parUi > 0 ? Math.min(4, parUi) : 2;
+    if (statusEl) statusEl.textContent = `Đang chấm ${selected.length} bài (${byDoc.size} đề)…`;
+    if (logEl) logEl.textContent = "";
+
+    const tasks = Array.from(byDoc.entries()).map(([docUrl, arr]) => async () => {
+      const fd = new FormData();
+      fd.set("assignment_text", docUrl);
+      fd.set("submissions_text", arr.map((x) => x.git).join("\n"));
+      fd.set("report_repos_text", "");
+      fd.set("model", model);
+      fd.set("use_template", "true");
+      fd.set("strict_ai", "true");
+      fd.set("ai_confidence", "75");
+      const r = await fetch("/api/grade", { method: "POST", body: fd });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(formatApiErr(data.detail) || "Lỗi /api/grade");
+      return { docUrl, data };
+    });
+
+    let next = 0;
+    async function worker() {
+      while (true) {
+        const i = next++;
+        if (i >= tasks.length) break;
+        const res = await tasks[i]();
+        if (logEl) logEl.textContent = (logEl.textContent || "") + "\n" + (res.data.log || "");
+      }
+    }
+    try {
+      await Promise.all(Array.from({ length: Math.min(PAR, tasks.length) }, () => worker()));
+      if (statusEl) statusEl.textContent = "Chấm xong (xem log).";
+    } catch (e) {
+      if (statusEl) statusEl.textContent = String(e);
+    }
   }
 
   if (document.readyState === "loading") {
