@@ -1164,7 +1164,7 @@
     return `https://github.com/${m[1]}/${repo}`;
   }
 
-  let hgCtx = { rows: [], docs: {} };
+  let hgCtx = { rows: [], visible: [], docs: {}, last_export_rows: [] };
 
   async function hgLoadSchedules() {
     const token = ($("#hg-token") && $("#hg-token").value) || "";
@@ -1223,6 +1223,7 @@
     const sel = $("#hg-schedule");
     const statusEl = $("#hg-status");
     const body = $("#hg-body");
+    const docsEl = $("#hg-docs");
     if (!token.trim() || !String(scheduleId).trim()) return;
     if (body) body.innerHTML = "";
     if (statusEl) statusEl.textContent = "Đang tải chi tiết…";
@@ -1246,7 +1247,22 @@
 
       const docs = (testData && testData.docs) || {};
       const rows = (detData && detData.items) || [];
-      hgCtx = { rows, docs };
+      hgCtx = { rows, visible: [], docs, last_export_rows: [] };
+
+      if (docsEl) {
+        const keys = Object.keys(docs || {}).sort();
+        if (!keys.length) {
+          docsEl.textContent = "(Không tìm thấy link đề trong test.)";
+        } else {
+          docsEl.innerHTML =
+            keys
+              .map((k) => {
+                const u = docs[k];
+                return `<div>Đề ${escapeHtml(k)}: <a href="${escapeHtml(u)}" target="_blank" rel="noreferrer">${escapeHtml(u)}</a></div>`;
+              })
+              .join("");
+        }
+      }
 
       const includeGraded = $("#hg-include-graded") && $("#hg-include-graded").checked;
       const limitUi = parseInt((($("#hg-limit") && $("#hg-limit").value) || "0").toString(), 10);
@@ -1254,11 +1270,15 @@
 
       const visible = [];
       for (const x of rows) {
+        // only submitted rows
+        const submitted = !!(String(x.submittedAt || "").trim()) || !!String(x.link || "").trim();
+        if (!submitted) continue;
         const already = x.point != null;
         if (!includeGraded && already) continue;
         visible.push(x);
         if (limitN > 0 && visible.length >= limitN) break;
       }
+      hgCtx.visible = visible;
 
       visible.forEach((x, idx) => {
         const gitRaw = String(x.link || "").trim();
@@ -1298,7 +1318,7 @@
     const model = ($("#hg-model") && $("#hg-model").value) || "";
     const statusEl = $("#hg-status");
     const logEl = $("#hg-log");
-    const rows = (hgCtx && hgCtx.rows) || [];
+    const rows = (hgCtx && hgCtx.visible) || [];
     const docs = (hgCtx && hgCtx.docs) || {};
     const checks = Array.from(document.querySelectorAll("input.hg-row"));
     if (checks.length === 0) {
@@ -1317,7 +1337,7 @@
       const key = code == null ? "" : String(code).padStart(2, "0");
       const docUrl = key && docs[key] ? docs[key] : "";
       if (!git || !docUrl) return;
-      selected.push({ docUrl, git });
+      selected.push({ docUrl, git, studentCode: x.studentCode, fullName: x.fullName });
     });
     if (selected.length === 0) {
       if (statusEl) statusEl.textContent = "Không có dòng hợp lệ (thiếu link Git hoặc thiếu link đề).";
@@ -1345,21 +1365,73 @@
       const r = await fetch("/api/grade", { method: "POST", body: fd });
       const data = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(formatApiErr(data.detail) || "Lỗi /api/grade");
-      return { docUrl, data };
+      return { docUrl, arr, data };
     });
 
     let next = 0;
+    const exportRows = [];
     async function worker() {
       while (true) {
         const i = next++;
         if (i >= tasks.length) break;
         const res = await tasks[i]();
         if (logEl) logEl.textContent = (logEl.textContent || "") + "\n" + (res.data.log || "");
+        // Build export rows (align by submissions order)
+        const rr = (res.data && res.data.results) || [];
+        const arr = res.arr || [];
+        for (let j = 0; j < arr.length; j++) {
+          const meta = arr[j] || {};
+          const rj = rr[j] || {};
+          const out = {
+            studentCode: meta.studentCode || "",
+            fullName: meta.fullName || "",
+            repo: meta.git || "",
+            assignment: res.docUrl || "",
+            ok: !!rj.ok,
+            score: rj.result && rj.result.final_score != null ? rj.result.final_score : "",
+            comment: rj.result && rj.result.final_comment ? rj.result.final_comment : "",
+            repo_error: rj.result && rj.result.repo_error ? rj.result.repo_error : "",
+            ai_error: rj.result && rj.result.ai_error ? rj.result.ai_error : "",
+          };
+          exportRows.push(out);
+        }
       }
     }
     try {
       await Promise.all(Array.from({ length: Math.min(PAR, tasks.length) }, () => worker()));
+      hgCtx.last_export_rows = exportRows;
       if (statusEl) statusEl.textContent = "Chấm xong (xem log).";
+      const doExport = $("#hg-export") && $("#hg-export").checked;
+      if (doExport) {
+        await hgDownloadExcel(exportRows);
+      }
+    } catch (e) {
+      if (statusEl) statusEl.textContent = String(e);
+    }
+  }
+
+  async function hgDownloadExcel(rows) {
+    const statusEl = $("#hg-status");
+    if (!Array.isArray(rows) || rows.length === 0) return;
+    try {
+      const fd = new FormData();
+      fd.set("rows_json", JSON.stringify(rows));
+      const r = await fetch("/api/hackathon-grade/export-xlsx", { method: "POST", body: fd });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        if (statusEl) statusEl.textContent = formatApiErr(err.detail) || "Lỗi xuất Excel.";
+        return;
+      }
+      const blob = await r.blob();
+      const cd = r.headers.get("Content-Disposition") || "";
+      let name = "hackathon_results.xlsx";
+      const m = /filename\*?=(?:UTF-8'')?([^;\n]+)/i.exec(cd);
+      if (m) name = decodeURIComponent(m[1].replace(/['"]/g, "").trim());
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      a.click();
+      URL.revokeObjectURL(a.href);
     } catch (e) {
       if (statusEl) statusEl.textContent = String(e);
     }

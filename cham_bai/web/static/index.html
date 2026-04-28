@@ -504,6 +504,10 @@
               <option value="">(Chưa tải)</option>
             </select>
           </div>
+          <div class="field">
+            <label>Danh sách đề trong cuộc thi</label>
+            <div class="small" id="hg-docs">(Chọn cuộc thi để xem danh sách đề.)</div>
+          </div>
           <div class="row2">
             <div class="field">
               <label for="hg-limit">Số bài chấm (từ trên xuống)</label>
@@ -536,6 +540,12 @@
             <div class="field">
               <label for="hg-model">Model OpenRouter</label>
               <select id="hg-model"></select>
+            </div>
+            <div class="field" style="align-self:end">
+              <div class="checkline">
+                <input type="checkbox" id="hg-export" checked />
+                <label for="hg-export" style="margin:0">Tải file Excel kết quả sau khi chấm</label>
+              </div>
             </div>
             <div class="field" style="align-self:end">
               <button type="button" class="primary" id="hg-run">Chạy chấm Hackathon</button>
@@ -672,6 +682,6 @@
 
       <footer>Chạy local · OpenRouter · không lưu dữ liệu trên server sau khi tải file</footer>
     </div>
-    <script src="/static/app.js?v=20260429_1"></script>
+    <script src="/static/app.js?v=20260429_2"></script>
   </body>
 </html>

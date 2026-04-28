@@ -20,6 +20,8 @@ import httpx
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
+from openpyxl import Workbook
+from openpyxl.utils import get_column_letter
 
 from cham_bai import __version__
 from cham_bai.gdocs_reader import fetch_google_doc_plain_text, is_google_docs_url
@@ -1050,6 +1052,7 @@ def _norm_test_schedule_detail_item(x: dict) -> dict:
         "id": _pick_first_int(x, ["id"]) or x.get("id"),
         "point": x.get("point"),
         "link": _pick_first_str(x, ["link"]),
+        "submittedAt": _pick_first_str(x, ["submittedAt", "submitted_at"]),
         "studentCode": _pick_first_str(st, ["studentCode", "student_code", "code"]),
         "fullName": _pick_first_str(st, ["fullName", "full_name", "name"]),
         "_raw": x,
@@ -1134,6 +1137,56 @@ async def api_rikkei_test_schedule_detail(
         raise
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Lỗi gọi API Rikkei (test-schedule-detail): {e}")
+
+
+@app.post("/api/hackathon-grade/export-xlsx")
+async def api_hackathon_grade_export_xlsx(
+    rows_json: str = Form(...),
+) -> FileResponse:
+    try:
+        rows = json.loads(rows_json or "[]")
+    except Exception:
+        raise HTTPException(status_code=400, detail="rows_json không phải JSON hợp lệ.")
+    if not isinstance(rows, list):
+        raise HTTPException(status_code=400, detail="rows_json phải là list.")
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Hackathon"
+    headers = ["Mã SV", "Họ tên", "Repo", "Link đề", "OK", "Điểm", "Nhận xét", "Lỗi repo", "Lỗi AI"]
+    ws.append(headers)
+    for r in rows[:5000]:
+        if not isinstance(r, dict):
+            continue
+        ws.append(
+            [
+                str(r.get("studentCode") or ""),
+                str(r.get("fullName") or ""),
+                str(r.get("repo") or ""),
+                str(r.get("assignment") or ""),
+                "OK" if r.get("ok") else "FAIL",
+                str(r.get("score") or ""),
+                str(r.get("comment") or ""),
+                str(r.get("repo_error") or ""),
+                str(r.get("ai_error") or ""),
+            ]
+        )
+
+    for col in range(1, len(headers) + 1):
+        letter = get_column_letter(col)
+        ws.column_dimensions[letter].width = 28 if col in (3, 4, 7) else 16
+
+    out_dir = tempfile.mkdtemp(prefix="hg_xlsx_")
+    out_path = Path(out_dir) / "hackathon_results.xlsx"
+    wb.save(str(out_path))
+    background_tasks = BackgroundTasks()
+    background_tasks.add_task(shutil.rmtree, out_dir, True)
+    return FileResponse(
+        path=str(out_path),
+        filename=out_path.name,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        background=background_tasks,
+    )
 
 
 @app.post("/api/btvn")
