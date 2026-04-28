@@ -84,6 +84,13 @@
                 <option value="">(Chọn lớp trước)</option>
               </select>
             </div>
+            <div class="field" style="margin-top: 0.6rem">
+              <label for="g-rk-session">Session thực hành (để chấm)</label>
+              <select id="g-rk-session">
+                <option value="">(Chọn môn trước)</option>
+              </select>
+              <p class="small">Chỉ hiện session có <code>type = THỰC HÀNH</code>. Chọn xong sẽ tự điền “Đề bài” bằng link miniProject (nếu có).</p>
+            </div>
             <p class="status" id="g-rk-login-status"></p>
           </details>
           <div class="field">
@@ -557,6 +564,6 @@
 
       <footer>Chạy local · OpenRouter · không lưu dữ liệu trên server sau khi tải file</footer>
     </div>
-    <script src="/static/app.js?v=20260428_7"></script>
+    <script src="/static/app.js?v=20260428_8"></script>
   </body>
 </html>

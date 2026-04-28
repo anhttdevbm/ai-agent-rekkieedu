@@ -501,6 +501,7 @@
     const statusEl = $("#g-rk-login-status");
     const selClass = $("#g-rk-class");
     const selCourse = $("#g-rk-course");
+    const selSession = $("#g-rk-session");
     if (!token.trim() || !String(sysId).trim()) return;
     if (selClass) {
       selClass.innerHTML = "<option value=''>Đang tải…</option>";
@@ -540,6 +541,10 @@
         selCourse.innerHTML = "<option value=''>Chọn lớp trước</option>";
         selCourse.disabled = true;
       }
+      if (selSession) {
+        selSession.innerHTML = "<option value=''>Chọn môn trước</option>";
+        selSession.disabled = true;
+      }
     } catch (e) {
       if (statusEl) statusEl.textContent = String(e);
     }
@@ -550,6 +555,7 @@
     const classId = ($("#g-rk-class") && $("#g-rk-class").value) || "";
     const statusEl = $("#g-rk-login-status");
     const selCourse = $("#g-rk-course");
+    const selSession = $("#g-rk-session");
     if (!token.trim() || !String(classId).trim()) return;
     if (selCourse) {
       selCourse.innerHTML = "<option value=''>Đang tải…</option>";
@@ -585,8 +591,78 @@
           selCourse.disabled = false;
         }
       }
+      if (selSession) {
+        selSession.innerHTML = "<option value=''>Chọn môn trước</option>";
+        selSession.disabled = true;
+      }
     } catch (e) {
       if (statusEl) statusEl.textContent = String(e);
+    }
+  }
+
+  async function gradeLoadPracticeSessionsForCourse() {
+    const token = ($("#g-rk-token") && $("#g-rk-token").value) || "";
+    const courseId = ($("#g-rk-course") && $("#g-rk-course").value) || "";
+    const statusEl = $("#g-rk-login-status");
+    const selSession = $("#g-rk-session");
+    if (!token.trim() || !String(courseId).trim()) return;
+    if (selSession) {
+      selSession.innerHTML = "<option value=''>Đang tải…</option>";
+      selSession.disabled = true;
+    }
+    try {
+      const fd = new FormData();
+      fd.set("rikkei_token", token.trim());
+      fd.set("course_id", String(courseId).trim());
+      const r = await fetch("/api/rikkei/course-sessions", { method: "POST", body: fd });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        if (statusEl) statusEl.textContent = formatApiErr(data.detail) || "Lỗi tải session.";
+        if (selSession) {
+          selSession.innerHTML = "<option value=''> (Lỗi tải session) </option>";
+          selSession.disabled = true;
+        }
+        return;
+      }
+      const items = (data && data.items) || [];
+      if (selSession) {
+        if (!Array.isArray(items) || items.length === 0) {
+          selSession.innerHTML = "<option value=''> (Không có session thực hành) </option>";
+          selSession.disabled = true;
+        } else {
+          selSession.dataset.items = JSON.stringify(items);
+          selSession.innerHTML = "<option value=''>-- Chọn session thực hành --</option>";
+          items.forEach((x) => {
+            const o = document.createElement("option");
+            o.value = String(x.id ?? "");
+            const pos = x.position != null ? String(x.position) : "";
+            const label = (pos ? `#${pos} ` : "") + String((x.name || x.id || "")).trim();
+            o.textContent = label;
+            selSession.appendChild(o);
+          });
+          selSession.disabled = false;
+        }
+      }
+    } catch (e) {
+      if (statusEl) statusEl.textContent = String(e);
+    }
+  }
+
+  function gradeOnPickPracticeSession() {
+    const sel = $("#g-rk-session");
+    const aText = $("#g-assignment-text");
+    if (!sel || !aText) return;
+    const id = (sel.value || "").trim();
+    if (!id) return;
+    let items = [];
+    try {
+      items = JSON.parse(sel.dataset.items || "[]");
+    } catch {}
+    const it = items.find((x) => String(x.id) === id);
+    if (!it) return;
+    const mp = String(it.miniProject || "").trim();
+    if (mp && /^https?:\/\//i.test(mp)) {
+      aText.value = mp;
     }
   }
 
@@ -811,6 +887,10 @@
     }
     const gClass = $("#g-rk-class");
     if (gClass) gClass.addEventListener("change", gradeLoadCoursesForClass);
+    const gCourse = $("#g-rk-course");
+    if (gCourse) gCourse.addEventListener("change", gradeLoadPracticeSessionsForCourse);
+    const gSess = $("#g-rk-session");
+    if (gSess) gSess.addEventListener("change", gradeOnPickPracticeSession);
     const bSel = $("#b-homework");
     if (bSel) bSel.addEventListener("change", btvnOnPickHomework);
 

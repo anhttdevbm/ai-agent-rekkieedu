@@ -704,6 +704,17 @@ def _norm_class_item(x: dict) -> dict:
     }
 
 
+def _norm_session_item(x: dict) -> dict:
+    return {
+        "id": _pick_first_int(x, ["id", "sessionId", "session_id"]) or x.get("id"),
+        "name": _pick_first_str(x, ["name", "title"]),
+        "position": _pick_first_int(x, ["position", "stt", "order"]),
+        "type": _pick_first_str(x, ["type", "sessionType", "session_type"]),
+        "miniProject": _pick_first_str(x, ["miniProject", "mini_project", "miniproject"]),
+        "_raw": x,
+    }
+
+
 @app.post("/api/rikkei/login")
 async def api_rikkei_login(
     email: str = Form(...),
@@ -820,6 +831,40 @@ async def api_rikkei_class_courses(
         raise
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Lỗi gọi API Rikkei (class-courses): {e}")
+
+
+@app.post("/api/rikkei/course-sessions")
+async def api_rikkei_course_sessions(
+    rikkei_token: str = Form(...),
+    course_id: str = Form(""),
+) -> JSONResponse:
+    tok = (rikkei_token or "").strip()
+    cid = (course_id or "").strip()
+    if not tok:
+        raise HTTPException(status_code=400, detail="Thiếu token Rikkei.")
+    if not cid:
+        raise HTTPException(status_code=400, detail="Thiếu course_id.")
+    url = f"https://apiportal.rikkei.edu.vn/sessions/course/{cid}"
+    try:
+        async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+            r = await client.get(url, headers={"Authorization": _rk_bearer(tok), "User-Agent": "AgentEdu/1.0"})
+        if r.status_code in (401, 403):
+            raise HTTPException(status_code=401, detail="Token không hợp lệ hoặc không có quyền.")
+        r.raise_for_status()
+        raw_items = _unwrap_list_payload(r.json())
+        items_all = [_norm_session_item(x) for x in raw_items if isinstance(x, dict)]
+        # Only practice sessions
+        items = [
+            it
+            for it in items_all
+            if str(it.get("type") or "").strip().upper() == "THỰC HÀNH"
+        ]
+        items.sort(key=lambda z: int(z.get("position") or 10_000))
+        return JSONResponse({"ok": True, "items": items})
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Lỗi gọi API Rikkei (course-sessions): {e}")
 
 
 @app.post("/api/btvn")
