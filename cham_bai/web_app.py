@@ -640,6 +640,70 @@ def _unwrap_list_payload(payload: object) -> list[dict]:
     return []
 
 
+def _pick_first_str(d: dict, keys: list[str]) -> str:
+    for k in keys:
+        v = d.get(k)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    # case-insensitive fallback
+    lower = {str(k).lower(): k for k in d.keys()}
+    for k in keys:
+        k2 = lower.get(k.lower())
+        if k2 is None:
+            continue
+        v = d.get(k2)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    return ""
+
+
+def _pick_first_int(d: dict, keys: list[str]) -> int | None:
+    for k in keys:
+        v = d.get(k)
+        if isinstance(v, int):
+            return v
+        if isinstance(v, str) and v.strip().isdigit():
+            return int(v.strip())
+    lower = {str(k).lower(): k for k in d.keys()}
+    for k in keys:
+        k2 = lower.get(k.lower())
+        if k2 is None:
+            continue
+        v = d.get(k2)
+        if isinstance(v, int):
+            return v
+        if isinstance(v, str) and v.strip().isdigit():
+            return int(v.strip())
+    return None
+
+
+def _norm_system_item(x: dict) -> dict:
+    return {
+        "id": _pick_first_int(x, ["id", "systemId", "system_id"]) or x.get("id"),
+        "systemCode": _pick_first_str(x, ["systemCode", "system_code", "code", "system_code_name"]),
+        "name": _pick_first_str(x, ["name", "systemName", "system_name", "title"]),
+        "_raw": x,
+    }
+
+
+def _norm_course_item(x: dict) -> dict:
+    return {
+        "id": _pick_first_int(x, ["id", "courseId", "course_id"]) or x.get("id"),
+        "courseCode": _pick_first_str(x, ["courseCode", "course_code", "code"]),
+        "name": _pick_first_str(x, ["name", "courseName", "course_name", "title"]),
+        "_raw": x,
+    }
+
+
+def _norm_class_item(x: dict) -> dict:
+    return {
+        "id": _pick_first_int(x, ["id", "classId", "class_id"]) or x.get("id"),
+        "classCode": _pick_first_str(x, ["classCode", "class_code", "code"]),
+        "name": _pick_first_str(x, ["name", "className", "class_name", "title"]),
+        "_raw": x,
+    }
+
+
 @app.post("/api/rikkei/login")
 async def api_rikkei_login(
     email: str = Form(...),
@@ -695,7 +759,8 @@ async def api_rikkei_systems(
         if r.status_code in (401, 403):
             raise HTTPException(status_code=401, detail="Token không hợp lệ hoặc không có quyền.")
         r.raise_for_status()
-        items = _unwrap_list_payload(r.json())
+        raw_items = _unwrap_list_payload(r.json())
+        items = [_norm_system_item(x) for x in raw_items if isinstance(x, dict)]
         return JSONResponse({"ok": True, "items": items})
     except HTTPException:
         raise
@@ -733,7 +798,8 @@ async def api_rikkei_courses(
         if r.status_code in (401, 403):
             raise HTTPException(status_code=401, detail="Token không hợp lệ hoặc không có quyền.")
         r.raise_for_status()
-        items = _unwrap_list_payload(r.json())
+        raw_items = _unwrap_list_payload(r.json())
+        items = [_norm_course_item(x) for x in raw_items if isinstance(x, dict)]
         return JSONResponse({"ok": True, "items": items})
     except HTTPException:
         raise
@@ -759,7 +825,8 @@ async def api_rikkei_classes(
         if r.status_code in (401, 403):
             raise HTTPException(status_code=401, detail="Token không hợp lệ hoặc không có quyền.")
         r.raise_for_status()
-        items = _unwrap_list_payload(r.json())
+        raw_items = _unwrap_list_payload(r.json())
+        items = [_norm_class_item(x) for x in raw_items if isinstance(x, dict)]
         return JSONResponse({"ok": True, "items": items})
     except HTTPException:
         raise
