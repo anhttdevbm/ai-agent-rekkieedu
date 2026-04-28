@@ -1123,6 +1123,31 @@
     if (hgSel) hgSel.addEventListener("change", hgLoadScheduleDetail);
     const hgRun = $("#hg-run");
     if (hgRun) hgRun.addEventListener("click", hgRunGrading);
+    const hgDl = $("#hg-download");
+    if (hgDl)
+      hgDl.addEventListener("click", async () => {
+        const rows = (hgCtx && hgCtx.last_export_rows) || [];
+        const statusEl = $("#hg-status");
+        if (!Array.isArray(rows) || rows.length === 0) {
+          if (statusEl) statusEl.textContent = "Chưa có dữ liệu để xuất Excel (hãy chấm xong trước).";
+          return;
+        }
+        if (statusEl) statusEl.textContent = "Đang tạo Excel…";
+        await hgDownloadExcel(rows);
+        if (statusEl) statusEl.textContent = "Đã tạo Excel.";
+      });
+    const hgLimit = $("#hg-limit");
+    if (hgLimit)
+      hgLimit.addEventListener("change", () => {
+        const v = ($("#hg-schedule") && $("#hg-schedule").value) || "";
+        if (String(v).trim()) hgLoadScheduleDetail();
+      });
+    const hgInc = $("#hg-include-graded");
+    if (hgInc)
+      hgInc.addEventListener("change", () => {
+        const v = ($("#hg-schedule") && $("#hg-schedule").value) || "";
+        if (String(v).trim()) hgLoadScheduleDetail();
+      });
     const bSel = $("#b-homework");
     if (bSel) bSel.addEventListener("change", btvnOnPickHomework);
 
@@ -1315,9 +1340,11 @@
   }
 
   async function hgRunGrading() {
+    const btn = $("#hg-run");
     const model = ($("#hg-model") && $("#hg-model").value) || "";
     const statusEl = $("#hg-status");
     const logEl = $("#hg-log");
+    const dlBtn = $("#hg-download");
     const rows = (hgCtx && hgCtx.visible) || [];
     const docs = (hgCtx && hgCtx.docs) || {};
     const checks = Array.from(document.querySelectorAll("input.hg-row"));
@@ -1325,9 +1352,15 @@
       if (statusEl) statusEl.textContent = "Không có dòng để chấm.";
       return;
     }
+    setBusy(btn, true, "Đang chấm…");
+    if (dlBtn) dlBtn.disabled = true;
+    const limitUi = parseInt((($("#hg-limit") && $("#hg-limit").value) || "0").toString(), 10);
+    const limitN = Number.isFinite(limitUi) && limitUi > 0 ? limitUi : 0;
     const selected = [];
+    let picked = 0;
     checks.forEach((c) => {
       if (!c.checked) return;
+      if (limitN > 0 && picked >= limitN) return;
       const idx = parseInt(c.getAttribute("data-idx") || "0", 10);
       const x = rows[idx];
       if (!x) return;
@@ -1338,6 +1371,7 @@
       const docUrl = key && docs[key] ? docs[key] : "";
       if (!git || !docUrl) return;
       selected.push({ docUrl, git, studentCode: x.studentCode, fullName: x.fullName });
+      picked += 1;
     });
     if (selected.length === 0) {
       if (statusEl) statusEl.textContent = "Không có dòng hợp lệ (thiếu link Git hoặc thiếu link đề).";
@@ -1401,12 +1435,17 @@
       await Promise.all(Array.from({ length: Math.min(PAR, tasks.length) }, () => worker()));
       hgCtx.last_export_rows = exportRows;
       if (statusEl) statusEl.textContent = "Chấm xong (xem log).";
+      if (dlBtn) dlBtn.disabled = !(Array.isArray(exportRows) && exportRows.length > 0);
       const doExport = $("#hg-export") && $("#hg-export").checked;
       if (doExport) {
+        if (statusEl) statusEl.textContent = "Đang tạo Excel…";
         await hgDownloadExcel(exportRows);
+        if (statusEl) statusEl.textContent = "Đã tạo Excel (nếu không tự tải, bấm nút Tải Excel kết quả).";
       }
     } catch (e) {
       if (statusEl) statusEl.textContent = String(e);
+    } finally {
+      setBusy(btn, false);
     }
   }
 
@@ -1423,6 +1462,10 @@
         return;
       }
       const blob = await r.blob();
+      if (!blob || !blob.size) {
+        if (statusEl) statusEl.textContent = "File Excel rỗng (blob.size=0).";
+        return;
+      }
       const cd = r.headers.get("Content-Disposition") || "";
       let name = "hackathon_results.xlsx";
       const m = /filename\*?=(?:UTF-8'')?([^;\n]+)/i.exec(cd);
