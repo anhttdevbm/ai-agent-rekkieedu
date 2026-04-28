@@ -715,6 +715,23 @@ def _norm_session_item(x: dict) -> dict:
     }
 
 
+def _norm_practice_resource_item(x: dict) -> dict:
+    st = x.get("student") if isinstance(x, dict) else None
+    if not isinstance(st, dict):
+        st = {}
+    return {
+        "id": _pick_first_int(x, ["id"]) or x.get("id"),
+        "link": _pick_first_str(x, ["link"]),
+        "reportLink": _pick_first_str(x, ["reportLink", "report_link"]),
+        "score": _pick_first_int(x, ["score"]),
+        "comment": _pick_first_str(x, ["comment"]),
+        "studentId": _pick_first_int(st, ["id", "studentId", "student_id"]),
+        "studentCode": _pick_first_str(st, ["studentCode", "student_code", "code"]),
+        "fullName": _pick_first_str(st, ["fullName", "full_name", "name"]),
+        "_raw": x,
+    }
+
+
 @app.post("/api/rikkei/login")
 async def api_rikkei_login(
     email: str = Form(...),
@@ -865,6 +882,47 @@ async def api_rikkei_course_sessions(
         raise
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Lỗi gọi API Rikkei (course-sessions): {e}")
+
+
+@app.post("/api/rikkei/practice-resource")
+async def api_rikkei_practice_resource(
+    rikkei_token: str = Form(...),
+    class_id: str = Form(""),
+    session_id: str = Form(""),
+) -> JSONResponse:
+    tok = (rikkei_token or "").strip()
+    cid = (class_id or "").strip()
+    sid = (session_id or "").strip()
+    if not tok:
+        raise HTTPException(status_code=400, detail="Thiếu token Rikkei.")
+    if not cid or not sid:
+        raise HTTPException(status_code=400, detail="Thiếu class_id hoặc session_id.")
+    url = "https://apiportal.rikkei.edu.vn/practice-resource"
+    try:
+        async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+            r = await client.get(
+                url,
+                params={"classId": cid, "sessionId": sid},
+                headers={"Authorization": _rk_bearer(tok), "User-Agent": "AgentEdu/1.0"},
+            )
+        if r.status_code in (401, 403):
+            raise HTTPException(status_code=401, detail="Token không hợp lệ hoặc không có quyền.")
+        r.raise_for_status()
+        raw_items = _unwrap_list_payload(r.json())
+        items = [_norm_practice_resource_item(x) for x in raw_items if isinstance(x, dict)]
+        # sort by studentCode then name for stable display
+        items.sort(
+            key=lambda z: (
+                str(z.get("studentCode") or ""),
+                str(z.get("fullName") or ""),
+                int(z.get("id") or 10_000_000),
+            )
+        )
+        return JSONResponse({"ok": True, "items": items})
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Lỗi gọi API Rikkei (practice-resource): {e}")
 
 
 @app.post("/api/btvn")

@@ -104,18 +104,36 @@
             />
           </div>
           <div class="field">
-            <label for="g-subs">Bài nộp (mỗi dòng một thư mục hoặc URL GitHub)</label>
-            <textarea id="g-subs" name="submissions_text" placeholder="D:\bai-nop\sv1&#10;&#10;https://github.com/..."></textarea>
+            <div class="row2" style="align-items: end">
+              <div class="field" style="margin: 0">
+                <label>Danh sách bài nộp (tự lấy từ Rikkei)</label>
+                <div class="small">Nguồn: <code>/practice-resource?classId=&amp;sessionId=</code>. Chọn Lớp + Session ở trên rồi bấm tải.</div>
+              </div>
+              <div class="field" style="margin: 0; align-self: end">
+                <button type="button" class="primary" id="g-rk-load-submits">Tải danh sách bài nộp</button>
+              </div>
+            </div>
+            <p class="status" id="g-rk-submit-status"></p>
+            <div style="overflow:auto; max-height: 55vh; border: 1px solid #e5e7eb; border-radius: 12px">
+              <table class="tbl" style="width: 100%; border-collapse: collapse">
+                <thead>
+                  <tr>
+                    <th style="text-align:left; padding:10px; border-bottom:1px solid #e5e7eb">Chọn</th>
+                    <th style="text-align:left; padding:10px; border-bottom:1px solid #e5e7eb">Mã SV</th>
+                    <th style="text-align:left; padding:10px; border-bottom:1px solid #e5e7eb">Họ tên</th>
+                    <th style="text-align:left; padding:10px; border-bottom:1px solid #e5e7eb">Link Git</th>
+                    <th style="text-align:left; padding:10px; border-bottom:1px solid #e5e7eb">Link báo cáo</th>
+                    <th style="text-align:left; padding:10px; border-bottom:1px solid #e5e7eb">Điểm (nếu có)</th>
+                  </tr>
+                </thead>
+                <tbody id="g-rk-submit-body"></tbody>
+              </table>
+            </div>
           </div>
-          <div class="field">
-            <label for="g-report-repos">Báo cáo + mini (tuỳ chọn — GitHub, Google Docs hoặc OneDrive/SharePoint, mỗi dòng một link)</label>
-            <textarea
-              id="g-report-repos"
-              name="report_repos_text"
-              rows="4"
-              placeholder="https://github.com/user/bao-cao&#10;https://docs.google.com/document/d/.../edit&#10;https://1drv.ms/w/..."
-            ></textarea>
-          </div>
+
+          <!-- hidden fields vẫn gửi sang /api/grade (tự build từ bảng ở trên) -->
+          <textarea id="g-subs" name="submissions_text" style="display:none"></textarea>
+          <textarea id="g-report-repos" name="report_repos_text" style="display:none"></textarea>
           <div class="field">
             <label for="g-model">Model OpenRouter</label>
             <select id="g-model" name="model"></select>
@@ -564,6 +582,6 @@
 
       <footer>Chạy local · OpenRouter · không lưu dữ liệu trên server sau khi tải file</footer>
     </div>
-    <script src="/static/app.js?v=20260428_8"></script>
+    <script src="/static/app.js?v=20260428_9"></script>
   </body>
 </html>

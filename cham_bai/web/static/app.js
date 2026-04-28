@@ -161,31 +161,43 @@
     try {
       const subsText = (baseFd.get("submissions_text") || "").toString();
       const repsText = (baseFd.get("report_repos_text") || "").toString();
-      const subsLines = subsText
+      const rawSubs = subsText
         .split(/\r?\n/)
-        .map((x) => x.trim())
-        .filter((x) => x && !x.startsWith("#"));
-      const repLinesRaw = repsText.split(/\r?\n/);
-      // keep blank lines to preserve line-to-line alignment with submissions
-      const repLines = repLinesRaw.map((x) => x.replace(/\r/g, ""));
+        .map((x) => x.replace(/\r/g, ""))
+        .filter((x) => !(x.trim().startsWith("#")));
+      const rawReps = repsText
+        .split(/\r?\n/)
+        .map((x) => x.replace(/\r/g, ""))
+        .filter((x) => !(x.trim().startsWith("#")));
+
+      // pad to same length, keep blanks (backend supports report-only rows)
+      const n = Math.max(rawSubs.length, rawReps.length);
+      const subsLines = rawSubs.concat(Array(Math.max(0, n - rawSubs.length)).fill(""));
+      const repLines = rawReps.concat(Array(Math.max(0, n - rawReps.length)).fill(""));
+      // trim trailing pairs of blanks
+      let end = n;
+      while (end > 0 && !subsLines[end - 1].trim() && !repLines[end - 1].trim()) end--;
+      const subsFinal = subsLines.slice(0, end);
+      const repsFinal = repLines.slice(0, end);
 
       const batchUi = parseInt((($("#g-batch") && $("#g-batch").value) || "5").toString(), 10);
       const parallelUi = parseInt((($("#g-par") && $("#g-par").value) || "2").toString(), 10);
       const BATCH_SIZE = Number.isFinite(batchUi) && batchUi > 0 ? Math.min(20, batchUi) : 5;
       const PARALLEL = Number.isFinite(parallelUi) && parallelUi > 0 ? Math.min(4, parallelUi) : 2;
-      const total = subsLines.length || 0;
+      const total = Math.max(subsFinal.length, repsFinal.length) || 0;
       const chunks = [];
       if (total <= BATCH_SIZE) {
-        chunks.push({ start: 0, end: total, subs: subsLines, reps: repLines });
+        chunks.push({ start: 0, end: total, subs: subsFinal, reps: repsFinal });
       } else {
         for (let i = 0; i < total; i += BATCH_SIZE) {
-          const subChunk = subsLines.slice(i, i + BATCH_SIZE);
-          // report_repos_text mapping: lấy đúng dòng theo index submissions
-          const repChunk = [];
-          for (let j = i; j < i + subChunk.length; j++) {
-            repChunk.push((repLines[j] || "").trim());
-          }
-          chunks.push({ start: i, end: Math.min(i + BATCH_SIZE, total), subs: subChunk, reps: repChunk });
+          const subChunk = subsFinal.slice(i, i + BATCH_SIZE);
+          const repChunk = repsFinal.slice(i, i + BATCH_SIZE);
+          chunks.push({
+            start: i,
+            end: Math.min(i + BATCH_SIZE, total),
+            subs: subChunk,
+            reps: repChunk,
+          });
         }
       }
 
@@ -227,7 +239,7 @@
               } catch (e) {
                 results[ci] = { ci, ok: false, data: { detail: String(e) } };
               } finally {
-                done += (chunks[ci].subs || []).length;
+                done += Math.max((chunks[ci].subs || []).length, (chunks[ci].reps || []).length);
               }
             }
           })()
@@ -255,6 +267,106 @@
     } finally {
       setBusy(btn, false);
       $("#g-status").classList.remove("run");
+    }
+  }
+
+  async function gradeLoadPracticeResources() {
+    const token = ($("#g-rk-token") && $("#g-rk-token").value) || "";
+    const classId = ($("#g-rk-class") && $("#g-rk-class").value) || "";
+    const sessionId = ($("#g-rk-session") && $("#g-rk-session").value) || "";
+    const statusEl = $("#g-rk-submit-status");
+    const btn = $("#g-rk-load-submits");
+    const body = $("#g-rk-submit-body");
+    const hSubs = $("#g-subs");
+    const hReps = $("#g-report-repos");
+    if (!token.trim() || !String(classId).trim() || !String(sessionId).trim()) {
+      if (statusEl) statusEl.textContent = "Cần có token + chọn lớp + chọn session thực hành trước.";
+      return;
+    }
+    if (body) body.innerHTML = "";
+    if (statusEl) statusEl.textContent = "";
+    setBusy(btn, true, "Đang tải…");
+    try {
+      const fd = new FormData();
+      fd.set("rikkei_token", token.trim());
+      fd.set("class_id", String(classId).trim());
+      fd.set("session_id", String(sessionId).trim());
+      const r = await fetch("/api/rikkei/practice-resource", { method: "POST", body: fd });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        if (statusEl) statusEl.textContent = formatApiErr(data.detail) || "Lỗi tải practice-resource.";
+        return;
+      }
+      const items = (data && data.items) || [];
+      if (!Array.isArray(items) || items.length === 0) {
+        if (statusEl) statusEl.textContent = "Không có dữ liệu bài nộp cho lớp/session này.";
+        return;
+      }
+
+      const esc = (s) => escapeHtml(String(s || ""));
+
+      const subsLines = [];
+      const repLines = [];
+      items.forEach((x, idx) => {
+        const sid = esc(x.studentCode || "");
+        const name = esc(x.fullName || "");
+        const git = String(x.link || "").trim();
+        const rep = String(x.reportLink || "").trim();
+        const score = x.score == null ? "" : String(x.score);
+        const checked = !!(git || rep);
+
+        const tr = document.createElement("tr");
+        const td = (html) => {
+          const c = document.createElement("td");
+          c.style.padding = "10px";
+          c.style.borderBottom = "1px solid #e5e7eb";
+          c.innerHTML = html;
+          return c;
+        };
+        tr.appendChild(
+          td(
+            `<input type="checkbox" class="g-rk-row" data-idx="${idx}" ${
+              checked ? "checked" : ""
+            } />`
+          )
+        );
+        tr.appendChild(td(sid));
+        tr.appendChild(td(name));
+        tr.appendChild(td(git ? `<a href="${esc(git)}" target="_blank" rel="noreferrer">${esc(git)}</a>` : "<span class='small'>(trống)</span>"));
+        tr.appendChild(td(rep ? `<a href="${esc(rep)}" target="_blank" rel="noreferrer">${esc(rep)}</a>` : "<span class='small'>(trống)</span>"));
+        tr.appendChild(td(esc(score)));
+        if (body) body.appendChild(tr);
+
+        subsLines.push(git);
+        repLines.push(rep);
+      });
+
+      if (hSubs) hSubs.value = subsLines.join("\n");
+      if (hReps) hReps.value = repLines.join("\n");
+
+      // hook checkboxes to rebuild hidden fields
+      const rebuild = () => {
+        const checks = Array.from(document.querySelectorAll("input.g-rk-row"));
+        const s2 = [];
+        const r2 = [];
+        checks.forEach((c) => {
+          const i = parseInt(c.getAttribute("data-idx") || "0", 10);
+          const on = c.checked;
+          s2.push(on ? subsLines[i] : "");
+          r2.push(on ? repLines[i] : "");
+        });
+        if (hSubs) hSubs.value = s2.join("\n");
+        if (hReps) hReps.value = r2.join("\n");
+      };
+      document.querySelectorAll("input.g-rk-row").forEach((c) => {
+        c.addEventListener("change", rebuild);
+      });
+
+      if (statusEl) statusEl.textContent = `Đã tải ${items.length} dòng.`;
+    } catch (e) {
+      if (statusEl) statusEl.textContent = String(e);
+    } finally {
+      setBusy(btn, false);
     }
   }
 
@@ -891,6 +1003,8 @@
     if (gCourse) gCourse.addEventListener("change", gradeLoadPracticeSessionsForCourse);
     const gSess = $("#g-rk-session");
     if (gSess) gSess.addEventListener("change", gradeOnPickPracticeSession);
+    const gLoadSub = $("#g-rk-load-submits");
+    if (gLoadSub) gLoadSub.addEventListener("click", gradeLoadPracticeResources);
     const bSel = $("#b-homework");
     if (bSel) bSel.addEventListener("change", btvnOnPickHomework);
 
