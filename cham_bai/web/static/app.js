@@ -150,22 +150,106 @@
   async function postGrade(ev) {
     ev.preventDefault();
     const btn = $("#g-submit");
-    const fd = new FormData(ev.target);
-    fd.set("use_template", $("#g-tpl").checked ? "true" : "false");
-    fd.set("strict_ai", $("#g-strict").checked ? "true" : "false");
+    const form = ev.target;
+    const baseFd = new FormData(form);
+    baseFd.set("use_template", $("#g-tpl").checked ? "true" : "false");
+    baseFd.set("strict_ai", $("#g-strict").checked ? "true" : "false");
     setBusy(btn, true, "Đang chấm…");
     setLog("#g-log", "", false);
     $("#g-status").textContent = "";
     $("#g-status").classList.add("run");
     try {
-      const r = await fetch("/api/grade", { method: "POST", body: fd });
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        setLog("#g-log", formatApiErr(data.detail) || JSON.stringify(data), true);
-        return;
+      const subsText = (baseFd.get("submissions_text") || "").toString();
+      const repsText = (baseFd.get("report_repos_text") || "").toString();
+      const subsLines = subsText
+        .split(/\r?\n/)
+        .map((x) => x.trim())
+        .filter((x) => x && !x.startsWith("#"));
+      const repLinesRaw = repsText.split(/\r?\n/);
+      // keep blank lines to preserve line-to-line alignment with submissions
+      const repLines = repLinesRaw.map((x) => x.replace(/\r/g, ""));
+
+      const batchUi = parseInt((($("#g-batch") && $("#g-batch").value) || "5").toString(), 10);
+      const parallelUi = parseInt((($("#g-par") && $("#g-par").value) || "2").toString(), 10);
+      const BATCH_SIZE = Number.isFinite(batchUi) && batchUi > 0 ? Math.min(20, batchUi) : 5;
+      const PARALLEL = Number.isFinite(parallelUi) && parallelUi > 0 ? Math.min(4, parallelUi) : 2;
+      const total = subsLines.length || 0;
+      const chunks = [];
+      if (total <= BATCH_SIZE) {
+        chunks.push({ start: 0, end: total, subs: subsLines, reps: repLines });
+      } else {
+        for (let i = 0; i < total; i += BATCH_SIZE) {
+          const subChunk = subsLines.slice(i, i + BATCH_SIZE);
+          // report_repos_text mapping: lấy đúng dòng theo index submissions
+          const repChunk = [];
+          for (let j = i; j < i + subChunk.length; j++) {
+            repChunk.push((repLines[j] || "").trim());
+          }
+          chunks.push({ start: i, end: Math.min(i + BATCH_SIZE, total), subs: subChunk, reps: repChunk });
+        }
       }
-      setLog("#g-log", data.log || "", !data.ok);
-      $("#g-status").textContent = data.ok ? "Xong." : "Có lỗi — xem log.";
+
+      let allOk = true;
+      let mergedLog = "";
+      let done = 0;
+
+      async function runOne(ci) {
+        const c = chunks[ci];
+        const fd = new FormData();
+        for (const [k, v] of baseFd.entries()) {
+          if (k === "submissions_text" || k === "report_repos_text") continue;
+          fd.append(k, v);
+        }
+        fd.set("submissions_text", (c.subs || []).join("\n"));
+        fd.set("report_repos_text", (c.reps || []).join("\n"));
+
+        const r = await fetch("/api/grade", { method: "POST", body: fd });
+        const data = await r.json().catch(() => ({}));
+        return { ci, ok: r.ok, data };
+      }
+
+      const results = new Array(chunks.length);
+      let next = 0;
+      const workers = [];
+      const workerCount = Math.max(1, Math.min(PARALLEL, chunks.length));
+
+      for (let w = 0; w < workerCount; w++) {
+        workers.push(
+          (async () => {
+            while (true) {
+              const ci = next++;
+              if (ci >= chunks.length) break;
+              const c = chunks[ci];
+              $("#g-status").textContent = `Đang chấm… (${done}/${total}) | Lô ${ci + 1}/${chunks.length} (${c.start + 1}-${c.end})`;
+              try {
+                const res = await runOne(ci);
+                results[ci] = res;
+              } catch (e) {
+                results[ci] = { ci, ok: false, data: { detail: String(e) } };
+              } finally {
+                done += (chunks[ci].subs || []).length;
+              }
+            }
+          })()
+        );
+      }
+
+      await Promise.all(workers);
+
+      // merge logs in original order
+      for (let ci = 0; ci < results.length; ci++) {
+        const res = results[ci] || { ok: false, data: { detail: "Không có kết quả" } };
+        if (!res.ok) {
+          allOk = false;
+          mergedLog += `\n[Batch ${ci + 1}/${chunks.length}] LỖI:\n${formatApiErr(res.data.detail) || JSON.stringify(res.data)}\n`;
+        } else {
+          mergedLog += (res.data.log || "").trim() + "\n\n";
+          allOk = allOk && !!res.data.ok;
+        }
+      }
+      setLog("#g-log", mergedLog.trim(), !allOk);
+
+      $("#g-status").textContent = allOk ? "Xong." : "Có lỗi — xem log.";
     } catch (e) {
       setLog("#g-log", String(e), true);
     } finally {
@@ -359,7 +443,6 @@
     const statusEl = $("#g-rk-login-status");
     const btn = $("#g-rk-load");
     const selSys = $("#g-rk-system");
-    const selCourse = $("#g-rk-course");
     const selClass = $("#g-rk-class");
     if (!token.trim()) {
       if (statusEl) statusEl.textContent = "Nhập token trước (hoặc đăng nhập để lấy token).";
@@ -370,10 +453,6 @@
     if (selSys) {
       selSys.innerHTML = "<option value=''>Đang tải…</option>";
       selSys.disabled = true;
-    }
-    if (selCourse) {
-      selCourse.innerHTML = "<option value=''>Chọn hệ trước</option>";
-      selCourse.disabled = true;
     }
     if (selClass) {
       selClass.innerHTML = "<option value=''>Chọn hệ trước</option>";
@@ -403,57 +482,11 @@
         });
         selSys.disabled = false;
       }
-      if (statusEl) statusEl.textContent = `Đã tải ${items.length} hệ. Chọn 1 hệ để tải khóa.`;
+      if (statusEl) statusEl.textContent = `Đã tải ${items.length} hệ. Chọn 1 hệ để tải lớp.`;
     } catch (e) {
       if (statusEl) statusEl.textContent = String(e);
     } finally {
       setBusy(btn, false);
-    }
-  }
-
-  async function gradeLoadCoursesForSystem() {
-    const token = ($("#g-rk-token") && $("#g-rk-token").value) || "";
-    const sysId = ($("#g-rk-system") && $("#g-rk-system").value) || "";
-    const statusEl = $("#g-rk-login-status");
-    const selCourse = $("#g-rk-course");
-    if (!token.trim() || !String(sysId).trim()) return;
-    if (selCourse) {
-      selCourse.innerHTML = "<option value=''>Đang tải…</option>";
-      selCourse.disabled = true;
-    }
-    try {
-      const fd = new FormData();
-      fd.set("rikkei_token", token.trim());
-      fd.set("system_id", String(sysId).trim());
-      const r = await fetch("/api/rikkei/courses", { method: "POST", body: fd });
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        if (statusEl) statusEl.textContent = formatApiErr(data.detail) || "Lỗi tải khóa.";
-        if (selCourse) {
-          selCourse.innerHTML = "<option value=''> (Lỗi tải khóa) </option>";
-          selCourse.disabled = true;
-        }
-        return;
-      }
-      const items = (data && data.items) || [];
-      if (selCourse) {
-        if (!Array.isArray(items) || items.length === 0) {
-          selCourse.innerHTML = "<option value=''> (Không có khóa) </option>";
-          selCourse.disabled = true;
-        } else {
-          selCourse.innerHTML = "<option value=''>-- Chọn khóa --</option>";
-          items.forEach((x) => {
-            const o = document.createElement("option");
-            o.value = String(x.id ?? "");
-            o.textContent = String((x.name || x.courseCode || x.code || x.id || "")).trim();
-            selCourse.appendChild(o);
-          });
-          selCourse.disabled = false;
-        }
-      }
-      if (statusEl) statusEl.textContent = `Đã tải ${Array.isArray(items) ? items.length : 0} khóa.`;
-    } catch (e) {
-      if (statusEl) statusEl.textContent = String(e);
     }
   }
 
@@ -719,7 +752,6 @@
     if (gLoad) gLoad.addEventListener("click", gradeLoadSystemsAndCourses);
     const gSys = $("#g-rk-system");
     if (gSys) {
-      gSys.addEventListener("change", gradeLoadCoursesForSystem);
       gSys.addEventListener("change", gradeLoadClassesForSystem);
     }
     const bSel = $("#b-homework");

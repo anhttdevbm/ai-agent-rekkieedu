@@ -71,12 +71,6 @@
                   <option value="">(Chưa tải)</option>
                 </select>
               </div>
-              <div class="field" style="margin: 0">
-                <label for="g-rk-course">Khóa</label>
-                <select id="g-rk-course">
-                  <option value="">(Chưa tải)</option>
-                </select>
-              </div>
             </div>
             <div class="field" style="margin-top: 0.6rem">
               <label for="g-rk-class">Lớp</label>
@@ -118,6 +112,11 @@
               <label for="g-ai">Ngưỡng tin cậy AI (0–100)</label>
               <input type="number" id="g-ai" name="ai_confidence" min="0" max="100" value="75" />
             </div>
+            <div class="field">
+              <label for="g-batch">Chấm theo lô (bài/lần)</label>
+              <input type="number" id="g-batch" min="1" max="20" value="5" />
+              <p class="small">Ví dụ chấm 20 bài: hệ thống sẽ tự chia lô để tránh timeout.</p>
+            </div>
             <div class="field" style="align-self: end">
               <div class="checkline">
                 <input type="checkbox" id="g-tpl" name="use_template" checked value="true" />
@@ -128,6 +127,11 @@
                 <label for="g-strict" style="margin: 0">Trừ điểm khi likely AI (strict)</label>
               </div>
             </div>
+          </div>
+          <div class="field" style="margin-top: 0.25rem">
+            <label for="g-par">Chạy song song (lô cùng lúc)</label>
+            <input type="number" id="g-par" min="1" max="4" value="2" />
+            <p class="small">Tăng số này sẽ nhanh hơn nhưng dễ quá tải server/rate-limit.</p>
           </div>
           <div class="actions">
             <button type="submit" class="primary" id="g-submit">Chạy chấm bài</button>
@@ -547,6 +551,6 @@
 
       <footer>Chạy local · OpenRouter · không lưu dữ liệu trên server sau khi tải file</footer>
     </div>
-    <script src="/static/app.js?v=20260428_3"></script>
+    <script src="/static/app.js?v=20260428_6"></script>
   </body>
 </html>

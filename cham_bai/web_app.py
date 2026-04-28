@@ -768,45 +768,6 @@ async def api_rikkei_systems(
         raise HTTPException(status_code=502, detail=f"Lỗi gọi API Rikkei (systems): {e}")
 
 
-@app.post("/api/rikkei/courses")
-async def api_rikkei_courses(
-    rikkei_token: str = Form(...),
-    system_id: str = Form(""),
-) -> JSONResponse:
-    tok = (rikkei_token or "").strip()
-    sid = (system_id or "").strip()
-    if not tok:
-        raise HTTPException(status_code=400, detail="Thiếu token Rikkei.")
-    if not sid:
-        raise HTTPException(status_code=400, detail="Thiếu system_id.")
-    # Best-effort endpoint/params (portal có thể đổi); vẫn trả lỗi rõ ràng nếu 404.
-    url = "https://apiportal.rikkei.edu.vn/automation/courses"
-    try:
-        async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
-            r = await client.get(
-                url,
-                params={"systemId": sid},
-                headers={"Authorization": _rk_bearer(tok), "User-Agent": "AgentEdu/1.0"},
-            )
-            if r.status_code == 404:
-                # fallback param name
-                r = await client.get(
-                    url,
-                    params={"system_id": sid},
-                    headers={"Authorization": _rk_bearer(tok), "User-Agent": "AgentEdu/1.0"},
-                )
-        if r.status_code in (401, 403):
-            raise HTTPException(status_code=401, detail="Token không hợp lệ hoặc không có quyền.")
-        r.raise_for_status()
-        raw_items = _unwrap_list_payload(r.json())
-        items = [_norm_course_item(x) for x in raw_items if isinstance(x, dict)]
-        return JSONResponse({"ok": True, "items": items})
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Lỗi gọi API Rikkei (courses): {e}")
-
-
 @app.post("/api/rikkei/classes")
 async def api_rikkei_classes(
     rikkei_token: str = Form(...),
