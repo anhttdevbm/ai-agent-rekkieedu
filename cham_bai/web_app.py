@@ -635,10 +635,16 @@ def _unwrap_list_payload(payload: object) -> list[dict]:
     if isinstance(payload, list):
         return [x for x in payload if isinstance(x, dict)]
     if isinstance(payload, dict):
-        for k in ("data", "items", "content", "records", "result"):
+        for k in ("data", "items", "content", "records", "result", "rows"):
             v = payload.get(k)
             if isinstance(v, list):
                 return [x for x in v if isinstance(x, dict)]
+            # Common pattern: {"data": {"data": [...]}} or {"data": {"items": [...]}}
+            if isinstance(v, dict):
+                for k2 in ("data", "items", "content", "records", "result", "rows"):
+                    v2 = v.get(k2)
+                    if isinstance(v2, list):
+                        return [x for x in v2 if isinstance(x, dict)]
     return []
 
 
