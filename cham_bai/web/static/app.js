@@ -444,6 +444,7 @@
     const btn = $("#g-rk-load");
     const selSys = $("#g-rk-system");
     const selClass = $("#g-rk-class");
+    const selCourse = $("#g-rk-course");
     if (!token.trim()) {
       if (statusEl) statusEl.textContent = "Nhập token trước (hoặc đăng nhập để lấy token).";
       return;
@@ -457,6 +458,10 @@
     if (selClass) {
       selClass.innerHTML = "<option value=''>Chọn hệ trước</option>";
       selClass.disabled = true;
+    }
+    if (selCourse) {
+      selCourse.innerHTML = "<option value=''>Chọn lớp trước</option>";
+      selCourse.disabled = true;
     }
     try {
       const fd = new FormData();
@@ -495,6 +500,7 @@
     const sysId = ($("#g-rk-system") && $("#g-rk-system").value) || "";
     const statusEl = $("#g-rk-login-status");
     const selClass = $("#g-rk-class");
+    const selCourse = $("#g-rk-course");
     if (!token.trim() || !String(sysId).trim()) return;
     if (selClass) {
       selClass.innerHTML = "<option value=''>Đang tải…</option>";
@@ -528,6 +534,55 @@
             selClass.appendChild(o);
           });
           selClass.disabled = false;
+        }
+      }
+      if (selCourse) {
+        selCourse.innerHTML = "<option value=''>Chọn lớp trước</option>";
+        selCourse.disabled = true;
+      }
+    } catch (e) {
+      if (statusEl) statusEl.textContent = String(e);
+    }
+  }
+
+  async function gradeLoadCoursesForClass() {
+    const token = ($("#g-rk-token") && $("#g-rk-token").value) || "";
+    const classId = ($("#g-rk-class") && $("#g-rk-class").value) || "";
+    const statusEl = $("#g-rk-login-status");
+    const selCourse = $("#g-rk-course");
+    if (!token.trim() || !String(classId).trim()) return;
+    if (selCourse) {
+      selCourse.innerHTML = "<option value=''>Đang tải…</option>";
+      selCourse.disabled = true;
+    }
+    try {
+      const fd = new FormData();
+      fd.set("rikkei_token", token.trim());
+      fd.set("class_id", String(classId).trim());
+      const r = await fetch("/api/rikkei/class-courses", { method: "POST", body: fd });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        if (statusEl) statusEl.textContent = formatApiErr(data.detail) || "Lỗi tải môn học.";
+        if (selCourse) {
+          selCourse.innerHTML = "<option value=''> (Lỗi tải môn) </option>";
+          selCourse.disabled = true;
+        }
+        return;
+      }
+      const items = (data && data.items) || [];
+      if (selCourse) {
+        if (!Array.isArray(items) || items.length === 0) {
+          selCourse.innerHTML = "<option value=''> (Không có môn) </option>";
+          selCourse.disabled = true;
+        } else {
+          selCourse.innerHTML = "<option value=''>-- Chọn môn --</option>";
+          items.forEach((x) => {
+            const o = document.createElement("option");
+            o.value = String(x.id ?? "");
+            o.textContent = String((x.name || x.courseCode || x.id || "")).trim();
+            selCourse.appendChild(o);
+          });
+          selCourse.disabled = false;
         }
       }
     } catch (e) {
@@ -754,6 +809,8 @@
     if (gSys) {
       gSys.addEventListener("change", gradeLoadClassesForSystem);
     }
+    const gClass = $("#g-rk-class");
+    if (gClass) gClass.addEventListener("change", gradeLoadCoursesForClass);
     const bSel = $("#b-homework");
     if (bSel) bSel.addEventListener("change", btvnOnPickHomework);
 
