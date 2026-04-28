@@ -41,6 +41,45 @@
           Repo private: đặt biến môi trường <code>GITHUB_TOKEN</code>.
         </p>
         <form id="form-grade">
+          <details class="hint" style="margin: 0 0 0.5rem 0">
+            <summary>Đăng nhập trang quản lý để lấy token (tuỳ chọn)</summary>
+            <div class="row2" style="margin-top: 0.6rem">
+              <div class="field" style="margin: 0">
+                <label for="g-rk-email">Email</label>
+                <input type="text" id="g-rk-email" autocomplete="username" placeholder="vd. teacher@rikkeieducation.com" />
+              </div>
+              <div class="field" style="margin: 0">
+                <label for="g-rk-pass">Mật khẩu</label>
+                <input type="password" id="g-rk-pass" autocomplete="current-password" placeholder="••••••••" />
+              </div>
+            </div>
+            <div class="actions" style="margin-top: 0.5rem">
+              <button type="button" class="primary" id="g-rk-login">Đăng nhập &amp; lấy token</button>
+            </div>
+            <div class="field" style="margin-top: 0.5rem">
+              <label for="g-rk-token">Token (đã lấy)</label>
+              <input type="password" id="g-rk-token" autocomplete="off" placeholder="(Token sẽ hiện ở đây sau khi đăng nhập)" />
+              <p class="small">Token chỉ lưu tạm trên trình duyệt (không gửi khi chấm bài).</p>
+            </div>
+            <div class="actions" style="margin-top: 0.25rem">
+              <button type="button" class="primary" id="g-rk-load">Tải danh sách hệ/khóa</button>
+            </div>
+            <div class="row2" style="margin-top: 0.6rem">
+              <div class="field" style="margin: 0">
+                <label for="g-rk-system">Hệ đào tạo</label>
+                <select id="g-rk-system">
+                  <option value="">(Chưa tải)</option>
+                </select>
+              </div>
+              <div class="field" style="margin: 0">
+                <label for="g-rk-course">Khóa</label>
+                <select id="g-rk-course">
+                  <option value="">(Chưa tải)</option>
+                </select>
+              </div>
+            </div>
+            <p class="status" id="g-rk-login-status"></p>
+          </details>
           <div class="field">
             <label for="g-assignment-text">Đề bài (đường dẫn .docx hoặc Google Docs)</label>
             <input
@@ -502,6 +541,6 @@
 
       <footer>Chạy local · OpenRouter · không lưu dữ liệu trên server sau khi tải file</footer>
     </div>
-    <script src="/static/app.js?v=20260424_1"></script>
+    <script src="/static/app.js?v=20260428_2"></script>
   </body>
 </html>

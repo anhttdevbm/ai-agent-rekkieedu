@@ -304,11 +304,151 @@
         return;
       }
       if ($("#b-rk-token")) $("#b-rk-token").value = token;
+      try {
+        localStorage.setItem("rk_token", token);
+      } catch {}
       if (statusEl) statusEl.textContent = "Đã lấy token và điền vào ô Token.";
     } catch (e) {
       if (statusEl) statusEl.textContent = String(e);
     } finally {
       setBusy(btn, false);
+    }
+  }
+
+  async function gradeRikkeiLogin() {
+    const email = ($("#g-rk-email") && $("#g-rk-email").value) || "";
+    const pass = ($("#g-rk-pass") && $("#g-rk-pass").value) || "";
+    const statusEl = $("#g-rk-login-status");
+    const btn = $("#g-rk-login");
+    if (!email.trim() || !pass) {
+      if (statusEl) statusEl.textContent = "Nhập email và mật khẩu trước.";
+      return;
+    }
+    setBusy(btn, true, "Đang đăng nhập…");
+    if (statusEl) statusEl.textContent = "";
+    try {
+      const fd = new FormData();
+      fd.set("email", email.trim());
+      fd.set("password", pass);
+      const r = await fetch("/api/rikkei/login", { method: "POST", body: fd });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        if (statusEl) statusEl.textContent = formatApiErr(data.detail) || "Đăng nhập thất bại.";
+        return;
+      }
+      const token = (data && data.token) || "";
+      if (!token) {
+        if (statusEl) statusEl.textContent = "Đăng nhập OK nhưng không nhận được token.";
+        return;
+      }
+      if ($("#g-rk-token")) $("#g-rk-token").value = token;
+      if ($("#b-rk-token") && !$("#b-rk-token").value.trim()) $("#b-rk-token").value = token;
+      try {
+        localStorage.setItem("rk_token", token);
+      } catch {}
+      if (statusEl) statusEl.textContent = "Đã lấy token.";
+    } catch (e) {
+      if (statusEl) statusEl.textContent = String(e);
+    } finally {
+      setBusy(btn, false);
+    }
+  }
+
+  async function gradeLoadSystemsAndCourses() {
+    const token = ($("#g-rk-token") && $("#g-rk-token").value) || "";
+    const statusEl = $("#g-rk-login-status");
+    const btn = $("#g-rk-load");
+    const selSys = $("#g-rk-system");
+    const selCourse = $("#g-rk-course");
+    if (!token.trim()) {
+      if (statusEl) statusEl.textContent = "Nhập token trước (hoặc đăng nhập để lấy token).";
+      return;
+    }
+    setBusy(btn, true, "Đang tải…");
+    if (statusEl) statusEl.textContent = "";
+    if (selSys) {
+      selSys.innerHTML = "<option value=''>Đang tải…</option>";
+      selSys.disabled = true;
+    }
+    if (selCourse) {
+      selCourse.innerHTML = "<option value=''>Chọn hệ trước</option>";
+      selCourse.disabled = true;
+    }
+    try {
+      const fd = new FormData();
+      fd.set("rikkei_token", token.trim());
+      const r = await fetch("/api/rikkei/systems", { method: "POST", body: fd });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        if (statusEl) statusEl.textContent = formatApiErr(data.detail) || "Lỗi tải hệ đào tạo.";
+        return;
+      }
+      const items = (data && data.items) || [];
+      if (!Array.isArray(items) || items.length === 0) {
+        if (statusEl) statusEl.textContent = "Không có dữ liệu hệ đào tạo.";
+        return;
+      }
+      if (selSys) {
+        selSys.innerHTML = "<option value=''>-- Chọn hệ --</option>";
+        items.forEach((x) => {
+          const o = document.createElement("option");
+          o.value = String(x.id ?? "");
+          o.textContent = String((x.name || x.systemCode || x.id || "")).trim();
+          selSys.appendChild(o);
+        });
+        selSys.disabled = false;
+      }
+      if (statusEl) statusEl.textContent = `Đã tải ${items.length} hệ. Chọn 1 hệ để tải khóa.`;
+    } catch (e) {
+      if (statusEl) statusEl.textContent = String(e);
+    } finally {
+      setBusy(btn, false);
+    }
+  }
+
+  async function gradeLoadCoursesForSystem() {
+    const token = ($("#g-rk-token") && $("#g-rk-token").value) || "";
+    const sysId = ($("#g-rk-system") && $("#g-rk-system").value) || "";
+    const statusEl = $("#g-rk-login-status");
+    const selCourse = $("#g-rk-course");
+    if (!token.trim() || !String(sysId).trim()) return;
+    if (selCourse) {
+      selCourse.innerHTML = "<option value=''>Đang tải…</option>";
+      selCourse.disabled = true;
+    }
+    try {
+      const fd = new FormData();
+      fd.set("rikkei_token", token.trim());
+      fd.set("system_id", String(sysId).trim());
+      const r = await fetch("/api/rikkei/courses", { method: "POST", body: fd });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        if (statusEl) statusEl.textContent = formatApiErr(data.detail) || "Lỗi tải khóa.";
+        if (selCourse) {
+          selCourse.innerHTML = "<option value=''> (Lỗi tải khóa) </option>";
+          selCourse.disabled = true;
+        }
+        return;
+      }
+      const items = (data && data.items) || [];
+      if (selCourse) {
+        if (!Array.isArray(items) || items.length === 0) {
+          selCourse.innerHTML = "<option value=''> (Không có khóa) </option>";
+          selCourse.disabled = true;
+        } else {
+          selCourse.innerHTML = "<option value=''>-- Chọn khóa --</option>";
+          items.forEach((x) => {
+            const o = document.createElement("option");
+            o.value = String(x.id ?? "");
+            o.textContent = String((x.name || x.courseCode || x.code || x.id || "")).trim();
+            selCourse.appendChild(o);
+          });
+          selCourse.disabled = false;
+        }
+      }
+      if (statusEl) statusEl.textContent = `Đã tải ${Array.isArray(items) ? items.length : 0} khóa.`;
+    } catch (e) {
+      if (statusEl) statusEl.textContent = String(e);
     }
   }
 
@@ -523,8 +663,21 @@
     if (bLoad) bLoad.addEventListener("click", btvnLoadSession);
     const bLogin = $("#b-rk-login");
     if (bLogin) bLogin.addEventListener("click", btvnLogin);
+    const gLogin = $("#g-rk-login");
+    if (gLogin) gLogin.addEventListener("click", gradeRikkeiLogin);
+    const gLoad = $("#g-rk-load");
+    if (gLoad) gLoad.addEventListener("click", gradeLoadSystemsAndCourses);
+    const gSys = $("#g-rk-system");
+    if (gSys) gSys.addEventListener("change", gradeLoadCoursesForSystem);
     const bSel = $("#b-homework");
     if (bSel) bSel.addEventListener("change", btvnOnPickHomework);
+
+    // Pre-fill token from localStorage if exists
+    try {
+      const t = localStorage.getItem("rk_token") || "";
+      if (t && $("#g-rk-token") && !$("#g-rk-token").value.trim()) $("#g-rk-token").value = t;
+      if (t && $("#b-rk-token") && !$("#b-rk-token").value.trim()) $("#b-rk-token").value = t;
+    } catch {}
     loadMeta().catch((e) => {
       $("#ver-pill").textContent = "lỗi tải meta";
       console.error(e);
