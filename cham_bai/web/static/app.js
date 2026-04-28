@@ -277,6 +277,41 @@
     }
   }
 
+  async function btvnLogin() {
+    const email = ($("#b-rk-email") && $("#b-rk-email").value) || "";
+    const pass = ($("#b-rk-pass") && $("#b-rk-pass").value) || "";
+    const statusEl = $("#b-rk-login-status");
+    const btn = $("#b-rk-login");
+    if (!email.trim() || !pass) {
+      if (statusEl) statusEl.textContent = "Nhập email và mật khẩu trước.";
+      return;
+    }
+    setBusy(btn, true, "Đang đăng nhập…");
+    if (statusEl) statusEl.textContent = "";
+    try {
+      const fd = new FormData();
+      fd.set("email", email.trim());
+      fd.set("password", pass);
+      const r = await fetch("/api/rikkei/login", { method: "POST", body: fd });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        if (statusEl) statusEl.textContent = formatApiErr(data.detail) || "Đăng nhập thất bại.";
+        return;
+      }
+      const token = (data && data.token) || "";
+      if (!token) {
+        if (statusEl) statusEl.textContent = "Đăng nhập OK nhưng không nhận được token.";
+        return;
+      }
+      if ($("#b-rk-token")) $("#b-rk-token").value = token;
+      if (statusEl) statusEl.textContent = "Đã lấy token và điền vào ô Token.";
+    } catch (e) {
+      if (statusEl) statusEl.textContent = String(e);
+    } finally {
+      setBusy(btn, false);
+    }
+  }
+
   function btvnOnPickHomework() {
     const sel = $("#b-homework");
     const preview = $("#b-preview");
@@ -486,6 +521,8 @@
     if (fb) fb.addEventListener("submit", postBtvn);
     const bLoad = $("#b-load-session");
     if (bLoad) bLoad.addEventListener("click", btvnLoadSession);
+    const bLogin = $("#b-rk-login");
+    if (bLogin) bLogin.addEventListener("click", btvnLogin);
     const bSel = $("#b-homework");
     if (bSel) bSel.addEventListener("change", btvnOnPickHomework);
     loadMeta().catch((e) => {

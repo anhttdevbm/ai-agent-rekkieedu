@@ -36,7 +36,10 @@ def normalize_github_repo_url(user_input: str) -> str | None:
         s = "https://" + s
     m = _GITHUB_PREFIX.match(s)
     if m:
-        return f"https://github.com/{m.group('owner')}/{m.group('repo')}"
+        repo = (m.group("repo") or "").strip()
+        if repo.lower().endswith(".git"):
+            repo = repo[:-4]
+        return f"https://github.com/{m.group('owner')}/{repo}"
     m = _GIT_SSH.match(s.strip())
     if m:
         return f"https://github.com/{m.group('owner')}/{m.group('repo')}"
@@ -63,16 +66,39 @@ def _download_github_zip(normalized_repo_https: str, dest_zip: Path, *, github_t
     Tải zip repo từ GitHub mà không cần git.
     Dùng /archive/HEAD.zip để lấy default branch.
     """
-    url = normalized_repo_https.rstrip("/") + "/archive/HEAD.zip"
     headers = {"User-Agent": "AgentEdu/1.0"}
     t = (github_token or "").strip()
     if t:
         headers["Authorization"] = f"Bearer {t}"
         headers["Accept"] = "application/vnd.github+json"
-    with httpx.Client(timeout=120.0, follow_redirects=True) as client:
+
+    def _try_get(client: httpx.Client, url: str) -> httpx.Response:
         r = client.get(url, headers=headers)
         r.raise_for_status()
-        dest_zip.write_bytes(r.content)
+        return r
+
+    with httpx.Client(timeout=120.0, follow_redirects=True) as client:
+        # 1) Prefer GitHub API to get default branch (more stable than HEAD.zip redirects)
+        try:
+            m = re.match(r"^https?://github\.com/(?P<o>[^/]+)/(?P<r>[^/]+)$", normalized_repo_https.rstrip("/"))
+            if m:
+                api = f"https://api.github.com/repos/{m.group('o')}/{m.group('r')}"
+                rmeta = client.get(api, headers=headers)
+                rmeta.raise_for_status()
+                data = rmeta.json() or {}
+                default_branch = str(data.get("default_branch") or "main")
+                zip_url = f"https://codeload.github.com/{m.group('o')}/{m.group('r')}/zip/refs/heads/{default_branch}"
+                rz = _try_get(client, zip_url)
+                dest_zip.write_bytes(rz.content)
+                return
+        except Exception:
+            # fallback below
+            pass
+
+        # 2) Fallback: /archive/HEAD.zip (redirects to codeload)
+        url = normalized_repo_https.rstrip("/") + "/archive/HEAD.zip"
+        rz2 = _try_get(client, url)
+        dest_zip.write_bytes(rz2.content)
 
 
 def _extract_zip_to_dir(zip_path: Path, out_dir: Path) -> Path:

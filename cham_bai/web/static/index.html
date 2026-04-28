@@ -313,6 +313,14 @@
                 <input type="number" id="h-code" name="exam_code" min="1" max="999" value="6" />
               </div>
               <div class="field">
+                <label for="h-template">Loại đề (template)</label>
+                <select id="h-template" name="exam_template">
+                  <option value="mysql" selected>SQL/MySQL (CSDL + truy vấn)</option>
+                  <option value="python">Python (bài lập trình + testcase)</option>
+                  <option value="generic">Tổng quát (đa môn CNTT)</option>
+                </select>
+              </div>
+              <div class="field">
                 <label for="h-model">Model OpenRouter</label>
                 <select id="h-model" name="model"></select>
               </div>
@@ -344,7 +352,10 @@
                 rows="5"
                 placeholder="Tạo CSDL và các bảng&#10;Truy vấn dữ liệu cơ bản&#10;Truy vấn dữ liệu nâng cao"
               ></textarea>
-              <p class="small">AI sẽ sinh đầy đủ PHẦN 1/2/3 theo danh sách này (có bảng cấu trúc, dữ liệu mẫu, thang điểm).</p>
+              <p class="small">
+                AI sẽ sinh đầy đủ PHẦN 1/2/3 theo danh sách này. Với template MySQL sẽ có bảng cấu trúc + dữ liệu mẫu; với Python/tổng quát sẽ
+                dùng format phù hợp (testcase/yêu cầu chức năng).
+              </p>
             </div>
           </div>
 
@@ -356,9 +367,6 @@
               rows="14"
               placeholder="Dán nội dung đề và thang chấm điểm ở đây..."
             ></textarea>
-            <p class="small">
-              Mẹo: mục “Thang chấm điểm” nếu dán theo dạng mỗi dòng <code>&lt;số câu&gt; &lt;nội dung&gt; &lt;điểm&gt;</code> thì hệ thống sẽ dựng bảng tự động.
-            </p>
           </div>
           <div class="actions">
             <button type="submit" class="primary" id="h-submit">Tạo &amp; tải .docx</button>
@@ -375,6 +383,23 @@
           Sau đó nhập danh sách <strong>link GitHub</strong> bài nộp (mỗi dòng 1 link). Hệ thống sẽ clone repo, đọc mã nguồn (có giới hạn) và tạo <strong>nhận xét</strong>. Không chấm điểm.
         </p>
         <form id="form-btvn">
+          <details class="hint" style="margin: 0 0 0.5rem 0">
+            <summary>Đăng nhập lấy token (tuỳ chọn)</summary>
+            <div class="row2" style="margin-top: 0.6rem">
+              <div class="field" style="margin: 0">
+                <label for="b-rk-email">Email</label>
+                <input type="text" id="b-rk-email" autocomplete="username" placeholder="vd. teacher@rikkeieducation.com" />
+              </div>
+              <div class="field" style="margin: 0">
+                <label for="b-rk-pass">Mật khẩu</label>
+                <input type="password" id="b-rk-pass" autocomplete="current-password" placeholder="••••••••" />
+              </div>
+            </div>
+            <div class="actions" style="margin-top: 0.5rem">
+              <button type="button" class="primary" id="b-rk-login">Đăng nhập &amp; lấy token</button>
+            </div>
+            <p class="status" id="b-rk-login-status"></p>
+          </details>
           <div class="field">
             <label for="b-rk-token">Token Rikkei (bắt buộc để gọi API)</label>
             <input
@@ -477,6 +502,6 @@
 
       <footer>Chạy local · OpenRouter · không lưu dữ liệu trên server sau khi tải file</footer>
     </div>
-    <script src="/static/app.js?v=20260421_12"></script>
+    <script src="/static/app.js?v=20260424_1"></script>
   </body>
 </html>

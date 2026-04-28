@@ -58,7 +58,13 @@ from cham_bai.hackathon_exam import (
     build_hackathon_exam_docx_bytes,
     build_hackathon_exam_docx_from_spec,
 )
-from cham_bai.hackathon_ai import ensure_practice_section, ensure_required_section, generate_hackathon_exam_spec
+from cham_bai.hackathon_ai import (
+    build_required_bullets,
+    ensure_practice_section,
+    ensure_required_section,
+    generate_hackathon_exam_spec,
+    normalize_exam_template,
+)
 from cham_bai.workflow import (
     GradeJobParams,
     GradeJobResult,
@@ -604,6 +610,66 @@ async def api_rikkei_session(
     )
 
 
+def _extract_rikkei_token(payload: object) -> str:
+    """
+    Best-effort: Rikkei portal implementations vary.
+    Try common shapes: {"token":..}, {"accessToken":..}, {"data":{"token":..}}, etc.
+    """
+    if isinstance(payload, dict):
+        for k in ("token", "accessToken", "access_token", "secretToken", "secret_token", "jwt"):
+            v = payload.get(k)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+        data = payload.get("data")
+        if isinstance(data, dict):
+            for k in ("token", "accessToken", "access_token", "secretToken", "secret_token", "jwt"):
+                v = data.get(k)
+                if isinstance(v, str) and v.strip():
+                    return v.strip()
+    return ""
+
+
+@app.post("/api/rikkei/login")
+async def api_rikkei_login(
+    email: str = Form(...),
+    password: str = Form(...),
+) -> JSONResponse:
+    em = (email or "").strip()
+    pw = password or ""
+    if not em or not pw:
+        raise HTTPException(status_code=400, detail="Thiếu email hoặc mật khẩu.")
+
+    url = "https://apiportal.rikkei.edu.vn/auth/secret-token"
+    # Do NOT log credentials. Only exchange to token.
+    try:
+        async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+            # Attempt 1: BasicAuth, empty JSON (some setups use only auth header)
+            r = await client.post(url, auth=(em, pw), headers={"User-Agent": "AgentEdu/1.0"})
+            if r.status_code >= 400:
+                # Attempt 2: JSON body with email/password
+                r = await client.post(
+                    url,
+                    json={"email": em, "password": pw},
+                    headers={"User-Agent": "AgentEdu/1.0", "Accept": "application/json"},
+                )
+        if r.status_code in (401, 403):
+            raise HTTPException(status_code=401, detail="Sai tài khoản hoặc không có quyền.")
+        r.raise_for_status()
+        data = r.json()
+        tok = _extract_rikkei_token(data)
+        if not tok:
+            # fallback: if API returns raw string
+            if isinstance(data, str) and data.strip():
+                tok = data.strip()
+        if not tok:
+            raise HTTPException(status_code=502, detail="Đăng nhập OK nhưng không tìm thấy token trong response.")
+        return JSONResponse({"ok": True, "token": tok})
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Lỗi đăng nhập Rikkei: {e}")
+
+
 @app.post("/api/btvn")
 async def api_btvn(
     background_tasks: BackgroundTasks,
@@ -835,6 +901,7 @@ async def api_hackathon(
     technology: str = Form("MySQL"),
     ide: str = Form("MySQL Workbench"),
     exam_code: str = Form("006"),
+    exam_template: str = Form("mysql"),
     extra_notes: str = Form(""),
     model: str = Form(""),
     body_text: str = Form(""),
@@ -862,6 +929,7 @@ async def api_hackathon(
         ex_int = max(1, min(999, ex_int))
         ex_code = f"{ex_int:03d}"
         hs = f"{subj} - Đề {ex_code}"
+        tpl = normalize_exam_template(exam_template)
 
         try:
             spec = generate_hackathon_exam_spec(
@@ -874,18 +942,15 @@ async def api_hackathon(
                 technology=(technology or "").strip() or "MySQL",
                 ide=(ide or "").strip() or "MySQL Workbench",
                 exam_code=ex_code,
+                exam_template=tpl,
                 extra_notes=(extra_notes or "").strip(),
             )
             # Ensure required "Yêu cầu" always exists (AI sometimes omits).
-            req_bullets = [
-                "Tạo github repository theo cú pháp :  [Tên lớp]_[Họ Tên]_[Mã đề]",
-                "Ví dụ: HN-K24-CNTT1_NguyenVanA_001",
-                "Sau khi hoàn thành, đẩy code lên github repo và nộp link cho người phụ trách",
-                f"Công nghệ sử dụng: {(technology or '').strip() or 'MySQL'}",
-                f"IDE : {(ide or '').strip() or 'MySQL Workbench'}",
-                "Thực hành bài trong script, lưu thành file tên hackathon.sql trong repository đã tạo ở trên.",
-                "Lưu ý tuyệt đối không sử dụng Chat-GPT hay AI để làm bài, không copy bài người khác , nếu bị phát hiện sẽ lập biên bản và xử lý theo qui định.",
-            ]
+            req_bullets = build_required_bullets(
+                exam_template=tpl,
+                technology=(technology or "").strip() or "MySQL",
+                ide=(ide or "").strip() or "MySQL Workbench",
+            )
             spec = ensure_required_section(spec, required_bullets=req_bullets)
             spec = ensure_practice_section(spec)
             raw = build_hackathon_exam_docx_from_spec(spec)

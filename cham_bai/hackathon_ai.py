@@ -11,7 +11,11 @@ from cham_bai.schemas import parse_llm_json
 _SYSTEM = """Bạn là giảng viên ra đề thi Hackathon (ĐỀ TỰ LUẬN) cho sinh viên.
 
 Mục tiêu:
-- Sinh đề đúng chuẩn form kiểu mẫu: có phần Yêu cầu (bullet), phần Thực hành chia PHẦN 1/2/3, có bảng mô tả cấu trúc bảng và bảng dữ liệu mẫu.
+- Sinh đề đúng chuẩn form kiểu mẫu: có phần Yêu cầu (bullet), phần Thực hành chia PHẦN 1/2/3.
+- Có thể có bảng (tables) tuỳ theo template:
+  - Template mysql: có bảng mô tả cấu trúc CSDL + bảng dữ liệu mẫu.
+  - Template python: ưu tiên bảng testcase (input/output), hoặc bảng yêu cầu hàm/class nếu cần.
+  - Template generic: dùng bảng khi thực sự giúp rõ yêu cầu (testcase/ma trận chức năng), không ép kiểu CSDL.
 - Chủ đề và nội dung phải bám theo input của người dùng (môn/chủ đề/công nghệ/IDE/mã đề).
 - Ngôn ngữ: tiếng Việt.
 
@@ -53,7 +57,7 @@ Quy tắc bảng:
 
 RÀNG BUỘC BỐ CỤC (bắt buộc):
 - Với section có bảng (đặc biệt PHẦN 1): luôn đặt bảng trong "tables" TRƯỚC, và đặt câu hỏi/yêu cầu NGAY BÊN DƯỚI bằng field "lines".
-- Tách riêng khối "Cấu trúc bảng" và khối "Dữ liệu mẫu" thành 2 section LIÊN TIẾP, ví dụ:
+- Nếu template=mysql và có CSDL: tách riêng khối "Cấu trúc bảng" và khối "Dữ liệu mẫu" thành 2 section LIÊN TIẾP:
   - "Mô tả cấu trúc các bảng:" (tables = schema, lines = câu hỏi tạo bảng)
   - "Dữ liệu mẫu:" (tables = sample data, lines = câu hỏi chèn/cập nhật/xoá liên quan dữ liệu)
 
@@ -67,6 +71,43 @@ QUAN TRỌNG CHO PHẦN 2 / PHẦN 3:
 - Không dùng list-number tự đánh số (vì Word có thể reset số).
 - Với PHẦN 2 và PHẦN 3: "tables" phải để rỗng [] (chỉ văn bản).
 """
+
+
+def normalize_exam_template(s: str | None) -> str:
+    t = (s or "").strip().lower()
+    if t in ("mysql", "sql", "db"):
+        return "mysql"
+    if t in ("python", "py"):
+        return "python"
+    if t in ("generic", "general", "cntt", "it", "all"):
+        return "generic"
+    return "generic"
+
+
+def build_required_bullets(*, exam_template: str, technology: str, ide: str) -> list[str]:
+    tpl = normalize_exam_template(exam_template)
+    tech = (technology or "").strip()
+    ide2 = (ide or "").strip()
+    deliverable = "hackathon.sql" if tpl == "mysql" else ("main.py" if tpl == "python" else "README.md")
+    extra_submit = (
+        "Thực hành bài trong script, lưu thành file tên hackathon.sql trong repository đã tạo ở trên."
+        if tpl == "mysql"
+        else (
+            "Tổ chức project rõ ràng, chạy được; đính kèm hướng dẫn chạy và test trong README."
+            if tpl == "generic"
+            else "Nộp mã nguồn Python chạy được; có hướng dẫn chạy và test trong README."
+        )
+    )
+    return [
+        "Tạo github repository theo cú pháp :  [Tên lớp]_[Họ Tên]_[Mã đề]",
+        "Ví dụ: HN-K24-CNTT1_NguyenVanA_001",
+        "Sau khi hoàn thành, đẩy code lên github repo và nộp link cho người phụ trách",
+        f"Công nghệ sử dụng: {tech or 'MySQL'}",
+        f"IDE : {ide2 or 'MySQL Workbench'}",
+        extra_submit,
+        f"File nộp chính: {deliverable}",
+        "Lưu ý tuyệt đối không sử dụng Chat-GPT hay AI để làm bài, không copy bài người khác , nếu bị phát hiện sẽ lập biên bản và xử lý theo qui định.",
+    ]
 
 
 _REPAIR_SYSTEM = """Bạn đang sửa lỗi output.
@@ -128,6 +169,7 @@ def generate_hackathon_exam_spec(
     technology: str,
     ide: str,
     exam_code: str,
+    exam_template: str = "mysql",
     extra_notes: str = "",
 ) -> dict[str, Any]:
     outlines = [
@@ -138,18 +180,10 @@ def generate_hackathon_exam_spec(
     if not outlines:
         outlines = ["Tạo CSDL và các bảng", "Truy vấn dữ liệu cơ bản", "Truy vấn dữ liệu nâng cao"]
 
-    # Fixed "Yêu cầu" block (must appear right after header)
     subj = (subject or "").strip() or "NHẬP MÔN CSDL MYSQL"
     code3 = (exam_code or "").strip() or "006"
-    required_bullets = [
-        "Tạo github repository theo cú pháp :  [Tên lớp]_[Họ Tên]_[Mã đề]",
-        "Ví dụ: HN-K24-CNTT1_NguyenVanA_001",
-        "Sau khi hoàn thành, đẩy code lên github repo và nộp link cho người phụ trách",
-        f"Công nghệ sử dụng: {technology.strip() or 'MySQL'}",
-        f"IDE : {ide.strip() or 'MySQL Workbench'}",
-        "Thực hành bài trong script, lưu thành file tên hackathon.sql trong repository đã tạo ở trên.",
-        "Lưu ý tuyệt đối không sử dụng Chat-GPT hay AI để làm bài, không copy bài người khác , nếu bị phát hiện sẽ lập biên bản và xử lý theo qui định.",
-    ]
+    tpl = normalize_exam_template(exam_template)
+    required_bullets = build_required_bullets(exam_template=tpl, technology=technology, ide=ide)
 
     user = {
         "header_top": header_top,
@@ -160,6 +194,7 @@ def generate_hackathon_exam_spec(
         "technology": technology,
         "ide": ide,
         "exam_code": exam_code,
+        "exam_template": tpl,
         "extra_notes": extra_notes,
         "required_section": {"title": "Yêu cầu:", "bullets": required_bullets},
         "constraints": {
@@ -176,7 +211,8 @@ def generate_hackathon_exam_spec(
                 "role": "user",
                 "content": (
                     "Hãy sinh đề theo input JSON sau (bám sát, đầy đủ như mẫu). "
-                    "Nếu là CSDL MySQL, hãy có tối thiểu 4 bảng + dữ liệu mẫu + câu update/delete + truy vấn cơ bản/nâng cao.\n\n"
+                    "Nếu exam_template=mysql thì hãy có tối thiểu 4 bảng + dữ liệu mẫu + câu update/delete + truy vấn cơ bản/nâng cao. "
+                    "Nếu exam_template=python hoặc generic thì bám theo outline và dùng cấu trúc phù hợp môn đó.\n\n"
                     + json.dumps(user, ensure_ascii=False)
                 ),
             },
