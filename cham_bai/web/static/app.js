@@ -1148,6 +1148,12 @@
         const v = ($("#hg-schedule") && $("#hg-schedule").value) || "";
         if (String(v).trim()) hgLoadScheduleDetail();
       });
+    const hgDocsManual = $("#hg-docs-manual");
+    if (hgDocsManual)
+      hgDocsManual.addEventListener("change", () => {
+        const v = ($("#hg-schedule") && $("#hg-schedule").value) || "";
+        if (String(v).trim()) hgLoadScheduleDetail();
+      });
     const bSel = $("#b-homework");
     if (bSel) bSel.addEventListener("change", btvnOnPickHomework);
 
@@ -1249,6 +1255,27 @@
     return String(raw || "")
       .replace(/^.*mini\s*project\s*\(chỉ\s*có\/không\)\s*:.*$/gimu, "")
       .replace(/\bbài\s*tập\s*đầu\s*giờ\b/giu, "Bài thi");
+  }
+
+  function hgManualDocsMap() {
+    const el = $("#hg-docs-manual");
+    const txt = (el && el.value) || "";
+    const out = {};
+    txt.split(/\r?\n/).forEach((ln) => {
+      const s = String(ln || "").trim();
+      if (!s || s.startsWith("#")) return;
+      const m = /^\s*0*([0-9]{1,3})\s*[:=]\s*(https?:\/\/\S+)\s*$/i.exec(s);
+      if (!m) return;
+      const k = String(parseInt(m[1], 10)).padStart(2, "0");
+      const u = String(m[2] || "").trim();
+      if (u) out[k] = u;
+    });
+    return out;
+  }
+
+  function hgMergedDocs() {
+    const base = ((hgCtx && hgCtx.docs) || {});
+    return { ...base, ...hgManualDocsMap() };
   }
 
   async function hgResolveExamCodeFromGithub(gitUrl, docsMap) {
@@ -1360,14 +1387,15 @@
       hgCtx = { rows, visible: [], docs, last_export_rows: [] };
 
       if (docsEl) {
-        const keys = Object.keys(docs || {}).sort();
+        const merged = hgMergedDocs();
+        const keys = Object.keys(merged || {}).sort();
         if (!keys.length) {
           docsEl.textContent = "(Không tìm thấy link đề trong test.)";
         } else {
           docsEl.innerHTML =
             keys
               .map((k) => {
-                const u = docs[k];
+                const u = merged[k];
                 return `<div>Đề ${escapeHtml(k)}: <a href="${escapeHtml(u)}" target="_blank" rel="noreferrer">${escapeHtml(u)}</a></div>`;
               })
               .join("");
@@ -1388,11 +1416,12 @@
       hgCtx.visible = visible;
 
       visible.forEach((x, idx) => {
+        const docsMap = hgMergedDocs();
         const gitRaw = String(x.link || "").trim();
         const git = normalizeGithubRepo(gitRaw);
         const code = extractExamCodeFromRepoLink(gitRaw);
         const key = code == null ? "" : String(code).padStart(2, "0");
-        const docUrl = key && docs[key] ? docs[key] : "";
+        const docUrl = key && docsMap[key] ? docsMap[key] : "";
         const skipZeroOverwrite = !!includeGraded && Number(x.point) === 0;
         let note = "";
         if (skipZeroOverwrite) note = "Đã có điểm 0 (bỏ qua theo rule không đè).";
@@ -1430,7 +1459,7 @@
     const logEl = $("#hg-log");
     const dlBtn = $("#hg-download");
     const rows = (hgCtx && hgCtx.visible) || [];
-    const docs = (hgCtx && hgCtx.docs) || {};
+    const docs = hgMergedDocs();
     const checks = Array.from(document.querySelectorAll("input.hg-row"));
     if (checks.length === 0) {
       if (statusEl) statusEl.textContent = "Không có dòng để chấm.";

@@ -507,6 +507,13 @@
           <div class="field">
             <label>Danh sách đề trong cuộc thi</label>
             <div class="small" id="hg-docs">(Chọn cuộc thi để xem danh sách đề.)</div>
+            <label for="hg-docs-manual" style="margin-top:0.5rem">Bổ sung/ghi đè link đề thủ công (tuỳ chọn)</label>
+            <textarea
+              id="hg-docs-manual"
+              rows="3"
+              placeholder="Mỗi dòng: 01=https://docs.google.com/document/d/...&#10;02=https://docs.google.com/document/d/..."
+            ></textarea>
+            <p class="small">Nếu API thiếu đề, bạn nhập thêm tại đây. Cùng mã đề thì link thủ công sẽ được ưu tiên.</p>
           </div>
           <div class="row2">
             <div class="field">
@@ -691,6 +698,6 @@
 
       <footer>Chạy local · OpenRouter · không lưu dữ liệu trên server sau khi tải file</footer>
     </div>
-    <script src="/static/app.js?v=20260429_18"></script>
+    <script src="/static/app.js?v=20260429_19"></script>
   </body>
 </html>
