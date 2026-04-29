@@ -1215,6 +1215,7 @@
   }
 
   let hgCtx = { rows: [], visible: [], docs: {}, last_export_rows: [] };
+  const hgRepoCodeCache = new Map();
 
   function hgNormalizeScore100(raw) {
     let v = parseFloat(String(raw != null ? raw : ""));
@@ -1241,6 +1242,29 @@
     return String(raw || "")
       .replace(/^.*mini\s*project\s*\(chỉ\s*có\/không\)\s*:.*$/gimu, "")
       .replace(/\bbài\s*tập\s*đầu\s*giờ\b/giu, "Bài thi");
+  }
+
+  async function hgResolveExamCodeFromGithub(gitUrl) {
+    const k = String(gitUrl || "").trim();
+    if (!k) return null;
+    if (hgRepoCodeCache.has(k)) return hgRepoCodeCache.get(k);
+    let out = extractExamCodeFromRepoLink(k);
+    if (out != null) {
+      hgRepoCodeCache.set(k, out);
+      return out;
+    }
+    try {
+      const fd = new FormData();
+      fd.set("repo_url", k);
+      const r = await fetch("/api/github/exam-code", { method: "POST", body: fd });
+      const data = await r.json().catch(() => ({}));
+      if (r.ok) {
+        const c = parseInt(String(data && data.code != null ? data.code : ""), 10);
+        out = Number.isFinite(c) && c > 0 ? c : null;
+      }
+    } catch {}
+    hgRepoCodeCache.set(k, out);
+    return out;
   }
 
   async function hgLoadSchedules() {
@@ -1407,20 +1431,20 @@
     const limitN = Number.isFinite(limitUi) && limitUi > 0 ? limitUi : 0;
     const selected = [];
     let picked = 0;
-    checks.forEach((c) => {
-      if (!c.checked) return;
-      if (limitN > 0 && picked >= limitN) return;
+    for (const c of checks) {
+      if (!c.checked) continue;
+      if (limitN > 0 && picked >= limitN) continue;
       const idx = parseInt(c.getAttribute("data-idx") || "0", 10);
       const x = rows[idx];
-      if (!x) return;
+      if (!x) continue;
       const gitRaw = String(x.link || "").trim();
       const git = normalizeGithubRepo(gitRaw);
-      const code = extractExamCodeFromRepoLink(gitRaw);
+      const code = gitRaw ? await hgResolveExamCodeFromGithub(gitRaw) : null;
       const key = code == null ? "" : String(code).padStart(2, "0");
       const docUrl = key && docs[key] ? docs[key] : "";
       const isMissing = !gitRaw;
       const isInvalidExamCode = !isMissing && (!code || !docUrl);
-      if (!isMissing && !git) return;
+      if (!isMissing && !git) continue;
       selected.push({
         docUrl,
         git,
@@ -1431,7 +1455,7 @@
         isInvalidExamCode,
       });
       picked += 1;
-    });
+    }
     if (selected.length === 0) {
       if (statusEl) statusEl.textContent = "Không có dòng hợp lệ để chấm.";
       return;

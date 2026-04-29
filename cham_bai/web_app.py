@@ -1065,6 +1065,68 @@ def _norm_test_schedule_detail_item(x: dict) -> dict:
     }
 
 
+def _extract_exam_code_from_text(s: str) -> int | None:
+    t = str(s or "").strip()
+    if not t:
+        return None
+    m = re.search(r"(?:[_-])0*([0-9]{1,3})$", t, re.I)
+    if not m:
+        m = re.search(r"([0-9]{1,3})$", t, re.I)
+    if not m:
+        return None
+    try:
+        n = int(m.group(1))
+    except Exception:
+        return None
+    return n if 1 <= n <= 999 else None
+
+
+@app.post("/api/github/exam-code")
+async def api_github_exam_code(repo_url: str = Form(...)) -> JSONResponse:
+    u = (repo_url or "").strip()
+    norm = normalize_github_repo_url(u) or ""
+    if not norm:
+        raise HTTPException(status_code=400, detail="repo_url không hợp lệ.")
+    m = re.match(r"^https?://github\.com/([^/]+)/([^/?#]+)", norm, re.I)
+    if not m:
+        raise HTTPException(status_code=400, detail="repo_url không phải link GitHub owner/repo hợp lệ.")
+    owner = m.group(1).strip()
+    repo = m.group(2).strip().replace(".git", "")
+
+    # 1) thử parse trực tiếp từ tên repo
+    n = _extract_exam_code_from_text(repo)
+    if n:
+        return JSONResponse({"ok": True, "code": n, "source": "repo_name"})
+
+    gh_url = f"https://api.github.com/repos/{owner}/{repo}/contents"
+    headers = {"User-Agent": "AgentEdu/1.0", "Accept": "application/vnd.github+json"}
+    try:
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+            r = await client.get(gh_url, headers=headers)
+        if r.status_code == 404:
+            return JSONResponse({"ok": True, "code": None, "source": "not_found"})
+        r.raise_for_status()
+        arr = r.json()
+        if not isinstance(arr, list):
+            return JSONResponse({"ok": True, "code": None, "source": "empty"})
+
+        # 2) quét tên item ở root (file/folder)
+        for it in arr:
+            if not isinstance(it, dict):
+                continue
+            name = str(it.get("name") or "").strip()
+            name = re.sub(r"\.(sql|py|js|ts|java|cpp|c|cs)$", "", name, flags=re.I)
+            n2 = _extract_exam_code_from_text(name)
+            if n2:
+                return JSONResponse({"ok": True, "code": n2, "source": "root_item_name"})
+
+        return JSONResponse({"ok": True, "code": None, "source": "none"})
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Lỗi đọc GitHub contents: {e}")
+
+
 @app.post("/api/rikkei/test-schedules")
 async def api_rikkei_test_schedules(
     rikkei_token: str = Form(...),
