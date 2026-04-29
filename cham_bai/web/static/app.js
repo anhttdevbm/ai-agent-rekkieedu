@@ -1199,6 +1199,10 @@
         mm = /(?:[_-])0*([0-9]{1,3})(?:[_-][a-z0-9].*)?$/i.exec(t);
       }
       if (!mm) {
+        // hỗ trợ dạng ...-004- (có ký tự phân tách treo ở cuối)
+        mm = /(?:[_-])0*([0-9]{1,3})[_-]+$/i.exec(t);
+      }
+      if (!mm) {
         // hỗ trợ dạng ...Nhan03 hoặc ...De02.sql (không có _ trước số)
         mm = /([0-9]{1,3})$/i.exec(t);
       }

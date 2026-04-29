@@ -1074,6 +1074,9 @@ def _extract_exam_code_from_text(s: str) -> int | None:
         # Hỗ trợ dạng: CSDL_..._004_hackthon (mã nằm giữa chuỗi).
         m = re.search(r"(?:[_-])0*([0-9]{1,3})(?:[_-][a-z0-9].*)?$", t, re.I)
     if not m:
+        # Hỗ trợ dạng: ...-004- (ký tự phân tách treo cuối chuỗi).
+        m = re.search(r"(?:[_-])0*([0-9]{1,3})[_-]+$", t, re.I)
+    if not m:
         m = re.search(r"([0-9]{1,3})$", t, re.I)
     if not m:
         return None
