@@ -1924,12 +1924,22 @@ async def api_btvn_rikkei_session_status(
                 sess_no = None
             if not sess_no or sess_no <= 0:
                 raise RuntimeError("Thiếu session_no (ví dụ 8 để map vào cột 'SESSION 08').")
-            cols = _gs_detect_session_columns(
-                spreadsheet_id=ssid,
-                session_no=sess_no,
-                sheet_name=(sheet_name or "").strip() or None,
-                header_rows=3,
-            )
+            # Một số sheet có 2 dòng header (row1=SESSION, row2=subheader).
+            cols = None
+            last_err: Exception | None = None
+            for hr in (3, 2, 4, 5):
+                try:
+                    cols = _gs_detect_session_columns(
+                        spreadsheet_id=ssid,
+                        session_no=sess_no,
+                        sheet_name=(sheet_name or "").strip() or None,
+                        header_rows=hr,
+                    )
+                    break
+                except Exception as e:
+                    last_err = e
+            if cols is None:
+                raise RuntimeError(f"Không detect được cột session trong header: {last_err}")
             # Build rows to update from session_update.updated
             upd = su.get("updated") if isinstance(su.get("updated"), list) else []
             sheet_rows = []

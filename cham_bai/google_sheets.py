@@ -120,7 +120,7 @@ def detect_session_columns(
     - Find "SESSION 08" group on row 1/2, then subheaders "Số BT", "Nhận xét" on last header row.
     """
     svc = _build_sheets_service()
-    sh = sheet_name or "Sheet1"
+    sh = sheet_name or "Tracking"
     rng = f"'{sh}'!A1:ZZ{header_rows}"
     resp = svc.spreadsheets().values().get(spreadsheetId=spreadsheet_id, range=rng).execute()
     grid = _unwrap_values(resp)

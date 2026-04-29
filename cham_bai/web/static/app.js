@@ -1272,6 +1272,7 @@
       const sessionId = ($("#b-rk-session") && $("#b-rk-session").value) || "";
       const courseId = ($("#b-rk-course") && $("#b-rk-course").value) || "";
       const sheetUrl = ($("#b-sheet-url") && $("#b-sheet-url").value) || "";
+      const sheetName = ($("#b-sheet-name") && $("#b-sheet-name").value) || "";
       if (!String(classId).trim() || !String(sessionId).trim() || !String(courseId).trim()) {
         alert("Chưa chọn đầy đủ class/session/course.");
         return;
@@ -1289,6 +1290,7 @@
       fd.set("course_id", String(courseId).trim());
       fd.set("students_ids_json", JSON.stringify(studentIds));
       if (String(sheetUrl).trim()) fd.set("sheet_url", String(sheetUrl).trim());
+      if (String(sheetName).trim()) fd.set("sheet_name", String(sheetName).trim());
       // session_no: dùng position (#8) để map vào cột "SESSION 08" trên sheet
       try {
         const sel = $("#b-rk-session");
