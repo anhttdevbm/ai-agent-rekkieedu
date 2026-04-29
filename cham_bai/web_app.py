@@ -813,6 +813,8 @@ def _norm_practice_resource_item(x: dict) -> dict:
 async def api_rikkei_login(
     email: str = Form(...),
     password: str = Form(...),
+    basic_user: str = Form(""),
+    basic_pass: str = Form(""),
 ) -> JSONResponse:
     em = (email or "").strip()
     pw = password or ""
@@ -832,11 +834,11 @@ async def api_rikkei_login(
                 "Accept": "application/json, text/plain, */*",
             }
             # Some deployments require a fixed BasicAuth (client credential), not the user's email/password.
-            basic_user = (os.getenv("RIKKEI_BASIC_USER") or "").strip()
-            basic_pass = (os.getenv("RIKKEI_BASIC_PASS") or "").strip()
+            bu = (basic_user or "").strip() or (os.getenv("RIKKEI_BASIC_USER") or "").strip()
+            bp = (basic_pass or "").strip() or (os.getenv("RIKKEI_BASIC_PASS") or "").strip()
             headers_basic = dict(headers)
-            if basic_user and basic_pass:
-                basic = base64.b64encode(f"{basic_user}:{basic_pass}".encode("utf-8")).decode("ascii")
+            if bu and bp:
+                basic = base64.b64encode(f"{bu}:{bp}".encode("utf-8")).decode("ascii")
                 headers_basic["Authorization"] = f"Basic {basic}"
 
             # Attempt 1 (like n8n): x-www-form-urlencoded body
@@ -872,7 +874,7 @@ async def api_rikkei_login(
                     "portal": detail,
                     "status": r.status_code,
                     "location": r.headers.get("Location") or r.headers.get("location") or "",
-                    "basic_auth_configured": bool((os.getenv("RIKKEI_BASIC_USER") or "").strip()),
+                    "basic_auth_configured": bool(bu),
                 },
             )
         r.raise_for_status()

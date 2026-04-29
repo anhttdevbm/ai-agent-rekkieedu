@@ -916,6 +916,8 @@
   async function btvnLogin() {
     const email = ($("#b-rk-email") && $("#b-rk-email").value) || "";
     const pass = ($("#b-rk-pass") && $("#b-rk-pass").value) || "";
+    const bu = ($("#b-rk-basic-user") && $("#b-rk-basic-user").value) || "";
+    const bp = ($("#b-rk-basic-pass") && $("#b-rk-basic-pass").value) || "";
     const statusEl = $("#b-rk-login-status");
     const btn = $("#b-rk-login");
     if (!email.trim() || !pass) {
@@ -928,6 +930,8 @@
       const fd = new FormData();
       fd.set("email", email.trim());
       fd.set("password", pass);
+      if (String(bu).trim()) fd.set("basic_user", String(bu).trim());
+      if (String(bp).trim()) fd.set("basic_pass", String(bp));
       const r = await fetch("/api/rikkei/login", { method: "POST", body: fd });
       const data = await r.json().catch(() => ({}));
       if (!r.ok) {
@@ -954,6 +958,8 @@
   async function gradeRikkeiLogin() {
     const email = ($("#g-rk-email") && $("#g-rk-email").value) || "";
     const pass = ($("#g-rk-pass") && $("#g-rk-pass").value) || "";
+    const bu = ($("#g-rk-basic-user") && $("#g-rk-basic-user").value) || "";
+    const bp = ($("#g-rk-basic-pass") && $("#g-rk-basic-pass").value) || "";
     const statusEl = $("#g-rk-login-status");
     const btn = $("#g-rk-login");
     if (!email.trim() || !pass) {
@@ -966,6 +972,8 @@
       const fd = new FormData();
       fd.set("email", email.trim());
       fd.set("password", pass);
+      if (String(bu).trim()) fd.set("basic_user", String(bu).trim());
+      if (String(bp).trim()) fd.set("basic_pass", String(bp));
       const r = await fetch("/api/rikkei/login", { method: "POST", body: fd });
       const data = await r.json().catch(() => ({}));
       if (!r.ok) {

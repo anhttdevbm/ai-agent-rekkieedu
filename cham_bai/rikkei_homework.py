@@ -250,17 +250,31 @@ def mark_btvn_session_status_from_exercise_scores(
                 student_id=st_id,
                 session_id=sid,
                 status=new_status,
-                # Theo payload ví dụ của bạn: completedExercises gửi 0.
-                completed_exercises=0,
+                # Fill số bài "đạt" (điểm > 50) vào completedExercises.
+                completed_exercises=achieved,
             )
             ok += 1
             updated.append(
-                {"studentId": st_id, "ok": True, "newStatus": new_status, "achieved": achieved, "total": total}
+                {
+                    "studentId": st_id,
+                    "ok": True,
+                    "newStatus": new_status,
+                    "completedExercises": achieved,
+                    "achieved": achieved,
+                    "total": total,
+                }
             )
         except Exception as e:
             fail += 1
             updated.append(
-                {"studentId": st_id, "ok": False, "newStatus": new_status, "achieved": achieved, "error": str(e)[:200]}
+                {
+                    "studentId": st_id,
+                    "ok": False,
+                    "newStatus": new_status,
+                    "completedExercises": achieved,
+                    "achieved": achieved,
+                    "error": str(e)[:200],
+                }
             )
 
     return {
