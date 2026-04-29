@@ -901,12 +901,8 @@ async def api_rikkei_course_sessions(
         r.raise_for_status()
         raw_items = _unwrap_list_payload(r.json())
         items_all = [_norm_session_item(x) for x in raw_items if isinstance(x, dict)]
-        # Only practice sessions
-        items = [
-            it
-            for it in items_all
-            if str(it.get("type") or "").strip().upper() == "THỰC HÀNH"
-        ]
+        # Return all sessions (not only THỰC HÀNH)
+        items = items_all
         items.sort(key=lambda z: int(z.get("position") or 10_000))
         return JSONResponse({"ok": True, "items": items})
     except HTTPException:

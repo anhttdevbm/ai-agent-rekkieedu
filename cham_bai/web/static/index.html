@@ -575,8 +575,8 @@
       <section class="panel" id="panel-btvn">
         <h2>Chấm BTVN (nhận xét)</h2>
         <p class="hint">
-          Nhập <strong>Token Rikkei</strong> và <strong>Session ID</strong> để tải danh sách bài tập, chọn bài cần chấm rồi xem preview đề (text + ảnh).
-          Sau đó nhập danh sách <strong>link GitHub</strong> bài nộp (mỗi dòng 1 link). Hệ thống sẽ clone repo, đọc mã nguồn (có giới hạn) và tạo <strong>nhận xét</strong>. Không chấm điểm.
+          Nhập <strong>Token Rikkei</strong> → tải <strong>Hệ → Lớp → Môn → Session</strong>. Chọn homework để xem đề (text + ảnh).
+          Sau đó tải <strong>Danh sách học sinh</strong>, tick các bạn cần chấm để hệ thống đọc repo đã nộp trên Rikkei và tạo <strong>nhận xét</strong> (không chấm điểm).
         </p>
         <form id="form-btvn">
           <details class="hint" style="margin: 0 0 0.5rem 0">
@@ -632,7 +632,7 @@
             </select>
           </div>
           <div class="field">
-            <label for="b-rk-session">Session thực hành</label>
+            <label for="b-rk-session">Session</label>
             <select id="b-rk-session">
               <option value="">(Chưa chọn môn)</option>
             </select>
@@ -737,6 +737,6 @@
 
       <footer>Chạy local · OpenRouter · không lưu dữ liệu trên server sau khi tải file</footer>
     </div>
-    <script src="/static/app.js?v=20260429_22"></script>
+    <script src="/static/app.js?v=20260429_24"></script>
   </body>
 </html>

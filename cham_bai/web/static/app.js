@@ -771,7 +771,7 @@
       if (selSession) {
         if (!Array.isArray(items) || items.length === 0) {
           selSession.innerHTML = "<option value=''> (Không có session) </option>";
-          selSession.disabled = true;
+          selSession.disabled = false;
         } else {
           selSession.dataset.items = JSON.stringify(items);
           selSession.innerHTML = "<option value=''>-- Chọn session --</option>";
