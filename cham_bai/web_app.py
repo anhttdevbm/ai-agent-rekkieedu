@@ -1145,6 +1145,37 @@ async def api_rikkei_test_schedule_detail(
         raise HTTPException(status_code=502, detail=f"Lỗi gọi API Rikkei (test-schedule-detail): {e}")
 
 
+def _result_test_point_str(point_f: float) -> str:
+    """Rikkei portal gửi `point` dạng chuỗi (vd. \"10\"); giữ đồng nhất để tránh lỗi phía server."""
+    point_f = max(0.0, min(10.0, float(point_f)))
+    if abs(point_f - int(point_f)) < 1e-9:
+        return str(int(point_f))
+    s = f"{point_f:.2f}".rstrip("0").rstrip(".")
+    return s if s else "0"
+
+
+RESULT_TEST_NOTE_MAX = 2000
+
+
+async def _rikkei_patch_result_test(
+    client: httpx.AsyncClient,
+    tok: str,
+    pid_int: int,
+    body: dict,
+) -> httpx.Response:
+    url = f"https://apiportal.rikkei.edu.vn/result-test/{pid_int}"
+    return await client.patch(
+        url,
+        json=body,
+        headers={
+            "Authorization": _rk_bearer(tok),
+            "User-Agent": "AgentEdu/1.0",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        },
+    )
+
+
 @app.post("/api/rikkei/result-test/patch-batch")
 async def api_rikkei_result_test_patch_batch(
     rikkei_token: str = Form(...),
@@ -1170,6 +1201,13 @@ async def api_rikkei_result_test_patch_batch(
             point = p.get("point")
             note = str(p.get("note") or "").strip()
             link = str(p.get("link") or "").strip()
+            if link:
+                try:
+                    link_norm = normalize_github_repo_url(link)
+                    if link_norm:
+                        link = link_norm
+                except Exception:
+                    pass
             try:
                 pid_int = int(pid)
             except Exception:
@@ -1181,30 +1219,66 @@ async def api_rikkei_result_test_patch_batch(
                 fails.append({"id": pid_int, "error": "point không hợp lệ"})
                 continue
             point_f = max(0.0, min(10.0, point_f))
-            point_val: float | int = int(point_f) if abs(point_f - int(point_f)) < 1e-9 else round(point_f, 2)
-            body = {"point": point_val}
-            if note:
-                body["note"] = note
+            point_str = _result_test_point_str(point_f)
+            note_full = note[:RESULT_TEST_NOTE_MAX] if note else ""
+
+            # Thử vài biến thể body: portal dùng point string; 500 hay gặp khi note quá dài hoặc link không khớp chuẩn hóa của Rikkei.
+            attempt_bodies: list[dict] = []
+            b_full: dict = {"point": point_str}
+            if note_full:
+                b_full["note"] = note_full
             if link:
-                body["link"] = link
-            url = f"https://apiportal.rikkei.edu.vn/result-test/{pid_int}"
-            try:
-                r = await client.patch(
-                    url,
-                    json=body,
-                    headers={
-                        "Authorization": _rk_bearer(tok),
-                        "User-Agent": "AgentEdu/1.0",
-                        "Accept": "application/json",
-                    },
-                )
-                if r.status_code in (401, 403):
-                    fails.append({"id": pid_int, "error": "Token không hợp lệ hoặc không có quyền"})
+                b_full["link"] = link
+            attempt_bodies.append(b_full)
+            if link:
+                b_no_link = {"point": point_str}
+                if note_full:
+                    b_no_link["note"] = note_full
+                attempt_bodies.append(b_no_link)
+            if note_full and len(note_full) > 500:
+                b_short = {"point": point_str, "note": note_full[:500]}
+                if link:
+                    b_short["link"] = link
+                attempt_bodies.append(b_short)
+                attempt_bodies.append({"point": point_str, "note": note_full[:500]})
+            if note_full and len(note_full) > 200:
+                attempt_bodies.append({"point": point_str, "note": note_full[:200]})
+            attempt_bodies.append({"point": point_str})
+
+            last_r: httpx.Response | None = None
+            last_err: str = ""
+            ok_this = False
+            seen_keys: set[str] = set()
+            for body in attempt_bodies:
+                key = json.dumps(body, sort_keys=True, ensure_ascii=False)
+                if key in seen_keys:
                     continue
-                r.raise_for_status()
-                ok_count += 1
-            except Exception as e:
-                fails.append({"id": pid_int, "error": str(e)[:240]})
+                seen_keys.add(key)
+                try:
+                    r = await _rikkei_patch_result_test(client, tok, pid_int, body)
+                    last_r = r
+                    if r.status_code in (401, 403):
+                        last_err = "Token không hợp lệ hoặc không có quyền"
+                        break
+                    if r.is_success:
+                        ok_count += 1
+                        ok_this = True
+                        break
+                    last_err = f"HTTP {r.status_code}"
+                    snippet = (r.text or "")[:400].replace("\n", " ")
+                    if snippet:
+                        last_err += f" | {snippet}"
+                except Exception as e:
+                    last_err = str(e)[:400]
+
+            if not ok_this:
+                fail: dict = {"id": pid_int, "error": last_err or "PATCH thất bại"}
+                if last_r is not None:
+                    fail["rikkei_status"] = last_r.status_code
+                    tb = (last_r.text or "").strip()
+                    if tb:
+                        fail["rikkei_body"] = tb[:500]
+                fails.append(fail)
 
     return JSONResponse({"ok": True, "ok_count": ok_count, "fail_count": len(fails), "fails": fails[:50]})
 
