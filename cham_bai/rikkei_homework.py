@@ -64,17 +64,29 @@ def _score_from_comment(comment: str | None) -> float | None:
         return None
 
 
-def _extract_student_session_status(student: dict[str, Any]) -> str:
+def _extract_student_session_status(student: dict[str, Any], session_id: int | str | None = None) -> str:
     """
     Rikkei có nhiều biến thể response.
-    Ta ưu tiên lấy status từ sessionStudent[].status vì thường đúng theo "session hiện tại".
+    `sessionStudent` thường là mảng nhiều session, cần pick đúng theo session_id (nếu có).
     """
+    sid = str(session_id).strip() if session_id is not None else ""
     ss = student.get("sessionStudent")
     if isinstance(ss, dict):
         st = ss.get("status")
         if isinstance(st, str) and st.strip():
             return st.strip()
     if isinstance(ss, list) and ss:
+        if sid:
+            for it in ss:
+                if not isinstance(it, dict):
+                    continue
+                it_sid = it.get("sessionId") or it.get("session_id")
+                if it_sid is None and isinstance(it.get("session"), dict):
+                    it_sid = it["session"].get("id")
+                if it_sid is not None and str(it_sid).strip() == sid:
+                    st = it.get("status")
+                    if isinstance(st, str) and st.strip():
+                        return st.strip()
         for it in ss:
             if not isinstance(it, dict):
                 continue
@@ -195,7 +207,7 @@ def mark_btvn_session_status_from_exercise_scores(
         except Exception:
             continue
 
-        cur_status = _extract_student_session_status(st)
+        cur_status = _extract_student_session_status(st, sid)
         cur_norm = _norm_status_text(cur_status)
         wait_norm = _norm_status_text(waiting_status)
         # Nếu không đọc được status hiện tại thì vẫn cho phép chốt theo best-effort.

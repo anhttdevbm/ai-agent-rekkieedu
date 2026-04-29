@@ -818,10 +818,22 @@
           };
           tr.appendChild(td(escapeHtml(code)));
           tr.appendChild(td(escapeHtml(name)));
-            // Ưu tiên status theo đúng session (thường nằm trong sessionStudent[].status)
-            const ss0 = Array.isArray(st.sessionStudent) && st.sessionStudent[0] ? st.sessionStudent[0] : null;
+            // `sessionStudent` thường là mảng nhiều session → pick đúng session đang chọn.
+            const pickSessionStatus = () => {
+              const sidPick = ($("#b-rk-session") && $("#b-rk-session").value) || "";
+              const ss = st.sessionStudent;
+              if (!sidPick || !Array.isArray(ss)) return "";
+              for (const it of ss) {
+                if (!it || typeof it !== "object") continue;
+                const itSid = it.sessionId || it.session_id || (it.session && it.session.id);
+                if (itSid != null && String(itSid).trim() === String(sidPick).trim()) {
+                  return (it.status || "").toString().trim();
+                }
+              }
+              return "";
+            };
             const initStatus =
-              (ss0 && ss0.status ? ss0.status : "") || st.status || st.homeworkStatus || st.sessionStatus || "";
+              pickSessionStatus() || st.homeworkStatus || st.status || st.sessionStatus || "";
             tr.appendChild(td(`<span class="b-stu-status">${escapeHtml(initStatus || "—")}</span>`));
           tr.appendChild(
             td(
