@@ -832,9 +832,11 @@
               }
               return "";
             };
-            const initStatus =
+            let initStatus =
               pickSessionStatus() || st.homeworkStatus || st.status || st.sessionStatus || "";
-            tr.appendChild(td(`<span class="b-stu-status">${escapeHtml(initStatus || "—")}</span>`));
+            // Portal: null/empty => hiểu là "ĐANG CHỜ KIỂM TRA"
+            if (!String(initStatus || "").trim()) initStatus = "ĐANG CHỜ KIỂM TRA";
+            tr.appendChild(td(`<span class="b-stu-status">${escapeHtml(initStatus)}</span>`));
           tr.appendChild(
             td(
               `<button type="button" class="smalllink b-stu-view" data-student-id="${studentId}" title="Xem nội dung bài nộp">Xem</button>`

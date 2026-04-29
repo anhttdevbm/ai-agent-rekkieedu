@@ -208,6 +208,9 @@ def mark_btvn_session_status_from_exercise_scores(
             continue
 
         cur_status = _extract_student_session_status(st, sid)
+        # Portal: null status => hiểu là "ĐANG CHỜ KIỂM TRA"
+        if not str(cur_status or "").strip():
+            cur_status = waiting_status
         cur_norm = _norm_status_text(cur_status)
         wait_norm = _norm_status_text(waiting_status)
         # Nếu không đọc được status hiện tại thì vẫn cho phép chốt theo best-effort.
