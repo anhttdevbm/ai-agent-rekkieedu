@@ -54,6 +54,11 @@ from cham_bai.reading_gen import (
     sanitize_reading_filename_part,
 )
 from cham_bai.btvn_comment import BtvnCommentParams, run_btvn_comments_json
+from cham_bai.rikkei_homework import (
+    fetch_students as _btvn_fetch_students,
+    fetch_all_exercises_for_student as _btvn_fetch_all_exercises_for_student,
+    _homework_id as _btvn_homework_id,
+)
 from cham_bai.group_activity import GroupGradeParams, grade_group_activity
 from cham_bai.hackathon_exam import (
     HackathonExamParams,
@@ -610,6 +615,24 @@ async def api_rikkei_session(
             "homework": out_hw,
         }
     )
+
+
+@app.post("/api/rikkei/btvn/students")
+async def api_rikkei_btvn_students(
+    rikkei_token: str = Form(...),
+    class_id: str = Form(...),
+    session_id: str = Form(...),
+) -> JSONResponse:
+    try:
+        items = _btvn_fetch_students(rikkei_token, class_id, session_id)
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Lỗi API danh sách học sinh: {e.response.status_code} {e.response.text[:500]}",
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Lỗi khi lấy danh sách học sinh: {e}")
+    return JSONResponse({"ok": True, "items": items})
 
 
 def _extract_rikkei_token(payload: object) -> str:
@@ -1503,6 +1526,225 @@ async def api_btvn(
                 "chars": len(at),
                 "sha1_10": fp,
                 "head": at[:160],
+            },
+        }
+    )
+
+
+@app.post("/api/btvn/rikkei")
+async def api_btvn_rikkei(
+    rikkei_token: str = Form(...),
+    class_id: str = Form(...),
+    session_id: str = Form(...),
+    course_id: str = Form(...),
+    homework_id: str = Form(""),
+    students_ids_json: str = Form("[]"),
+    assignment_text: str = Form(""),
+    assignment_image_urls: str = Form(""),
+    model: str = Form(""),
+    github_token: str = Form(""),
+) -> JSONResponse:
+    tok = (rikkei_token or "").strip()
+    if not tok:
+        raise HTTPException(status_code=400, detail="Thiếu token Rikkei.")
+    cid = (class_id or "").strip()
+    sid = (session_id or "").strip()
+    crid = (course_id or "").strip()
+    if not cid or not sid or not crid:
+        raise HTTPException(status_code=400, detail="Thiếu class_id/session_id/course_id.")
+    hid_req_raw = (homework_id or "").strip()
+    hid_req: int | None = None
+    if hid_req_raw:
+        try:
+            hid_req = int(hid_req_raw)
+        except Exception:
+            hid_req = None
+
+    at = (assignment_text or "").strip()
+    if not at:
+        raise HTTPException(status_code=400, detail="Thiếu assignment_text (đề bài).")
+
+    try:
+        s_ids = json.loads(students_ids_json or "[]")
+    except Exception:
+        s_ids = []
+    if not isinstance(s_ids, list):
+        s_ids = []
+    s_id_ints: list[int] = []
+    for x in s_ids:
+        try:
+            ix = int(x)
+        except Exception:
+            continue
+        s_id_ints.append(ix)
+
+    # tải ảnh từ assignment_image_urls (nếu có)
+    imgs: list[tuple[str, bytes]] = []
+    ublob = (assignment_image_urls or "").strip()
+    if ublob:
+        try:
+            urls = json.loads(ublob)
+        except json.JSONDecodeError:
+            urls = []
+        if isinstance(urls, list):
+            for u in urls[:10]:
+                if not isinstance(u, str):
+                    continue
+                got = await _rk_fetch_image_bytes(u)
+                if got:
+                    imgs.append(got)
+
+    btvn_model = (model or "").strip() or (
+        os.getenv("OPENROUTER_BTVN_MODEL", DEFAULT_BTVN_MODEL).strip()
+        or os.getenv("OPENROUTER_MODEL", "anthropic/claude-sonnet-4.6").strip()
+    )
+
+    try:
+        students = _btvn_fetch_students(tok, cid, sid)
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Lỗi API danh sách học sinh: {e.response.status_code} {e.response.text[:500]}",
+        )
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Lỗi khi lấy danh sách học sinh: {e}")
+
+    if s_id_ints:
+        want = set(s_id_ints)
+        students = [x for x in students if int(x.get("id") or -1) in want]
+
+    target = []
+    for st in students:
+        sid_int = st.get("id")
+        try:
+            sid_int = int(sid_int)
+        except Exception:
+            continue
+        target.append(
+            {
+                "studentId": sid_int,
+                "studentCode": str(st.get("studentCode") or st.get("student_code") or "").strip(),
+                "fullName": str(st.get("fullName") or st.get("full_name") or "").strip(),
+            }
+        )
+
+    if not target:
+        raise HTTPException(status_code=400, detail="Không có học sinh phù hợp để chấm.")
+
+    # Build submissions for valid GitHub links only, aligned with target index.
+    submission_links: list[str] = []
+    submission_to_target_index: list[int] = []
+    manual_rows: dict[int, dict] = {}
+
+    for i, st in enumerate(target):
+        st_student_id = st["studentId"]
+        try:
+            exercises = _btvn_fetch_all_exercises_for_student(
+                tok,
+                class_id=cid,
+                course_id=crid,
+                session_id=sid,
+                student_id=st_student_id,
+            )
+        except Exception as e:
+            manual_rows[i] = {
+                "studentCode": st.get("studentCode") or "",
+                "fullName": st.get("fullName") or "",
+                "repo": "",
+                "repo_error": f"Lỗi tải bài tập: {str(e)[:80]}",
+                "comment": "",
+                "ai_suspected": "Không",
+                "ai_error": "",
+            }
+            continue
+
+        chosen_link = ""
+        if isinstance(exercises, list):
+            for ex in exercises:
+                hid = _btvn_homework_id(ex)
+                if hid_req is not None and hid != hid_req:
+                    continue
+                link = ex.get("link_git") or ex.get("linkGit") or ""
+                if isinstance(link, str):
+                    link = link.strip()
+                else:
+                    link = ""
+                if link:
+                    chosen_link = link
+                    break
+        if not chosen_link:
+            manual_rows[i] = {
+                "studentCode": st.get("studentCode") or "",
+                "fullName": st.get("fullName") or "",
+                "repo": "",
+                "repo_error": "Chưa có link Git.",
+                "comment": "",
+                "ai_suspected": "Không",
+                "ai_error": "",
+            }
+        else:
+            submission_to_target_index.append(i)
+            submission_links.append(chosen_link)
+
+    rows_out: list[dict] = []
+    # init with manual rows
+    rows_out = [manual_rows.get(i) or None for i in range(len(target))]
+
+    if submission_links:
+        params = BtvnCommentParams(
+            assignment_text=at,
+            assignment_images=imgs,
+            submissions=submission_links,
+            model=btvn_model,
+            github_token=(github_token or "").strip(),
+        )
+        loop = asyncio.get_event_loop()
+
+        def work():
+            return run_btvn_comments_json(params)
+
+        ok, msg, rows = await loop.run_in_executor(_executor, work)
+        if not ok or rows is None:
+            raise HTTPException(status_code=500, detail=msg or "Lỗi chấm BTVN")
+
+        for j, r in enumerate(rows):
+            ti = submission_to_target_index[j] if j < len(submission_to_target_index) else None
+            if ti is None:
+                continue
+            row = dict(r or {})
+            row["studentCode"] = target[ti].get("studentCode") or ""
+            row["fullName"] = target[ti].get("fullName") or ""
+            rows_out[ti] = row
+
+    default_row = {
+        "studentCode": "",
+        "fullName": "",
+        "repo": "",
+        "repo_error": "Không xác định được kết quả.",
+        "comment": "",
+        "ai_suspected": "Không",
+        "ai_error": "",
+    }
+    rows_out_final: list[dict] = []
+    for i in range(len(target)):
+        v = rows_out[i] if i < len(rows_out) else None
+        if isinstance(v, dict):
+            rows_out_final.append(v)
+        else:
+            rows_out_final.append(
+                {**default_row, "studentCode": target[i].get("studentCode") or "", "fullName": target[i].get("fullName") or ""}
+            )
+
+    at_fp = (assignment_text or "").strip()
+    fp = hashlib.sha1(at_fp.encode("utf-8", errors="ignore")).hexdigest()[:10] if at_fp else ""
+    return JSONResponse(
+        {
+            "ok": True,
+            "rows": rows_out_final,
+            "assignment_fingerprint": {
+                "chars": len(at_fp),
+                "sha1_10": fp,
+                "head": at_fp[:160],
             },
         }
     )

@@ -609,14 +609,40 @@
           </div>
           <div class="row2">
             <div class="field" style="margin: 0">
-              <label for="b-session-id">Session ID</label>
-              <input type="number" id="b-session-id" min="1" step="1" placeholder="vd. 2058" required />
-            </div>
-            <div class="field" style="align-self: end; margin: 0">
-              <button type="button" class="primary" id="b-load-session">Tải danh sách bài</button>
+              <button type="button" class="primary" id="b-rk-load">Tải danh sách hệ/khóa</button>
             </div>
           </div>
           <p class="status" id="b-session-status"></p>
+          <div class="field">
+            <label for="b-rk-system">Hệ đào tạo</label>
+            <select id="b-rk-system">
+              <option value="">(Chưa tải)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="b-rk-class">Lớp</label>
+            <select id="b-rk-class">
+              <option value="">(Chưa chọn hệ)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="b-rk-course">Môn học</label>
+            <select id="b-rk-course">
+              <option value="">(Chưa chọn lớp)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="b-rk-session">Session thực hành</label>
+            <select id="b-rk-session">
+              <option value="">(Chưa chọn môn)</option>
+            </select>
+          </div>
+          <div class="row2">
+            <div class="field" style="margin:0">
+              <label for="b-load-students" style="display:block;margin-bottom:.2rem">Danh sách học sinh (theo class/session)</label>
+              <button type="button" class="primary" id="b-load-students">Tải danh sách học sinh</button>
+            </div>
+          </div>
           <div class="field">
             <label for="b-homework">Chọn bài tập để chấm</label>
             <select id="b-homework" disabled>
@@ -637,8 +663,19 @@
             <input type="password" id="b-gh-token" name="github_token" autocomplete="off" placeholder="ghp_... hoặc fine-grained token" />
           </div>
           <div class="field">
-            <label for="b-subs">Bài nộp (mỗi dòng 1 link GitHub)</label>
-            <textarea id="b-subs" name="submissions_text" rows="6" required placeholder="https://github.com/owner/repo"></textarea>
+            <label>Danh sách học sinh (chấm theo bài tập đã chọn)</label>
+            <div style="overflow:auto; max-height: 40vh; border: 1px solid #e5e7eb; border-radius: 12px; margin-top:.25rem">
+              <table class="tbl" style="width: 100%; border-collapse: collapse">
+                <thead>
+                  <tr>
+                    <th style="text-align:left; padding:10px; border-bottom:1px solid #e5e7eb">Chọn</th>
+                    <th style="text-align:left; padding:10px; border-bottom:1px solid #e5e7eb">Mã SV</th>
+                    <th style="text-align:left; padding:10px; border-bottom:1px solid #e5e7eb">Họ tên</th>
+                  </tr>
+                </thead>
+                <tbody id="b-students-body"></tbody>
+              </table>
+            </div>
           </div>
           <div class="field">
             <label for="b-model">Model OpenRouter</label>
@@ -655,6 +692,8 @@
             <table class="tbl" style="width: 100%; border-collapse: collapse">
               <thead>
                 <tr>
+                  <th style="text-align: left; padding: 10px; border-bottom: 1px solid #e5e7eb">Mã SV</th>
+                  <th style="text-align: left; padding: 10px; border-bottom: 1px solid #e5e7eb">Họ tên</th>
                   <th style="text-align: left; padding: 10px; border-bottom: 1px solid #e5e7eb">Repo</th>
                   <th style="text-align: left; padding: 10px; border-bottom: 1px solid #e5e7eb">Lỗi repo</th>
                   <th style="text-align: left; padding: 10px; border-bottom: 1px solid #e5e7eb">Nhận xét</th>
@@ -698,6 +737,6 @@
 
       <footer>Chạy local · OpenRouter · không lưu dữ liệu trên server sau khi tải file</footer>
     </div>
-    <script src="/static/app.js?v=20260429_20"></script>
+    <script src="/static/app.js?v=20260429_22"></script>
   </body>
 </html>

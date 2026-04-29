@@ -515,18 +515,20 @@
       .replace(/\son\w+='[^']*'/gi, "");
   }
 
+  let btvnCtx = { students: [] };
+
   async function btvnLoadSession() {
     const token = ($("#b-rk-token") && $("#b-rk-token").value) || "";
-    const sid = ($("#b-session-id") && $("#b-session-id").value) || "";
+    const sid = ($("#b-rk-session") && $("#b-rk-session").value) || "";
     const statusEl = $("#b-session-status");
     const sel = $("#b-homework");
     const preview = $("#b-preview");
-    const btn = $("#b-load-session");
+    const btn = $("#b-rk-session") || null;
     if (!token.trim() || !String(sid).trim()) {
       if (statusEl) statusEl.textContent = "Nhập token và session id trước.";
       return;
     }
-    setBusy(btn, true, "Đang tải…");
+    if (btn) setBusy(btn, true, "Đang tải…");
     if (statusEl) statusEl.textContent = "";
     if (sel) {
       sel.innerHTML = "<option value=''>Đang tải…</option>";
@@ -573,7 +575,276 @@
     } catch (e) {
       if (statusEl) statusEl.textContent = String(e);
     } finally {
-      setBusy(btn, false);
+      if (btn) setBusy(btn, false);
+    }
+  }
+
+  async function btvnLoadSystems() {
+    const token = ($("#b-rk-token") && $("#b-rk-token").value) || "";
+    const btn = $("#b-rk-load");
+    const statusEl = $("#b-session-status");
+    const selSys = $("#b-rk-system");
+    const selClass = $("#b-rk-class");
+    const selCourse = $("#b-rk-course");
+    if (!token.trim()) {
+      if (statusEl) statusEl.textContent = "Nhập token trước (hoặc đăng nhập để lấy token).";
+      return;
+    }
+    if (btn) setBusy(btn, true, "Đang tải…");
+    if (statusEl) statusEl.textContent = "";
+    if (selSys) {
+      selSys.innerHTML = "<option value=''>Đang tải…</option>";
+      selSys.disabled = true;
+    }
+    if (selClass) {
+      selClass.innerHTML = "<option value=''>Chọn hệ trước</option>";
+      selClass.disabled = true;
+    }
+    if (selCourse) {
+      selCourse.innerHTML = "<option value=''>Chọn lớp trước</option>";
+      selCourse.disabled = true;
+    }
+    try {
+      const fd = new FormData();
+      fd.set("rikkei_token", token.trim());
+      const r = await fetch("/api/rikkei/systems", { method: "POST", body: fd });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        if (statusEl) statusEl.textContent = formatApiErr(data.detail) || "Lỗi tải hệ đào tạo.";
+        return;
+      }
+      const items = (data && data.items) || [];
+      if (!Array.isArray(items) || items.length === 0) {
+        if (statusEl) statusEl.textContent = "Không có dữ liệu hệ đào tạo.";
+        return;
+      }
+      if (selSys) {
+        selSys.innerHTML = "<option value=''>-- Chọn hệ --</option>";
+        items.forEach((x) => {
+          const o = document.createElement("option");
+          o.value = String(x.id ?? "");
+          o.textContent = String((x.name || x.systemCode || x.id || "")).trim();
+          selSys.appendChild(o);
+        });
+        selSys.disabled = false;
+      }
+      if (statusEl) statusEl.textContent = `Đã tải ${items.length} hệ. Chọn 1 hệ để tải lớp.`;
+    } catch (e) {
+      if (statusEl) statusEl.textContent = String(e);
+    } finally {
+      if (btn) setBusy(btn, false);
+    }
+  }
+
+  async function btvnLoadClassesForSystem() {
+    const token = ($("#b-rk-token") && $("#b-rk-token").value) || "";
+    const sysId = ($("#b-rk-system") && $("#b-rk-system").value) || "";
+    const statusEl = $("#b-session-status");
+    const selClass = $("#b-rk-class");
+    const selCourse = $("#b-rk-course");
+    const selSession = $("#b-rk-session");
+    if (!token.trim() || !String(sysId).trim()) return;
+    if (selClass) {
+      selClass.innerHTML = "<option value=''>Đang tải…</option>";
+      selClass.disabled = true;
+    }
+    if (selCourse) {
+      selCourse.innerHTML = "<option value=''>Chọn lớp trước</option>";
+      selCourse.disabled = true;
+    }
+    if (selSession) {
+      selSession.innerHTML = "<option value=''>Chọn môn trước</option>";
+      selSession.disabled = true;
+    }
+    try {
+      const fd = new FormData();
+      fd.set("rikkei_token", token.trim());
+      fd.set("system_id", String(sysId).trim());
+      const r = await fetch("/api/rikkei/classes", { method: "POST", body: fd });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        if (statusEl) statusEl.textContent = formatApiErr(data.detail) || "Lỗi tải lớp.";
+        if (selClass) {
+          selClass.innerHTML = "<option value=''> (Lỗi tải lớp) </option>";
+          selClass.disabled = true;
+        }
+        return;
+      }
+      const items = (data && data.items) || [];
+      if (selClass) {
+        if (!Array.isArray(items) || items.length === 0) {
+          selClass.innerHTML = "<option value=''> (Không có lớp) </option>";
+          selClass.disabled = true;
+        } else {
+          selClass.innerHTML = "<option value=''>-- Chọn lớp --</option>";
+          items.forEach((x) => {
+            const o = document.createElement("option");
+            o.value = String(x.id ?? "");
+            o.textContent = String((x.name || x.classCode || x.id || "")).trim();
+            selClass.appendChild(o);
+          });
+          selClass.disabled = false;
+        }
+      }
+      if (statusEl) statusEl.textContent = `Đã tải ${items.length} lớp. Chọn lớp để tải môn.`;
+    } catch (e) {
+      if (statusEl) statusEl.textContent = String(e);
+    }
+  }
+
+  async function btvnLoadCoursesForClass() {
+    const token = ($("#b-rk-token") && $("#b-rk-token").value) || "";
+    const classId = ($("#b-rk-class") && $("#b-rk-class").value) || "";
+    const statusEl = $("#b-session-status");
+    const selCourse = $("#b-rk-course");
+    const selSession = $("#b-rk-session");
+    if (!token.trim() || !String(classId).trim()) return;
+    if (selCourse) {
+      selCourse.innerHTML = "<option value=''>Đang tải…</option>";
+      selCourse.disabled = true;
+    }
+    if (selSession) {
+      selSession.innerHTML = "<option value=''>Chọn môn trước</option>";
+      selSession.disabled = true;
+    }
+    try {
+      const fd = new FormData();
+      fd.set("rikkei_token", token.trim());
+      fd.set("class_id", String(classId).trim());
+      const r = await fetch("/api/rikkei/class-courses", { method: "POST", body: fd });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        if (statusEl) statusEl.textContent = formatApiErr(data.detail) || "Lỗi tải môn học.";
+        if (selCourse) {
+          selCourse.innerHTML = "<option value=''> (Lỗi tải môn) </option>";
+          selCourse.disabled = true;
+        }
+        return;
+      }
+      const items = (data && data.items) || [];
+      if (selCourse) {
+        if (!Array.isArray(items) || items.length === 0) {
+          selCourse.innerHTML = "<option value=''> (Không có môn) </option>";
+          selCourse.disabled = true;
+        } else {
+          selCourse.innerHTML = "<option value=''>-- Chọn môn --</option>";
+          items.forEach((x) => {
+            const o = document.createElement("option");
+            o.value = String(x.id ?? "");
+            o.textContent = String((x.name || x.courseCode || x.id || "")).trim();
+            selCourse.appendChild(o);
+          });
+          selCourse.disabled = false;
+        }
+      }
+      if (statusEl) statusEl.textContent = `Đã tải ${items.length} môn. Chọn môn để tải session.`;
+    } catch (e) {
+      if (statusEl) statusEl.textContent = String(e);
+    }
+  }
+
+  async function btvnLoadSessionsForCourse() {
+    const token = ($("#b-rk-token") && $("#b-rk-token").value) || "";
+    const courseId = ($("#b-rk-course") && $("#b-rk-course").value) || "";
+    const statusEl = $("#b-session-status");
+    const selSession = $("#b-rk-session");
+    if (!token.trim() || !String(courseId).trim()) return;
+    if (selSession) {
+      selSession.innerHTML = "<option value=''>Đang tải…</option>";
+      selSession.disabled = true;
+    }
+    try {
+      const fd = new FormData();
+      fd.set("rikkei_token", token.trim());
+      fd.set("course_id", String(courseId).trim());
+      const r = await fetch("/api/rikkei/course-sessions", { method: "POST", body: fd });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        if (statusEl) statusEl.textContent = formatApiErr(data.detail) || "Lỗi tải session.";
+        if (selSession) {
+          selSession.innerHTML = "<option value=''> (Lỗi tải session) </option>";
+          selSession.disabled = true;
+        }
+        return;
+      }
+      const items = (data && data.items) || [];
+      if (selSession) {
+        if (!Array.isArray(items) || items.length === 0) {
+          selSession.innerHTML = "<option value=''> (Không có session) </option>";
+          selSession.disabled = true;
+        } else {
+          selSession.dataset.items = JSON.stringify(items);
+          selSession.innerHTML = "<option value=''>-- Chọn session --</option>";
+          items.forEach((x) => {
+            const o = document.createElement("option");
+            o.value = String(x.id ?? "");
+            const label = `${x.position != null ? `#${x.position} ` : ""}${String((x.name || x.id || "")).trim()}`;
+            o.textContent = label;
+            selSession.appendChild(o);
+          });
+          selSession.disabled = false;
+        }
+      }
+      if (statusEl) statusEl.textContent = `Đã tải ${items.length} session. Chọn 1 session để tải homework.`;
+    } catch (e) {
+      if (statusEl) statusEl.textContent = String(e);
+    }
+  }
+
+  async function btvnLoadStudents() {
+    const token = ($("#b-rk-token") && $("#b-rk-token").value) || "";
+    const classId = ($("#b-rk-class") && $("#b-rk-class").value) || "";
+    const sessionId = ($("#b-rk-session") && $("#b-rk-session").value) || "";
+    const statusEl = $("#b-session-status");
+    const body = $("#b-students-body");
+    const btn = $("#b-load-students");
+    if (!token.trim() || !String(classId).trim() || !String(sessionId).trim()) {
+      if (statusEl) statusEl.textContent = "Chọn class và session trước khi tải học sinh.";
+      return;
+    }
+    if (body) body.innerHTML = "";
+    if (btn) setBusy(btn, true, "Đang tải…");
+    if (statusEl) statusEl.textContent = "Đang tải danh sách học sinh…";
+    try {
+      const fd = new FormData();
+      fd.set("rikkei_token", token.trim());
+      fd.set("class_id", String(classId).trim());
+      fd.set("session_id", String(sessionId).trim());
+      const r = await fetch("/api/rikkei/btvn/students", { method: "POST", body: fd });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(formatApiErr(data.detail) || "Lỗi tải học sinh.");
+      const items = (data && data.items) || [];
+      btvnCtx.students = items;
+      if (!Array.isArray(items) || items.length === 0) {
+        if (statusEl) statusEl.textContent = "Session không có học sinh.";
+        return;
+      }
+      if (body) {
+        body.innerHTML = "";
+        items.forEach((st, idx) => {
+          const id = st.id != null ? st.id : st.studentId;
+          const studentId = parseInt(String(id || ""), 10);
+          const code = String(st.studentCode || "").trim();
+          const name = String(st.fullName || "").trim();
+          const tr = document.createElement("tr");
+          const td = (html) => {
+            const c = document.createElement("td");
+            c.style.padding = "10px";
+            c.style.borderBottom = "1px solid #f3f4f6";
+            c.innerHTML = html;
+            return c;
+          };
+          tr.appendChild(td(`<input type="checkbox" class="b-stu-check" data-student-id="${studentId}" checked />`));
+          tr.appendChild(td(escapeHtml(code)));
+          tr.appendChild(td(escapeHtml(name)));
+          body.appendChild(tr);
+        });
+      }
+      if (statusEl) statusEl.textContent = `Đã tải ${items.length} học sinh.`;
+    } catch (e) {
+      if (statusEl) statusEl.textContent = String(e);
+    } finally {
+      if (btn) setBusy(btn, false);
     }
   }
 
@@ -930,7 +1201,34 @@
         alert("Chưa có đề bài. Hãy tải session và chọn bài trước.");
         return;
       }
-      const r = await fetch("/api/btvn", { method: "POST", body: fd });
+      const homeworkId = ($("#b-homework") && $("#b-homework").value) || "";
+      const classId = ($("#b-rk-class") && $("#b-rk-class").value) || "";
+      const sessionId = ($("#b-rk-session") && $("#b-rk-session").value) || "";
+      const courseId = ($("#b-rk-course") && $("#b-rk-course").value) || "";
+      if (!String(homeworkId).trim()) {
+        alert("Chưa chọn bài tập (homework).");
+        return;
+      }
+      if (!String(classId).trim() || !String(sessionId).trim() || !String(courseId).trim()) {
+        alert("Chưa chọn đầy đủ class/session/course.");
+        return;
+      }
+      const checks = Array.from(document.querySelectorAll("#b-students-body input.b-stu-check"));
+      const studentIds = checks
+        .filter((c) => c.checked)
+        .map((c) => parseInt(String(c.getAttribute("data-student-id") || ""), 10))
+        .filter((n) => Number.isFinite(n));
+      if (!studentIds.length) {
+        alert("Chưa tick học sinh cần chấm.");
+        return;
+      }
+      fd.set("homework_id", String(homeworkId).trim());
+      fd.set("class_id", String(classId).trim());
+      fd.set("session_id", String(sessionId).trim());
+      fd.set("course_id", String(courseId).trim());
+      fd.set("students_ids_json", JSON.stringify(studentIds));
+      fd.delete("submissions_text");
+      const r = await fetch("/api/btvn/rikkei", { method: "POST", body: fd });
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
         alert(formatApiErr(err.detail) || "Lỗi chấm BTVN");
@@ -946,6 +1244,8 @@
       if (resBody && Array.isArray(rows)) {
         rows.forEach((x) => {
           const tr = document.createElement("tr");
+          const studentCode = (x.studentCode || x.student_code || "").trim();
+          const fullName = (x.fullName || x.full_name || "").trim();
           const repo = (x.repo || x.submission || "").trim();
           const repoErr = (x.repo_error || "").trim();
           const cmt = (x.comment || "").trim();
@@ -958,6 +1258,8 @@
             el.textContent = t;
             return el;
           };
+          tr.appendChild(td(studentCode));
+          tr.appendChild(td(fullName));
           tr.appendChild(td(repo));
           tr.appendChild(td(repoErr));
           tr.appendChild(td(cmt));
@@ -1089,8 +1391,18 @@
     if (fg) fg.addEventListener("submit", postGroup);
     const fb = $("#form-btvn");
     if (fb) fb.addEventListener("submit", postBtvn);
-    const bLoad = $("#b-load-session");
-    if (bLoad) bLoad.addEventListener("click", btvnLoadSession);
+    const bLoad = $("#b-rk-load");
+    if (bLoad) bLoad.addEventListener("click", btvnLoadSystems);
+    const bSys = $("#b-rk-system");
+    if (bSys) bSys.addEventListener("change", btvnLoadClassesForSystem);
+    const bClass = $("#b-rk-class");
+    if (bClass) bClass.addEventListener("change", btvnLoadCoursesForClass);
+    const bCourse = $("#b-rk-course");
+    if (bCourse) bCourse.addEventListener("change", btvnLoadSessionsForCourse);
+    const bSess = $("#b-rk-session");
+    if (bSess) bSess.addEventListener("change", btvnLoadSession);
+    const bLoadStudentsBtn = $("#b-load-students");
+    if (bLoadStudentsBtn) bLoadStudentsBtn.addEventListener("click", btvnLoadStudents);
     const bLogin = $("#b-rk-login");
     if (bLogin) bLogin.addEventListener("click", btvnLogin);
     const gLogin = $("#g-rk-login");
