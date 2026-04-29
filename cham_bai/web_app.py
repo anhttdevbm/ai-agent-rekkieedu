@@ -1096,10 +1096,9 @@ async def api_github_exam_code(repo_url: str = Form(...)) -> JSONResponse:
     owner = m.group(1).strip()
     repo = m.group(2).strip().replace(".git", "")
 
-    # 1) thử parse trực tiếp từ tên repo
-    n = _extract_exam_code_from_text(repo)
-    if n:
-        return JSONResponse({"ok": True, "code": n, "source": "repo_name"})
+    # 1) lưu mã suy đoán từ tên repo, nhưng KHÔNG trả ngay:
+    # ưu tiên mã thật lấy từ tên file/folder trong repo (ổn định hơn với hậu tố kiểu 15h28).
+    repo_guess = _extract_exam_code_from_text(repo)
 
     gh_url = f"https://api.github.com/repos/{owner}/{repo}/contents"
     headers = {"User-Agent": "AgentEdu/1.0", "Accept": "application/vnd.github+json"}
@@ -1122,7 +1121,8 @@ async def api_github_exam_code(repo_url: str = Form(...)) -> JSONResponse:
             n2 = _extract_exam_code_from_text(name)
             if n2:
                 return JSONResponse({"ok": True, "code": n2, "source": "root_item_name"})
-
+        if repo_guess:
+            return JSONResponse({"ok": True, "code": repo_guess, "source": "repo_name_guess"})
         return JSONResponse({"ok": True, "code": None, "source": "none"})
     except HTTPException:
         raise

@@ -1251,12 +1251,14 @@
       .replace(/\bbài\s*tập\s*đầu\s*giờ\b/giu, "Bài thi");
   }
 
-  async function hgResolveExamCodeFromGithub(gitUrl) {
+  async function hgResolveExamCodeFromGithub(gitUrl, docsMap) {
     const k = String(gitUrl || "").trim();
     if (!k) return null;
     if (hgRepoCodeCache.has(k)) return hgRepoCodeCache.get(k);
     let out = extractExamCodeFromRepoLink(k);
-    if (out != null) {
+    const keyFromUrl = out == null ? "" : String(out).padStart(2, "0");
+    const hasDocForUrlCode = !!(docsMap && keyFromUrl && docsMap[keyFromUrl]);
+    if (out != null && hasDocForUrlCode) {
       hgRepoCodeCache.set(k, out);
       return out;
     }
@@ -1450,7 +1452,7 @@
       if (includeGraded && Number(x.point) === 0) continue; // không đè các bài đã 0 điểm
       const gitRaw = String(x.link || "").trim();
       const git = normalizeGithubRepo(gitRaw);
-      const code = gitRaw ? await hgResolveExamCodeFromGithub(gitRaw) : null;
+      const code = gitRaw ? await hgResolveExamCodeFromGithub(gitRaw, docs) : null;
       const key = code == null ? "" : String(code).padStart(2, "0");
       const docUrl = key && docs[key] ? docs[key] : "";
       const isMissing = !gitRaw;
