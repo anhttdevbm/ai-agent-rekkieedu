@@ -25,12 +25,17 @@ services:
     # Expose only to localhost; host Nginx will proxy to this.
     ports:
       - "127.0.0.1:${AGENT_EDU_WEB_PUBLISH_LOCAL:-8765}:8765"
+    volumes:
+      # Google Sheets Service Account (DO NOT commit the json key)
+      - ./secrets/google-service-account.json:/run/secrets/google-service-account.json:ro
     environment:
       # Bắt buộc khi chạy thật — đặt trong .env (không commit)
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?missing_OPENROUTER_API_KEY_in_env}
       OPENROUTER_MODEL: ${OPENROUTER_MODEL:-anthropic/claude-sonnet-4.6}
       OPENROUTER_HTTP_REFERER: ${OPENROUTER_HTTP_REFERER:-https://rikkei.rugal.vn}
       OPENROUTER_APP_TITLE: ${OPENROUTER_APP_TITLE:-Agent Edu}
+      # Google Sheets: service account json mounted via volumes above
+      GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/google-service-account.json
     command:
       - uvicorn
       - cham_bai.web_app:app

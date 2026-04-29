@@ -1271,6 +1271,7 @@
       const classId = ($("#b-rk-class") && $("#b-rk-class").value) || "";
       const sessionId = ($("#b-rk-session") && $("#b-rk-session").value) || "";
       const courseId = ($("#b-rk-course") && $("#b-rk-course").value) || "";
+      const sheetUrl = ($("#b-sheet-url") && $("#b-sheet-url").value) || "";
       if (!String(classId).trim() || !String(sessionId).trim() || !String(courseId).trim()) {
         alert("Chưa chọn đầy đủ class/session/course.");
         return;
@@ -1287,6 +1288,15 @@
       fd.set("session_id", String(sessionId).trim());
       fd.set("course_id", String(courseId).trim());
       fd.set("students_ids_json", JSON.stringify(studentIds));
+      if (String(sheetUrl).trim()) fd.set("sheet_url", String(sheetUrl).trim());
+      // session_no: dùng position (#8) để map vào cột "SESSION 08" trên sheet
+      try {
+        const sel = $("#b-rk-session");
+        const items = sel && sel.dataset && sel.dataset.items ? JSON.parse(sel.dataset.items || "[]") : [];
+        const it = Array.isArray(items) ? items.find((x) => String(x.id) === String(sessionId)) : null;
+        const pos = it && it.position != null ? parseInt(String(it.position), 10) : null;
+        if (Number.isFinite(pos) && pos > 0) fd.set("session_no", String(pos));
+      } catch {}
       fd.delete("assignment_text");
       fd.delete("assignment_image_urls");
       fd.delete("homework_id");
@@ -1327,7 +1337,14 @@
       const msg = su && su.ok
         ? `Session update: ${su.ok_count || 0} cập nhật, ${su.fail_count || 0} lỗi, ${ignoredCount} bị bỏ qua${ratioInfo}`
         : `Session update: thất bại${ratioInfo ? ratioInfo : ""}.`;
-      $("#b-status").textContent = msg + "\nXong.";
+      let sheetMsg = "";
+      if (data && data.sheet_update) {
+        const sh = data.sheet_update;
+        sheetMsg = sh.ok
+          ? `Sheet update: ${sh.updated || 0} dòng, thiếu: ${(sh.missing && sh.missing.length) || 0}`
+          : `Sheet update: lỗi (${(sh.error || "").toString()})`;
+      }
+      $("#b-status").textContent = msg + (sheetMsg ? "\n" + sheetMsg : "") + "\nXong.";
     } catch (e) {
       alert(String(e));
     } finally {

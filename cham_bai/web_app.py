@@ -61,6 +61,11 @@ from cham_bai.rikkei_homework import (
     _homework_id as _btvn_homework_id,
 )
 from cham_bai.rikkei_homework import mark_btvn_session_status_from_exercise_scores as _mark_btvn_session
+from cham_bai.google_sheets import (
+    extract_spreadsheet_id as _gs_extract_spreadsheet_id,
+    detect_session_columns as _gs_detect_session_columns,
+    update_session_cells as _gs_update_session_cells,
+)
 from cham_bai.group_activity import GroupGradeParams, grade_group_activity
 from cham_bai.hackathon_exam import (
     HackathonExamParams,
@@ -1863,6 +1868,9 @@ async def api_btvn_rikkei_session_status(
     session_id: str = Form(...),
     course_id: str = Form(...),
     students_ids_json: str = Form("[]"),
+    sheet_url: str = Form(""),
+    sheet_name: str = Form(""),
+    session_no: str = Form(""),
 ) -> JSONResponse:
     """
     Chỉ chốt trạng thái session trên Rikkei (HOÀN THÀNH/CHƯA HOÀN THÀNH),
@@ -1900,7 +1908,71 @@ async def api_btvn_rikkei_session_status(
         session_id=sid,
         student_ids=s_id_ints or None,
     )
-    return JSONResponse({"ok": True, "session_update": session_update})
+
+    sheet_update = None
+    su = session_update if isinstance(session_update, dict) else {}
+    try:
+        sheet_url_s = (sheet_url or "").strip()
+        if sheet_url_s:
+            ssid = _gs_extract_spreadsheet_id(sheet_url_s)
+            if not ssid:
+                raise RuntimeError("Không trích được spreadsheetId từ link Google Sheets.")
+            sess_no_raw = (session_no or "").strip()
+            try:
+                sess_no = int(sess_no_raw) if sess_no_raw else None
+            except Exception:
+                sess_no = None
+            if not sess_no or sess_no <= 0:
+                raise RuntimeError("Thiếu session_no (ví dụ 8 để map vào cột 'SESSION 08').")
+            cols = _gs_detect_session_columns(
+                spreadsheet_id=ssid,
+                session_no=sess_no,
+                sheet_name=(sheet_name or "").strip() or None,
+                header_rows=3,
+            )
+            # Build rows to update from session_update.updated
+            upd = su.get("updated") if isinstance(su.get("updated"), list) else []
+            sheet_rows = []
+            # Need student names: reuse students list from Rikkei to map id->name
+            students = _btvn_fetch_students(tok, cid, sid)
+            id2name = {}
+            for st in students:
+                try:
+                    i = int(st.get("id"))
+                except Exception:
+                    continue
+                nm = str(st.get("fullName") or st.get("full_name") or "").strip()
+                if nm:
+                    id2name[i] = nm
+            total = su.get("total") if isinstance(su.get("total"), int) else 0
+            for it in upd:
+                if not isinstance(it, dict):
+                    continue
+                stid = it.get("studentId")
+                try:
+                    stid_int = int(stid)
+                except Exception:
+                    continue
+                nm = id2name.get(stid_int, "")
+                ce = it.get("completedExercises")
+                try:
+                    ce_int = int(ce)
+                except Exception:
+                    ce_int = None
+                so_bt_text = f"{ce_int}/{total}" if (ce_int is not None and total) else ""
+                nx = str(it.get("randomComment") or "").strip()
+                # If comment has "[Điểm số - ...]" keep it; sheet is for report so ok.
+                sheet_rows.append({"fullName": nm, "so_bt_text": so_bt_text, "nhan_xet": nx})
+
+            sheet_update = _gs_update_session_cells(
+                spreadsheet_id=ssid,
+                cols=cols,
+                rows=sheet_rows,
+            )
+    except Exception as e:
+        sheet_update = {"ok": False, "error": str(e)[:300]}
+
+    return JSONResponse({"ok": True, "session_update": session_update, "sheet_update": sheet_update})
 
 
 @app.post("/api/group-activity")

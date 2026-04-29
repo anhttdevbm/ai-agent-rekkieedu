@@ -9,6 +9,7 @@ import os
 import re
 import math
 import unicodedata
+import random
 import tempfile
 import time
 from dataclasses import dataclass
@@ -223,6 +224,7 @@ def mark_btvn_session_status_from_exercise_scores(
             continue
 
         achieved = 0
+        comments_pool: list[str] = []
         try:
             exercises = fetch_all_exercises_for_student(
                 token,
@@ -236,6 +238,9 @@ def mark_btvn_session_status_from_exercise_scores(
                 if not isinstance(ex, dict):
                     continue
                 sc = _score_from_comment(ex.get("comment"))
+                cmt = ex.get("comment")
+                if isinstance(cmt, str) and cmt.strip():
+                    comments_pool.append(cmt.strip())
                 if sc is not None and sc > score_threshold:
                     achieved += 1
         except Exception:
@@ -244,6 +249,7 @@ def mark_btvn_session_status_from_exercise_scores(
             continue
 
         new_status = "HOÀN THÀNH" if achieved >= ratio_ok_count else "CHƯA HOÀN THÀNH"
+        rand_comment = random.choice(comments_pool) if comments_pool else ""
         try:
             session_student_update(
                 token,
@@ -261,6 +267,7 @@ def mark_btvn_session_status_from_exercise_scores(
                     "newStatus": new_status,
                     "completedExercises": achieved,
                     "achieved": achieved,
+                    "randomComment": rand_comment,
                     "total": total,
                 }
             )
@@ -273,6 +280,7 @@ def mark_btvn_session_status_from_exercise_scores(
                     "newStatus": new_status,
                     "completedExercises": achieved,
                     "achieved": achieved,
+                    "randomComment": rand_comment,
                     "error": str(e)[:200],
                 }
             )
