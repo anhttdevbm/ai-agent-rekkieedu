@@ -1230,9 +1230,17 @@
     return s
       .split(/\s+/)
       .join(" ")
+      .replace(/mini\s*project\s*\(chỉ\s*có\/không\)\s*:\s*[^\n.?!]*[.?!]?/giu, "")
+      .replace(/\bbài\s*tập\s*đầu\s*giờ\b/giu, "Bài thi")
       .replace(/(^|[.?!]\s+)([^.?!]*\bbáo\s*cáo\b[^.?!]*[.?!]?)/giu, "$1")
       .replace(/\s{2,}/g, " ")
       .trim();
+  }
+
+  function hgSanitizeHackathonLog(raw) {
+    return String(raw || "")
+      .replace(/^.*mini\s*project\s*\(chỉ\s*có\/không\)\s*:.*$/gimu, "")
+      .replace(/\bbài\s*tập\s*đầu\s*giờ\b/giu, "Bài thi");
   }
 
   async function hgLoadSchedules() {
@@ -1475,7 +1483,7 @@
         const i = next++;
         if (i >= tasks.length) break;
         const res = await tasks[i]();
-        if (logEl) logEl.textContent = (logEl.textContent || "") + "\n" + (res.data.log || "");
+        if (logEl) logEl.textContent = (logEl.textContent || "") + "\n" + hgSanitizeHackathonLog(res.data.log || "");
         // Build export rows (align by submissions order)
         const rr = (res.data && res.data.results) || [];
         const arr = res.arr || [];
