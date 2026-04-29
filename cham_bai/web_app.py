@@ -1812,6 +1812,53 @@ async def api_btvn_rikkei(
     )
 
 
+@app.post("/api/btvn/rikkei/session-status")
+async def api_btvn_rikkei_session_status(
+    rikkei_token: str = Form(...),
+    class_id: str = Form(...),
+    session_id: str = Form(...),
+    course_id: str = Form(...),
+    students_ids_json: str = Form("[]"),
+) -> JSONResponse:
+    """
+    Chỉ chốt trạng thái session trên Rikkei (HOÀN THÀNH/CHƯA HOÀN THÀNH),
+    dựa trên điểm có sẵn trong `GET /exercise`.
+    Không gọi OpenRouter/LLM.
+    """
+    tok = (rikkei_token or "").strip()
+    if not tok:
+        raise HTTPException(status_code=400, detail="Thiếu token Rikkei.")
+    cid = (class_id or "").strip()
+    sid = (session_id or "").strip()
+    crid = (course_id or "").strip()
+    if not cid or not sid or not crid:
+        raise HTTPException(status_code=400, detail="Thiếu class_id/session_id/course_id.")
+
+    try:
+        s_ids = json.loads(students_ids_json or "[]")
+    except Exception:
+        s_ids = []
+    if not isinstance(s_ids, list):
+        s_ids = []
+
+    s_id_ints: list[int] = []
+    for x in s_ids:
+        try:
+            s_id_ints.append(int(x))
+        except Exception:
+            continue
+
+    # Chỉ cập nhật cho các bạn đang ở trạng thái "ĐANG CHỜ KIỂM TRA".
+    session_update = _mark_btvn_session(
+        tok,
+        class_id=cid,
+        course_id=crid,
+        session_id=sid,
+        student_ids=s_id_ints or None,
+    )
+    return JSONResponse({"ok": True, "session_update": session_update})
+
+
 @app.post("/api/group-activity")
 async def api_group_activity(
     video_transcript: str = Form(...),

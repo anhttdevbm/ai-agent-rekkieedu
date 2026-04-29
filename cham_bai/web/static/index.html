@@ -571,12 +571,12 @@
         </form>
       </section>
 
-      <!-- Chấm BTVN (nhận xét repo) -->
+      <!-- Chấm BTVN (chốt trạng thái) -->
       <section class="panel" id="panel-btvn">
-        <h2>Chấm BTVN (nhận xét)</h2>
+        <h2>Chấm BTVN (chốt trạng thái)</h2>
         <p class="hint">
           Nhập <strong>Token Rikkei</strong> → tải <strong>Hệ → Lớp → Môn → Session</strong>. Chọn homework để xem đề (text + ảnh).
-          Sau đó tải <strong>Danh sách học sinh</strong>, tick các bạn cần chấm để hệ thống đọc repo đã nộp trên Rikkei và tạo <strong>nhận xét</strong> (không chấm điểm).
+          Sau đó tải <strong>Danh sách học sinh</strong> (theo class/session), bấm nút để <strong>chốt trạng thái HOÀN THÀNH/CHƯA HOÀN THÀNH</strong> lên Rikkei dựa trên điểm có sẵn trong từng exercise.
         </p>
         <form id="form-btvn">
           <details class="hint" style="margin: 0 0 0.5rem 0">
@@ -652,6 +652,7 @@
                   <tr>
                     <th style="text-align:left; padding:10px; border-bottom:1px solid #e5e7eb">Mã SV</th>
                     <th style="text-align:left; padding:10px; border-bottom:1px solid #e5e7eb">Họ tên</th>
+                    <th style="text-align:left; padding:10px; border-bottom:1px solid #e5e7eb">Trạng thái</th>
                     <th style="text-align:left; padding:10px; border-bottom:1px solid #e5e7eb">Xem bài</th>
                   </tr>
                 </thead>
@@ -664,7 +665,7 @@
             <select id="b-model" name="model"></select>
           </div>
           <div class="actions">
-            <button type="submit" class="primary" id="b-submit">Chạy nhận xét</button>
+            <button type="submit" class="primary" id="b-submit">Chốt trạng thái</button>
           </div>
           <p class="status" id="b-status"></p>
         </form>
@@ -719,6 +720,6 @@
 
       <footer>Chạy local · OpenRouter · không lưu dữ liệu trên server sau khi tải file</footer>
     </div>
-    <script src="/static/app.js?v=20260429_30"></script>
+    <script src="/static/app.js?v=20260429_32"></script>
   </body>
 </html>

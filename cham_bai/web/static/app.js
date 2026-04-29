@@ -808,6 +808,7 @@
           const code = String(st.studentCode || "").trim();
           const name = String(st.fullName || "").trim();
           const tr = document.createElement("tr");
+            tr.dataset.studentId = String(studentId);
           const td = (html) => {
             const c = document.createElement("td");
             c.style.padding = "10px";
@@ -817,6 +818,10 @@
           };
           tr.appendChild(td(escapeHtml(code)));
           tr.appendChild(td(escapeHtml(name)));
+            const initStatus =
+              (st.status || st.homeworkStatus || st.sessionStatus || (st.sessionStudent && st.sessionStudent[0] && st.sessionStudent[0].status)) ||
+              "";
+            tr.appendChild(td(`<span class="b-stu-status">${escapeHtml(initStatus || "—")}</span>`));
           tr.appendChild(
             td(
               `<button type="button" class="smalllink b-stu-view" data-student-id="${studentId}" title="Xem nội dung bài nộp">Xem</button>`
@@ -1232,7 +1237,7 @@
   async function postBtvn(ev) {
     ev.preventDefault();
     const btn = $("#b-submit");
-    setBusy(btn, true, "Đang xử lý BTVN…");
+    setBusy(btn, true, "Đang chốt trạng thái session…");
     $("#b-status").textContent = "";
     const resWrap = $("#b-results");
     const resBody = $("#b-results-body");
@@ -1240,20 +1245,9 @@
     if (resBody) resBody.innerHTML = "";
     try {
       const fd = new FormData(ev.target);
-      const text = (fd.get("assignment_text") || "").toString().trim();
-      const urls = (fd.get("assignment_image_urls") || "").toString().trim();
-      if (!text) {
-        alert("Chưa có đề bài. Hãy tải session và chọn bài trước.");
-        return;
-      }
-      const homeworkId = ($("#b-homework-id") && $("#b-homework-id").value) || "";
       const classId = ($("#b-rk-class") && $("#b-rk-class").value) || "";
       const sessionId = ($("#b-rk-session") && $("#b-rk-session").value) || "";
       const courseId = ($("#b-rk-course") && $("#b-rk-course").value) || "";
-      if (!String(homeworkId).trim()) {
-        alert("Chưa tải đề (homework) từ session.");
-        return;
-      }
       if (!String(classId).trim() || !String(sessionId).trim() || !String(courseId).trim()) {
         alert("Chưa chọn đầy đủ class/session/course.");
         return;
@@ -1266,72 +1260,50 @@
         alert("Chưa có danh sách học sinh. Hãy chọn session trước.");
         return;
       }
-      fd.set("homework_id", String(homeworkId).trim());
       fd.set("class_id", String(classId).trim());
       fd.set("session_id", String(sessionId).trim());
       fd.set("course_id", String(courseId).trim());
       fd.set("students_ids_json", JSON.stringify(studentIds));
-      fd.delete("submissions_text");
-      const r = await fetch("/api/btvn/rikkei", { method: "POST", body: fd });
+      fd.delete("assignment_text");
+      fd.delete("assignment_image_urls");
+      fd.delete("homework_id");
+      fd.delete("model");
+      const r = await fetch("/api/btvn/rikkei/session-status", { method: "POST", body: fd });
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
         alert(formatApiErr(err.detail) || "Lỗi chấm BTVN");
         return;
       }
       const data = await r.json().catch(() => ({}));
-      const rows = (data && data.rows) || [];
-      if (data && data.assignment_fingerprint) {
-        const af = data.assignment_fingerprint;
-        const note = `Đề bài đang dùng: ${af.chars || 0} ký tự, sha1=${af.sha1_10 || ""}\n${(af.head || "").trim()}`;
-        setLog("#b-status", note, false);
-      }
-      if (data && data.session_update) {
-        const su = data.session_update;
-        const ratioInfo =
-          typeof su.ratio_ok_count !== "undefined" && typeof su.total !== "undefined"
-            ? ` (đạt >= ${su.ratio_ok_count}/${su.total} bài; điểm > 50)`
-            : "";
-        const msg = su.ok
-          ? `Session update: ${su.ok_count || 0} cập nhật, ${su.fail_count || 0} lỗi${ratioInfo}`
-          : `Session update: thất bại${ratioInfo ? ratioInfo : ""} (bỏ qua).`;
-        // Merge log with previous assignment fingerprint if it exists.
-        setLog("#b-status", ((typeof $("#b-status").textContent === "string" && $("#b-status").textContent) || "") + (su ? "\n" : "") + msg, !!su?.fail_count);
-      }
-      if (resBody && Array.isArray(rows)) {
-        rows.forEach((x) => {
-          const tr = document.createElement("tr");
-          const studentCode = (x.studentCode || x.student_code || "").trim();
-          const fullName = (x.fullName || x.full_name || "").trim();
-          const repo = (x.repo || x.submission || "").trim();
-          const repoErr = (x.repo_error || "").trim();
-          const cmt = (x.comment || "").trim();
-          const aiSus = (x.ai_suspected || "").trim();
-          const aiErr = (x.ai_error || "").trim();
-          const td = (t) => {
-            const el = document.createElement("td");
-            el.style.padding = "10px";
-            el.style.borderBottom = "1px solid #f3f4f6";
-            el.textContent = t;
-            return el;
-          };
-          tr.appendChild(td(studentCode));
-          tr.appendChild(td(fullName));
-          tr.appendChild(td(repo));
-          tr.appendChild(td(repoErr));
-          tr.appendChild(td(cmt));
-          tr.appendChild(td(aiSus));
-          tr.appendChild(td(aiErr));
-          resBody.appendChild(tr);
-          
+      const su = data && data.session_update ? data.session_update : data && data.session_update;
+
+      // Update status column in table (best-effort).
+      const map = new Map();
+      if (su && Array.isArray(su.updated)) {
+        su.updated.forEach((u) => {
+          if (!u) return;
+          if (u.studentId == null) return;
+          if (u.ok) map.set(String(u.studentId), u.newStatus || "");
+          else map.set(String(u.studentId), "LỖI");
         });
-        if (resWrap) resWrap.style.display = "";
       }
-      const cur = $("#b-status") ? $("#b-status").textContent : "";
-      if (cur && String(cur).trim()) {
-        $("#b-status").textContent = cur.trim() + "\nXong.";
-      } else {
-        $("#b-status").textContent = "Xong.";
-      }
+      const rows = $("#b-students-body") ? $("#b-students-body").querySelectorAll("tr") : [];
+      rows.forEach((tr) => {
+        const sid = tr && tr.dataset ? tr.dataset.studentId : "";
+        if (!sid) return;
+        const st = map.get(sid);
+        const el = tr.querySelector(".b-stu-status");
+        if (el && typeof st === "string" && st) el.textContent = st;
+      });
+
+      const ratioInfo =
+        su && typeof su.ratio_ok_count !== "undefined" && typeof su.total !== "undefined"
+          ? ` (đạt >= ${su.ratio_ok_count}/${su.total}; điểm > 50)`
+          : "";
+      const msg = su && su.ok
+        ? `Session update: ${su.ok_count || 0} cập nhật, ${su.fail_count || 0} lỗi${ratioInfo}`
+        : `Session update: thất bại${ratioInfo ? ratioInfo : ""}.`;
+      $("#b-status").textContent = msg + "\nXong.";
     } catch (e) {
       alert(String(e));
     } finally {
