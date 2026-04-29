@@ -831,8 +831,13 @@ async def api_rikkei_login(
                 ),
                 "Accept": "application/json, text/plain, */*",
             }
-            basic = base64.b64encode(f"{em}:{pw}".encode("utf-8")).decode("ascii")
-            headers_basic = {**headers, "Authorization": f"Basic {basic}"}
+            # Some deployments require a fixed BasicAuth (client credential), not the user's email/password.
+            basic_user = (os.getenv("RIKKEI_BASIC_USER") or "").strip()
+            basic_pass = (os.getenv("RIKKEI_BASIC_PASS") or "").strip()
+            headers_basic = dict(headers)
+            if basic_user and basic_pass:
+                basic = base64.b64encode(f"{basic_user}:{basic_pass}".encode("utf-8")).decode("ascii")
+                headers_basic["Authorization"] = f"Basic {basic}"
 
             # Attempt 1 (like n8n): x-www-form-urlencoded body
             r = await client.post(url, data={"email": em, "password": pw}, headers=headers_basic)
@@ -843,9 +848,13 @@ async def api_rikkei_login(
                 if loc:
                     r = await client.post(loc, data={"email": em, "password": pw}, headers=headers_basic)
 
-            # Attempt 2: sometimes only Basic header is checked
-            if r.status_code >= 400:
-                r = await client.post(url, headers=headers_basic)
+            # Attempt 2: if BasicAuth is configured but failed, retry WITHOUT BasicAuth (some portals reject bad basic)
+            if r.status_code in (401, 403) and ("Authorization" in headers_basic):
+                r = await client.post(url, data={"email": em, "password": pw}, headers=headers)
+                if r.status_code in (301, 302, 303, 307, 308):
+                    loc = r.headers.get("Location") or r.headers.get("location") or ""
+                    if loc:
+                        r = await client.post(loc, data={"email": em, "password": pw}, headers=headers)
 
             # Attempt 3: JSON body (fallback)
             if r.status_code >= 400:
@@ -863,6 +872,7 @@ async def api_rikkei_login(
                     "portal": detail,
                     "status": r.status_code,
                     "location": r.headers.get("Location") or r.headers.get("location") or "",
+                    "basic_auth_configured": bool((os.getenv("RIKKEI_BASIC_USER") or "").strip()),
                 },
             )
         r.raise_for_status()
