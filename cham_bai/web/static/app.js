@@ -521,20 +521,13 @@
     const token = ($("#b-rk-token") && $("#b-rk-token").value) || "";
     const sid = ($("#b-rk-session") && $("#b-rk-session").value) || "";
     const statusEl = $("#b-session-status");
-    const sel = $("#b-homework");
-    const preview = $("#b-preview");
-    const btn = $("#b-rk-session") || null;
+    const hwStatusEl = $("#b-homework-status");
     if (!token.trim() || !String(sid).trim()) {
       if (statusEl) statusEl.textContent = "Nhập token và session id trước.";
       return;
     }
-    if (btn) setBusy(btn, true, "Đang tải…");
     if (statusEl) statusEl.textContent = "";
-    if (sel) {
-      sel.innerHTML = "<option value=''>Đang tải…</option>";
-      sel.disabled = true;
-    }
-    if (preview) preview.textContent = "(Đang tải đề...)";
+    if (hwStatusEl) hwStatusEl.textContent = "Đang tải đề...";
     try {
       const fd = new FormData();
       fd.set("session_id", String(sid).trim());
@@ -543,39 +536,28 @@
       const data = await r.json().catch(() => ({}));
       if (!r.ok) {
         if (statusEl) statusEl.textContent = formatApiErr(data.detail) || "Lỗi tải session.";
-        if (sel) {
-          sel.innerHTML = "<option value=''> (Lỗi tải session) </option>";
-          sel.disabled = true;
-        }
-        if (preview) preview.textContent = "(Không tải được đề.)";
         return;
       }
       const hw = (data && data.homework) || [];
       if (!Array.isArray(hw) || hw.length === 0) {
-        if (statusEl) statusEl.textContent = "Session không có bài tập (homework) hoặc API trả rỗng.";
-        if (sel) {
-          sel.innerHTML = "<option value=''> (Không có bài) </option>";
-          sel.disabled = true;
-        }
-        if (preview) preview.textContent = "(Không có đề.)";
+        if (statusEl) statusEl.textContent = "Session không có homework hoặc API trả rỗng.";
+        if (hwStatusEl) hwStatusEl.textContent = "(Không có đề.)";
         return;
       }
-      // store dataset on select
-      sel.dataset.items = JSON.stringify(hw);
-      sel.innerHTML = "<option value=''>-- Chọn bài --</option>";
-      hw.forEach((x) => {
-        const o = document.createElement("option");
-        o.value = String(x.id || "");
-        o.textContent = String(x.title || x.id || "");
-        sel.appendChild(o);
-      });
-      sel.disabled = false;
-      if (statusEl) statusEl.textContent = `Đã tải: ${data.name || "session"} (${hw.length} bài).`;
-      if (preview) preview.textContent = "(Chọn một bài để xem đề.)";
+      const picked = hw[0];
+      const hid = $("#b-homework-id");
+      const aText = $("#b-assignment-text");
+      const aImgs = $("#b-assignment-image-urls");
+      if (hid) hid.value = String(picked.id || "");
+      if (aText) aText.value = String(picked.plain_text || "").trim();
+      if (aImgs) aImgs.value = JSON.stringify(picked.image_urls || []);
+      if (statusEl) statusEl.textContent = `Đã chọn homework: ${picked.title || picked.id || ""}`;
+      if (hwStatusEl) hwStatusEl.textContent = `Đã tải đề (${picked.title || picked.id || ""}).`;
+
+      // Auto load students ngay khi chọn session
+      await btvnLoadStudents();
     } catch (e) {
       if (statusEl) statusEl.textContent = String(e);
-    } finally {
-      if (btn) setBusy(btn, false);
     }
   }
 
@@ -803,7 +785,6 @@
       return;
     }
     if (body) body.innerHTML = "";
-    if (btn) setBusy(btn, true, "Đang tải…");
     if (statusEl) statusEl.textContent = "Đang tải danh sách học sinh…";
     try {
       const fd = new FormData();
@@ -834,7 +815,6 @@
             c.innerHTML = html;
             return c;
           };
-          tr.appendChild(td(`<input type="checkbox" class="b-stu-check" data-student-id="${studentId}" checked />`));
           tr.appendChild(td(escapeHtml(code)));
           tr.appendChild(td(escapeHtml(name)));
           body.appendChild(tr);
@@ -843,9 +823,7 @@
       if (statusEl) statusEl.textContent = `Đã tải ${items.length} học sinh.`;
     } catch (e) {
       if (statusEl) statusEl.textContent = String(e);
-    } finally {
-      if (btn) setBusy(btn, false);
-    }
+    } finally {}
   }
 
   async function btvnLogin() {
@@ -1201,25 +1179,24 @@
         alert("Chưa có đề bài. Hãy tải session và chọn bài trước.");
         return;
       }
-      const homeworkId = ($("#b-homework") && $("#b-homework").value) || "";
+      const homeworkId = ($("#b-homework-id") && $("#b-homework-id").value) || "";
       const classId = ($("#b-rk-class") && $("#b-rk-class").value) || "";
       const sessionId = ($("#b-rk-session") && $("#b-rk-session").value) || "";
       const courseId = ($("#b-rk-course") && $("#b-rk-course").value) || "";
       if (!String(homeworkId).trim()) {
-        alert("Chưa chọn bài tập (homework).");
+        alert("Chưa tải đề (homework) từ session.");
         return;
       }
       if (!String(classId).trim() || !String(sessionId).trim() || !String(courseId).trim()) {
         alert("Chưa chọn đầy đủ class/session/course.");
         return;
       }
-      const checks = Array.from(document.querySelectorAll("#b-students-body input.b-stu-check"));
-      const studentIds = checks
-        .filter((c) => c.checked)
-        .map((c) => parseInt(String(c.getAttribute("data-student-id") || ""), 10))
+      const students = (btvnCtx && btvnCtx.students) || [];
+      const studentIds = students
+        .map((st) => parseInt(String(st.id != null ? st.id : st.studentId || ""), 10))
         .filter((n) => Number.isFinite(n));
       if (!studentIds.length) {
-        alert("Chưa tick học sinh cần chấm.");
+        alert("Chưa có danh sách học sinh. Hãy chọn session trước.");
         return;
       }
       fd.set("homework_id", String(homeworkId).trim());

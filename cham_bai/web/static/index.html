@@ -637,38 +637,19 @@
               <option value="">(Chưa chọn môn)</option>
             </select>
           </div>
-          <div class="row2">
-            <div class="field" style="margin:0">
-              <label for="b-load-students" style="display:block;margin-bottom:.2rem">Danh sách học sinh (theo class/session)</label>
-              <button type="button" class="primary" id="b-load-students">Tải danh sách học sinh</button>
-            </div>
-          </div>
-          <div class="field">
-            <label for="b-homework">Chọn bài tập để chấm</label>
-            <select id="b-homework" disabled>
-              <option value="">(Chưa tải danh sách)</option>
-            </select>
-          </div>
-          <div class="field">
-            <label>Preview đề bài</label>
-            <div class="btvn-preview" id="b-preview">(Chọn một bài để xem đề.)</div>
-          </div>
+          <p class="status" id="b-homework-status" style="margin:.35rem 0 0"></p>
 
           <!-- hidden fields gửi sang /api/btvn -->
           <input type="hidden" id="b-assignment-text" name="assignment_text" />
           <input type="hidden" id="b-assignment-image-urls" name="assignment_image_urls" />
+          <input type="hidden" id="b-homework-id" name="homework_id" />
 
           <div class="field">
-            <label for="b-gh-token">GitHub Token (tuỳ chọn — dùng cho repo private / tránh 401)</label>
-            <input type="password" id="b-gh-token" name="github_token" autocomplete="off" placeholder="ghp_... hoặc fine-grained token" />
-          </div>
-          <div class="field">
-            <label>Danh sách học sinh (chấm theo bài tập đã chọn)</label>
+            <label>Danh sách học sinh (theo class/session)</label>
             <div style="overflow:auto; max-height: 40vh; border: 1px solid #e5e7eb; border-radius: 12px; margin-top:.25rem">
               <table class="tbl" style="width: 100%; border-collapse: collapse">
                 <thead>
                   <tr>
-                    <th style="text-align:left; padding:10px; border-bottom:1px solid #e5e7eb">Chọn</th>
                     <th style="text-align:left; padding:10px; border-bottom:1px solid #e5e7eb">Mã SV</th>
                     <th style="text-align:left; padding:10px; border-bottom:1px solid #e5e7eb">Họ tên</th>
                   </tr>
@@ -737,6 +718,6 @@
 
       <footer>Chạy local · OpenRouter · không lưu dữ liệu trên server sau khi tải file</footer>
     </div>
-    <script src="/static/app.js?v=20260429_24"></script>
+    <script src="/static/app.js?v=20260429_27"></script>
   </body>
 </html>
