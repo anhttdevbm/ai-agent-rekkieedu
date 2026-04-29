@@ -10,6 +10,7 @@ import os
 import re
 import html as _html
 import hashlib
+import base64
 import shutil
 import tempfile
 import zipfile
@@ -821,7 +822,8 @@ async def api_rikkei_login(
     url = "https://apiportal.rikkei.edu.vn/auth/secret-token"
     # Do NOT log credentials. Only exchange to token.
     try:
-        async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+        # NOTE: portal sometimes redirects; Authorization can be dropped on redirect.
+        async with httpx.AsyncClient(timeout=60.0, follow_redirects=False) as client:
             headers = {
                 "User-Agent": (
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -829,24 +831,40 @@ async def api_rikkei_login(
                 ),
                 "Accept": "application/json, text/plain, */*",
             }
+            basic = base64.b64encode(f"{em}:{pw}".encode("utf-8")).decode("ascii")
+            headers_basic = {**headers, "Authorization": f"Basic {basic}"}
 
             # Attempt 1 (like n8n): x-www-form-urlencoded body
-            r = await client.post(url, data={"email": em, "password": pw}, headers=headers)
+            r = await client.post(url, data={"email": em, "password": pw}, headers=headers_basic)
 
-            # Attempt 2: BasicAuth + form body (some setups require both)
-            if r.status_code >= 400:
-                r = await client.post(url, auth=(em, pw), data={"email": em, "password": pw}, headers=headers)
+            # Handle redirect manually while keeping Authorization.
+            if r.status_code in (301, 302, 303, 307, 308):
+                loc = r.headers.get("Location") or r.headers.get("location") or ""
+                if loc:
+                    r = await client.post(loc, data={"email": em, "password": pw}, headers=headers_basic)
 
-            # Attempt 3: JSON body
+            # Attempt 2: sometimes only Basic header is checked
             if r.status_code >= 400:
-                r = await client.post(url, json={"email": em, "password": pw}, headers={**headers, "Accept": "application/json"})
+                r = await client.post(url, headers=headers_basic)
+
+            # Attempt 3: JSON body (fallback)
+            if r.status_code >= 400:
+                r = await client.post(url, json={"email": em, "password": pw}, headers={**headers_basic, "Accept": "application/json"})
         if r.status_code in (401, 403):
             # Return portal message (best-effort) to help debug, without echoing credentials.
             try:
                 detail = r.json()
             except Exception:
                 detail = (r.text or "").strip()
-            raise HTTPException(status_code=401, detail={"message": "Sai tài khoản hoặc không có quyền.", "portal": detail})
+            raise HTTPException(
+                status_code=401,
+                detail={
+                    "message": "Sai tài khoản hoặc không có quyền.",
+                    "portal": detail,
+                    "status": r.status_code,
+                    "location": r.headers.get("Location") or r.headers.get("location") or "",
+                },
+            )
         r.raise_for_status()
         data = r.json()
         tok = _extract_rikkei_token(data)
