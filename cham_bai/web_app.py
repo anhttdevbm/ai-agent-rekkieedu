@@ -635,6 +635,50 @@ async def api_rikkei_btvn_students(
     return JSONResponse({"ok": True, "items": items})
 
 
+@app.post("/api/rikkei/btvn/student-exercises")
+async def api_rikkei_btvn_student_exercises(
+    rikkei_token: str = Form(...),
+    class_id: str = Form(""),
+    session_id: str = Form(""),
+    course_id: str = Form(""),
+    student_id: str = Form(""),
+) -> JSONResponse:
+    tok = (rikkei_token or "").strip()
+    cid = (class_id or "").strip()
+    crid = (course_id or "").strip()
+    sid = (session_id or "").strip()
+    stid = (student_id or "").strip()
+    if not tok:
+        raise HTTPException(status_code=400, detail="Thiếu token Rikkei.")
+    if not cid or not sid or not stid:
+        raise HTTPException(status_code=400, detail="Thiếu class_id hoặc session_id hoặc student_id.")
+
+    # Rikkei /exercise: GET /exercise?classId=&courseId=&sessionId=&studentId=
+    url = "https://apiportal.rikkei.edu.vn/exercise"
+    params = {
+        "classId": cid,
+        "courseId": crid or "",
+        "sessionId": sid,
+        "studentName": "",
+        "page": 1,
+        "limit": 50,
+        "studentId": stid,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+            r = await client.get(url, params=params, headers={"Authorization": _rk_bearer(tok), "User-Agent": "AgentEdu/1.0"})
+        if r.status_code in (401, 403):
+            raise HTTPException(status_code=401, detail="Token không hợp lệ hoặc không có quyền.")
+        r.raise_for_status()
+        payload = r.json()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Lỗi gọi API Rikkei (student-exercises): {e}")
+
+    return JSONResponse({"ok": True, "payload": payload, "items": _unwrap_list_payload(payload)})
+
+
 def _extract_rikkei_token(payload: object) -> str:
     """
     Best-effort: Rikkei portal implementations vary.

@@ -817,6 +817,11 @@
           };
           tr.appendChild(td(escapeHtml(code)));
           tr.appendChild(td(escapeHtml(name)));
+          tr.appendChild(
+            td(
+              `<button type="button" class="smalllink b-stu-view" data-student-id="${studentId}" title="Xem nội dung bài nộp">Xem</button>`
+            )
+          );
           body.appendChild(tr);
         });
       }
@@ -824,6 +829,68 @@
     } catch (e) {
       if (statusEl) statusEl.textContent = String(e);
     } finally {}
+  }
+
+  async function btvnFetchStudentExercises(studentId) {
+    const token = ($("#b-rk-token") && $("#b-rk-token").value) || "";
+    const classId = ($("#b-rk-class") && $("#b-rk-class").value) || "";
+    const sessionId = ($("#b-rk-session") && $("#b-rk-session").value) || "";
+    const courseId = ($("#b-rk-course") && $("#b-rk-course").value) || "";
+    if (!token.trim() || !String(classId).trim() || !String(sessionId).trim()) return [];
+
+    const fd = new FormData();
+    fd.set("rikkei_token", token.trim());
+    fd.set("class_id", String(classId).trim());
+    fd.set("session_id", String(sessionId).trim());
+    fd.set("course_id", String(courseId).trim());
+    fd.set("student_id", String(studentId).trim());
+    const r = await fetch("/api/rikkei/btvn/student-exercises", { method: "POST", body: fd });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(formatApiErr(data.detail) || "Lỗi tải bài nộp.");
+    return (data && data.items) || [];
+  }
+
+  function btvnEnsureModal() {
+    let modal = $("#btvn-modal");
+    if (!modal) {
+      const wrap = document.createElement("div");
+      wrap.id = "btvn-modal";
+      wrap.style.position = "fixed";
+      wrap.style.inset = "0";
+      wrap.style.background = "rgba(0,0,0,.55)";
+      wrap.style.display = "none";
+      wrap.style.zIndex = "9999";
+      wrap.innerHTML = `
+        <div style="max-width:900px;margin:6vh auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,.25)">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #e5e7eb">
+            <div style="font-weight:700">Nội dung bài nộp</div>
+            <button type="button" class="primary" id="btvn-modal-close">Đóng</button>
+          </div>
+          <div style="padding:16px; max-height:70vh; overflow:auto">
+            <pre id="btvn-modal-body" style="white-space:pre-wrap;word-break:break-word;margin:0"></pre>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(wrap);
+      const closeBtn = $("#btvn-modal-close");
+      if (closeBtn) closeBtn.addEventListener("click", () => btvnHideModal());
+      wrap.addEventListener("click", (e) => {
+        if (e.target === wrap) btvnHideModal();
+      });
+    }
+    return modal || $("#btvn-modal");
+  }
+
+  function btvnShowModal(text) {
+    const modal = btvnEnsureModal();
+    const body = $("#btvn-modal-body");
+    if (body) body.textContent = text || "";
+    if (modal) modal.style.display = "block";
+  }
+
+  function btvnHideModal() {
+    const modal = $("#btvn-modal");
+    if (modal) modal.style.display = "none";
   }
 
   async function btvnLogin() {
@@ -1380,6 +1447,42 @@
     if (bSess) bSess.addEventListener("change", btvnLoadSession);
     const bLoadStudentsBtn = $("#b-load-students");
     if (bLoadStudentsBtn) bLoadStudentsBtn.addEventListener("click", btvnLoadStudents);
+    document.addEventListener("click", async (ev) => {
+      const t = ev.target && ev.target.closest && ev.target.closest("button.b-stu-view");
+      if (!t) return;
+      ev.preventDefault();
+      const sid = t.getAttribute("data-student-id") || "";
+      if (!String(sid).trim()) return;
+      try {
+        btvnShowModal("Đang tải bài nộp...");
+        const items = await btvnFetchStudentExercises(sid);
+        if (!items || items.length === 0) {
+          btvnShowModal("Không có bài nộp (exercise) cho sinh viên này trong session.");
+          return;
+        }
+        const lines = [];
+        items.slice(0, 20).forEach((it) => {
+          const eid = it.id != null ? it.id : "";
+          const link = it.link_git || it.linkGit || "";
+          const hw = it.homework || {};
+          const hwTitle = (hw && (hw.title || hw.name)) || it.homeworkTitle || "";
+          lines.push(
+            JSON.stringify(
+              {
+                exercise_id: eid,
+                homework_title: hwTitle,
+                link_git: link,
+              },
+              null,
+              2,
+            )
+          );
+        });
+        btvnShowModal(lines.join("\n\n"));
+      } catch (e) {
+        btvnShowModal(String(e));
+      }
+    });
     const bLogin = $("#b-rk-login");
     if (bLogin) bLogin.addEventListener("click", btvnLogin);
     const gLogin = $("#g-rk-login");
