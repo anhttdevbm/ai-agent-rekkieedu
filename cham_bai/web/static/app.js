@@ -1191,6 +1191,25 @@
 
   let hgCtx = { rows: [], visible: [], docs: {}, last_export_rows: [] };
 
+  function hgNormalizeScore100(raw) {
+    let v = parseFloat(String(raw != null ? raw : ""));
+    if (!Number.isFinite(v)) v = 0;
+    // Hackathon result-test dùng thang 100.
+    v = Math.max(0, Math.min(100, v));
+    return Math.round(v * 100) / 100;
+  }
+
+  function hgSanitizeCommentForCodeOnly(raw) {
+    const s = String(raw || "").trim();
+    if (!s) return "";
+    return s
+      .split(/\s+/)
+      .join(" ")
+      .replace(/(^|[.?!]\s+)([^.?!]*\bbáo\s*cáo\b[^.?!]*[.?!]?)/giu, "$1")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+  }
+
   async function hgLoadSchedules() {
     const token = ($("#hg-token") && $("#hg-token").value) || "";
     const statusEl = $("#hg-status");
@@ -1425,7 +1444,7 @@
             assignment: res.docUrl || "",
             ok: !!rj.ok,
             score: rj.result && rj.result.final_score != null ? rj.result.final_score : "",
-            comment: rj.result && rj.result.final_comment ? rj.result.final_comment : "",
+            comment: hgSanitizeCommentForCodeOnly(rj.result && rj.result.final_comment ? rj.result.final_comment : ""),
             repo_error: rj.result && rj.result.repo_error ? rj.result.repo_error : "",
             ai_error: rj.result && rj.result.ai_error ? rj.result.ai_error : "",
           };
@@ -1504,10 +1523,8 @@
     (Array.isArray(rows) ? rows : []).forEach((r) => {
       const id = parseInt(String(r && r.resultTestId != null ? r.resultTestId : ""), 10);
       if (!Number.isFinite(id) || id <= 0) return;
-      let score = parseFloat(String(r && r.score != null ? r.score : ""));
-      if (!Number.isFinite(score)) score = 0;
-      score = Math.max(0, Math.min(10, score));
-      const note = String((r && r.comment) || "").trim();
+      const score = hgNormalizeScore100(r && r.score != null ? r.score : "");
+      const note = hgSanitizeCommentForCodeOnly((r && r.comment) || "");
       patches.push({ id, point: score, note, link: String((r && r.repo) || "").trim() });
     });
     if (!patches.length) return { ok_count: 0, fail_count: 0, fails: [] };

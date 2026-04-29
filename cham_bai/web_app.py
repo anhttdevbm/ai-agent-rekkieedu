@@ -1146,8 +1146,8 @@ async def api_rikkei_test_schedule_detail(
 
 
 def _result_test_point_str(point_f: float) -> str:
-    """Rikkei portal gửi `point` dạng chuỗi (vd. \"10\"); giữ đồng nhất để tránh lỗi phía server."""
-    point_f = max(0.0, min(10.0, float(point_f)))
+    """Rikkei portal nhận `point` dạng chuỗi (Hackathon thang 100)."""
+    point_f = max(0.0, min(100.0, float(point_f)))
     if abs(point_f - int(point_f)) < 1e-9:
         return str(int(point_f))
     s = f"{point_f:.2f}".rstrip("0").rstrip(".")
@@ -1218,7 +1218,7 @@ async def api_rikkei_result_test_patch_batch(
             except Exception:
                 fails.append({"id": pid_int, "error": "point không hợp lệ"})
                 continue
-            point_f = max(0.0, min(10.0, point_f))
+            point_f = max(0.0, min(100.0, point_f))
             point_str = _result_test_point_str(point_f)
             note_full = note[:RESULT_TEST_NOTE_MAX] if note else ""
 
