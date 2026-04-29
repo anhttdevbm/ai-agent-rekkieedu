@@ -8,6 +8,7 @@ from __future__ import annotations
 import os
 import re
 import math
+import unicodedata
 import tempfile
 import time
 from dataclasses import dataclass
@@ -69,6 +70,10 @@ def _extract_student_session_status(student: dict[str, Any]) -> str:
     Ta ưu tiên lấy status từ sessionStudent[].status vì thường đúng theo "session hiện tại".
     """
     ss = student.get("sessionStudent")
+    if isinstance(ss, dict):
+        st = ss.get("status")
+        if isinstance(st, str) and st.strip():
+            return st.strip()
     if isinstance(ss, list) and ss:
         for it in ss:
             if not isinstance(it, dict):
@@ -84,6 +89,17 @@ def _extract_student_session_status(student: dict[str, Any]) -> str:
             return v.strip()
 
     return ""
+
+
+def _norm_status_text(s: str) -> str:
+    """
+    Chuẩn hóa chuỗi để so sánh trạng thái không bị lệch dấu tiếng Việt.
+    """
+    t = str(s or "")
+    # Strip diacritics
+    t = unicodedata.normalize("NFD", t)
+    t = "".join(ch for ch in t if unicodedata.category(ch) != "Mn")
+    return t.strip().upper()
 
 
 def fetch_homework_session_total(token: str, session_id: int | str) -> int:
@@ -180,8 +196,11 @@ def mark_btvn_session_status_from_exercise_scores(
             continue
 
         cur_status = _extract_student_session_status(st)
-        if cur_status.strip().upper() != waiting_status.strip().upper():
-            ignored.append({"studentId": st_id, "status": cur_status})
+        cur_norm = _norm_status_text(cur_status)
+        wait_norm = _norm_status_text(waiting_status)
+        # Nếu không đọc được status hiện tại thì vẫn cho phép chốt theo best-effort.
+        if cur_norm and (cur_norm != wait_norm) and (wait_norm not in cur_norm):
+            ignored.append({"studentId": st_id, "status": cur_status, "ignoredBecause": "not_waiting"})
             continue
 
         achieved = 0

@@ -818,9 +818,10 @@
           };
           tr.appendChild(td(escapeHtml(code)));
           tr.appendChild(td(escapeHtml(name)));
+            // Ưu tiên status theo đúng session (thường nằm trong sessionStudent[].status)
+            const ss0 = Array.isArray(st.sessionStudent) && st.sessionStudent[0] ? st.sessionStudent[0] : null;
             const initStatus =
-              (st.status || st.homeworkStatus || st.sessionStatus || (st.sessionStudent && st.sessionStudent[0] && st.sessionStudent[0].status)) ||
-              "";
+              (ss0 && ss0.status ? ss0.status : "") || st.status || st.homeworkStatus || st.sessionStatus || "";
             tr.appendChild(td(`<span class="b-stu-status">${escapeHtml(initStatus || "—")}</span>`));
           tr.appendChild(
             td(
@@ -1300,8 +1301,9 @@
         su && typeof su.ratio_ok_count !== "undefined" && typeof su.total !== "undefined"
           ? ` (đạt >= ${su.ratio_ok_count}/${su.total}; điểm > 50)`
           : "";
+      const ignoredCount = su && Array.isArray(su.ignored) ? su.ignored.length : 0;
       const msg = su && su.ok
-        ? `Session update: ${su.ok_count || 0} cập nhật, ${su.fail_count || 0} lỗi${ratioInfo}`
+        ? `Session update: ${su.ok_count || 0} cập nhật, ${su.fail_count || 0} lỗi, ${ignoredCount} bị bỏ qua${ratioInfo}`
         : `Session update: thất bại${ratioInfo ? ratioInfo : ""}.`;
       $("#b-status").textContent = msg + "\nXong.";
     } catch (e) {
