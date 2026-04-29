@@ -59,6 +59,7 @@ from cham_bai.rikkei_homework import (
     fetch_all_exercises_for_student as _btvn_fetch_all_exercises_for_student,
     _homework_id as _btvn_homework_id,
 )
+from cham_bai.rikkei_homework import mark_btvn_session_status_from_exercise_scores as _mark_btvn_session
 from cham_bai.group_activity import GroupGradeParams, grade_group_activity
 from cham_bai.hackathon_exam import (
     HackathonExamParams,
@@ -1777,10 +1778,31 @@ async def api_btvn_rikkei(
 
     at_fp = (assignment_text or "").strip()
     fp = hashlib.sha1(at_fp.encode("utf-8", errors="ignore")).hexdigest()[:10] if at_fp else ""
+
+    # Optional: auto update Rikkei session status based on exercise score parsing.
+    session_update = None
+    try:
+        loop = asyncio.get_event_loop()
+
+        def _work_update():
+            return _mark_btvn_session(
+                tok,
+                class_id=cid,
+                course_id=crid,
+                session_id=sid,
+                student_ids=s_id_ints or None,
+            )
+
+        session_update = await loop.run_in_executor(_executor, _work_update)
+    except Exception:
+        # Never block grading result due to status update failures.
+        session_update = {"ok": False, "error": "Không chốt trạng thái session được (bỏ qua)."}
+
     return JSONResponse(
         {
             "ok": True,
             "rows": rows_out_final,
+            "session_update": session_update,
             "assignment_fingerprint": {
                 "chars": len(at_fp),
                 "sha1_10": fp,

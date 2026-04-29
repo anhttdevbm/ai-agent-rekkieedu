@@ -867,7 +867,7 @@
             <button type="button" class="primary" id="btvn-modal-close">Đóng</button>
           </div>
           <div style="padding:16px; max-height:70vh; overflow:auto">
-            <pre id="btvn-modal-body" style="white-space:pre-wrap;word-break:break-word;margin:0"></pre>
+            <pre id="btvn-modal-body" style="white-space:pre-wrap;word-break:break-word;margin:0;color:#000"></pre>
           </div>
         </div>
       `;
@@ -1285,6 +1285,18 @@
         const note = `Đề bài đang dùng: ${af.chars || 0} ký tự, sha1=${af.sha1_10 || ""}\n${(af.head || "").trim()}`;
         setLog("#b-status", note, false);
       }
+      if (data && data.session_update) {
+        const su = data.session_update;
+        const ratioInfo =
+          typeof su.ratio_ok_count !== "undefined" && typeof su.total !== "undefined"
+            ? ` (đạt >= ${su.ratio_ok_count}/${su.total} bài; điểm > 50)`
+            : "";
+        const msg = su.ok
+          ? `Session update: ${su.ok_count || 0} cập nhật, ${su.fail_count || 0} lỗi${ratioInfo}`
+          : `Session update: thất bại${ratioInfo ? ratioInfo : ""} (bỏ qua).`;
+        // Merge log with previous assignment fingerprint if it exists.
+        setLog("#b-status", ((typeof $("#b-status").textContent === "string" && $("#b-status").textContent) || "") + (su ? "\n" : "") + msg, !!su?.fail_count);
+      }
       if (resBody && Array.isArray(rows)) {
         rows.forEach((x) => {
           const tr = document.createElement("tr");
@@ -1314,7 +1326,12 @@
         });
         if (resWrap) resWrap.style.display = "";
       }
-      $("#b-status").textContent = "Xong.";
+      const cur = $("#b-status") ? $("#b-status").textContent : "";
+      if (cur && String(cur).trim()) {
+        $("#b-status").textContent = cur.trim() + "\nXong.";
+      } else {
+        $("#b-status").textContent = "Xong.";
+      }
     } catch (e) {
       alert(String(e));
     } finally {

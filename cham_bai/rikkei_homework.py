@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import re
+import math
 import tempfile
 import time
 from dataclasses import dataclass
@@ -42,6 +43,197 @@ _RETRYABLE_EXC = (
     BrokenPipeError,
     ConnectionResetError,
 )
+
+_SCORE_FROM_COMMENT_RE = re.compile(
+    # Ví dụ: "[Điểm số - 90/100]" hoặc biến thể tương tự.
+    # Chỉ cần bắt số đứng trước "/100" trong cặp ngoặc vuông.
+    r"\[\s*[^]]*?(?P<score>\d+(?:\.\d+)?)\s*/\s*100\s*\]",
+    re.IGNORECASE,
+)
+
+
+def _score_from_comment(comment: str | None) -> float | None:
+    c = str(comment or "")
+    m = _SCORE_FROM_COMMENT_RE.search(c)
+    if not m:
+        return None
+    try:
+        return float(m.group("score"))
+    except Exception:
+        return None
+
+
+def _extract_student_session_status(student: dict[str, Any]) -> str:
+    """
+    Rikkei có nhiều biến thể response.
+    Ta ưu tiên lấy status từ sessionStudent[].status vì thường đúng theo "session hiện tại".
+    """
+    ss = student.get("sessionStudent")
+    if isinstance(ss, list) and ss:
+        for it in ss:
+            if not isinstance(it, dict):
+                continue
+            st = it.get("status")
+            if isinstance(st, str) and st.strip():
+                return st.strip()
+
+    # Fallback: các trường top-level
+    for k in ("status", "homeworkStatus", "homework_status", "sessionStatus", "session_status"):
+        v = student.get(k)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+
+    return ""
+
+
+def fetch_homework_session_total(token: str, session_id: int | str) -> int:
+    sid = str(session_id).strip()
+    url = f"{RIKKEI_BASE}/homework/session/{sid}"
+    r = _rikkei_request("GET", url, token)
+    r.raise_for_status()
+    data = r.json()
+    if isinstance(data, dict):
+        for k in ("total", "count", "totalExercises", "total_exercises"):
+            v = data.get(k)
+            if isinstance(v, int):
+                return v
+            if isinstance(v, str) and v.strip().isdigit():
+                return int(v.strip())
+    # fallback
+    return 0
+
+
+def session_student_update(
+    token: str,
+    *,
+    student_id: int | str,
+    session_id: int | str,
+    status: str,
+    completed_exercises: int,
+) -> None:
+    sid = int(str(session_id).strip())
+    stid = int(str(student_id).strip())
+    body = {
+        "studentId": stid,
+        "sessionId": sid,
+        "status": status,
+        "completedExercises": int(completed_exercises),
+    }
+    r = _rikkei_request("POST", f"{RIKKEI_BASE}/session-student", token, json=body)
+    if r.status_code >= 400:
+        try:
+            detail = r.json()
+        except Exception:
+            detail = r.text
+        raise RuntimeError(f"Rikkei session-student error: {r.status_code} {detail}")
+
+
+def mark_btvn_session_status_from_exercise_scores(
+    token: str,
+    *,
+    class_id: int | str,
+    course_id: int | str,
+    session_id: int | str,
+    student_ids: list[int] | None = None,
+    score_threshold: float = 50.0,
+    ratio_ok: float = 0.5,
+    waiting_status: str = "ĐANG CHỜ KIỂM TRA",
+) -> dict[str, Any]:
+    """
+    Chốt trạng thái session dựa vào comment của từng exercise.
+    - Điểm > score_threshold => đạt
+    - Nếu đạt >= ratio_ok * total => HOÀN THÀNH, ngược lại CHƯA HOÀN THÀNH
+    - Chỉ cập nhật nếu trạng thái hiện tại = waiting_status
+    """
+    sid = str(session_id).strip()
+    total = fetch_homework_session_total(token, sid)
+    if total <= 0:
+        return {"ok": False, "reason": "Không đọc được total bài trong homework/session.", "total": total}
+
+    # Ví dụ total=3, ratio_ok=0.5 => cần đạt >=2 (không được làm tròn xuống).
+    ratio_ok_count = int(math.ceil(total * ratio_ok - 1e-12))
+    if ratio_ok_count <= 0:
+        ratio_ok_count = 1
+
+    students = fetch_students(token, class_id, sid)
+    if student_ids:
+        want = set(int(x) for x in student_ids if x is not None)
+        filtered = []
+        for st in students:
+            try:
+                st_id_int = int(st.get("id"))
+            except Exception:
+                continue
+            if st_id_int in want:
+                filtered.append(st)
+        students = filtered
+
+    ok = 0
+    fail = 0
+    updated: list[dict[str, Any]] = []
+    ignored: list[dict[str, Any]] = []
+
+    for st in students:
+        try:
+            st_id = int(st.get("id"))
+        except Exception:
+            continue
+
+        cur_status = _extract_student_session_status(st)
+        if cur_status.strip().upper() != waiting_status.strip().upper():
+            ignored.append({"studentId": st_id, "status": cur_status})
+            continue
+
+        achieved = 0
+        try:
+            exercises = fetch_all_exercises_for_student(
+                token,
+                class_id=str(class_id),
+                course_id=str(course_id),
+                session_id=str(sid),
+                student_id=st_id,
+                page_limit=100,
+            )
+            for ex in exercises:
+                if not isinstance(ex, dict):
+                    continue
+                sc = _score_from_comment(ex.get("comment"))
+                if sc is not None and sc > score_threshold:
+                    achieved += 1
+        except Exception:
+            fail += 1
+            updated.append({"studentId": st_id, "ok": False, "error": "Lỗi đọc exercise để tính điểm"})
+            continue
+
+        new_status = "HOÀN THÀNH" if achieved >= ratio_ok_count else "CHƯA HOÀN THÀNH"
+        try:
+            session_student_update(
+                token,
+                student_id=st_id,
+                session_id=sid,
+                status=new_status,
+                # Theo payload ví dụ của bạn: completedExercises gửi 0.
+                completed_exercises=0,
+            )
+            ok += 1
+            updated.append(
+                {"studentId": st_id, "ok": True, "newStatus": new_status, "achieved": achieved, "total": total}
+            )
+        except Exception as e:
+            fail += 1
+            updated.append(
+                {"studentId": st_id, "ok": False, "newStatus": new_status, "achieved": achieved, "error": str(e)[:200]}
+            )
+
+    return {
+        "ok": True,
+        "total": total,
+        "ok_count": ok,
+        "fail_count": fail,
+        "updated": updated[:50],
+        "ignored": ignored[:50],
+        "ratio_ok_count": ratio_ok_count,
+    }
 
 
 def _rikkei_client() -> httpx.Client:
