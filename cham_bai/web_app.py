@@ -1227,7 +1227,11 @@ def _normalize_result_test_note(note: str) -> str:
     if not s:
         return ""
     if len(s) <= RESULT_TEST_NOTE_MAX:
-        return s
+        out0 = s
+        out0 = re.sub(r"[:;,]\s*$", ".", out0)
+        out0 = re.sub(r"\b(tuy nhiên|nhưng|và|cụ thể|gồm)\s*[:;,]?\s*$", ".", out0, flags=re.I)
+        out0 = re.sub(r"\s{2,}", " ", out0).strip()
+        return out0
 
     # Ưu tiên cắt theo ranh giới câu để tránh bị cụt "... và", "... thay vì".
     clipped = s[:RESULT_TEST_NOTE_MAX]
@@ -1241,6 +1245,9 @@ def _normalize_result_test_note(note: str) -> str:
         out = (clipped[:ws] if ws >= 60 else clipped).strip()
         if out and out[-1] not in ".!?":
             out += "."
+    out = re.sub(r"[:;,]\s*$", ".", out)
+    out = re.sub(r"\b(tuy nhiên|nhưng|và|cụ thể|gồm)\s*[:;,]?\s*$", ".", out, flags=re.I)
+    out = re.sub(r"\s{2,}", " ", out).strip()
     return out
 
 

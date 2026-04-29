@@ -1391,8 +1391,10 @@
         const code = extractExamCodeFromRepoLink(gitRaw);
         const key = code == null ? "" : String(code).padStart(2, "0");
         const docUrl = key && docs[key] ? docs[key] : "";
+        const skipZeroOverwrite = !!includeGraded && Number(x.point) === 0;
         let note = "";
-        if (!gitRaw) note = "Không nộp bài.";
+        if (skipZeroOverwrite) note = "Đã có điểm 0 (bỏ qua theo rule không đè).";
+        else if (!gitRaw) note = "Không nộp bài.";
         else if (!code || !docUrl) note = "Nộp sai tên, không rõ mã đề.";
 
         const tr = document.createElement("tr");
@@ -1403,7 +1405,7 @@
           c.innerHTML = html;
           return c;
         };
-        const checked = !gitRaw || !!git;
+        const checked = !skipZeroOverwrite && (!gitRaw || !!git);
         tr.appendChild(td(`<input type="checkbox" class="hg-row" data-idx="${idx}" ${checked ? "checked" : ""} />`));
         tr.appendChild(td(escapeHtml(x.studentCode || "")));
         tr.appendChild(td(escapeHtml(x.fullName || "")));
@@ -1438,12 +1440,14 @@
     const limitN = Number.isFinite(limitUi) && limitUi > 0 ? limitUi : 0;
     const selected = [];
     let picked = 0;
+    const includeGraded = $("#hg-include-graded") && $("#hg-include-graded").checked;
     for (const c of checks) {
       if (!c.checked) continue;
       if (limitN > 0 && picked >= limitN) continue;
       const idx = parseInt(c.getAttribute("data-idx") || "0", 10);
       const x = rows[idx];
       if (!x) continue;
+      if (includeGraded && Number(x.point) === 0) continue; // không đè các bài đã 0 điểm
       const gitRaw = String(x.link || "").trim();
       const git = normalizeGithubRepo(gitRaw);
       const code = gitRaw ? await hgResolveExamCodeFromGithub(gitRaw) : null;
