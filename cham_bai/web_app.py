@@ -1942,6 +1942,7 @@ async def api_btvn_rikkei_session_status(
                 raise RuntimeError(f"Không detect được cột session trong header: {last_err}")
             # Build rows to update from session_update.updated
             upd = su.get("updated") if isinstance(su.get("updated"), list) else []
+            ign = su.get("ignored") if isinstance(su.get("ignored"), list) else []
             sheet_rows = []
             # Need student names: reuse students list from Rikkei to map id->name
             students = _btvn_fetch_students(tok, cid, sid)
@@ -1955,7 +1956,7 @@ async def api_btvn_rikkei_session_status(
                 if nm:
                     id2name[i] = nm
             total = su.get("total") if isinstance(su.get("total"), int) else 0
-            for it in upd:
+            for it in list(upd) + list(ign):
                 if not isinstance(it, dict):
                     continue
                 stid = it.get("studentId")

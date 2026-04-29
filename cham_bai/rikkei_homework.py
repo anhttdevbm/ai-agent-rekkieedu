@@ -119,6 +119,51 @@ def _norm_status_text(s: str) -> str:
     return t.strip().upper()
 
 
+def _extract_strengths_weaknesses(comment: str) -> str:
+    """
+    Lấy gọn 2 mục: "Điểm mạnh" và "Điểm yếu" (nếu có) từ comment rubric.
+    Trả về chuỗi gọn để ghi vào sheet.
+    """
+    raw = str(comment or "").strip()
+    if not raw:
+        return ""
+    low = raw.lower()
+    # Find anchors (Vietnamese with/without accents already handled upstream in sheet matching)
+    idx_s = low.find("điểm mạnh")
+    idx_w = low.find("điểm yếu")
+    if idx_s < 0 and idx_w < 0:
+        # fallback: keep first 400 chars
+        return (raw[:400].rstrip() + "…") if len(raw) > 400 else raw
+
+    # Slice from "Điểm mạnh" to end or to before the next big section.
+    start = idx_s if idx_s >= 0 else idx_w
+    tail = raw[start:]
+    # Stop at "Gợi ý" / "Suggestion" markers if present.
+    cut_markers = ["\nGợi ý", "\nGỌI Ý", "\nGoi y", "\nHướng dẫn", "\nTóm tắt", "\nYêu cầu"]
+    end = len(tail)
+    low_tail = tail.lower()
+    for mk in cut_markers:
+        j = low_tail.find(mk.lower())
+        if j > 0:
+            end = min(end, j)
+    tail = tail[:end].strip()
+
+    # If both sections exist, keep both.
+    if idx_s >= 0 and idx_w >= 0 and idx_w > idx_s:
+        # already included, just ensure it contains both headings
+        pass
+    elif idx_s < 0 and idx_w >= 0:
+        # only weaknesses
+        pass
+    elif idx_s >= 0 and idx_w < 0:
+        # only strengths
+        pass
+
+    # Normalize whitespace a bit
+    tail = re.sub(r"\n{3,}", "\n\n", tail).strip()
+    return tail
+
+
 def fetch_homework_session_total(token: str, session_id: int | str) -> int:
     sid = str(session_id).strip()
     url = f"{RIKKEI_BASE}/homework/session/{sid}"
@@ -216,12 +261,6 @@ def mark_btvn_session_status_from_exercise_scores(
         # Portal: null status => hiểu là "ĐANG CHỜ KIỂM TRA"
         if not str(cur_status or "").strip():
             cur_status = waiting_status
-        cur_norm = _norm_status_text(cur_status)
-        wait_norm = _norm_status_text(waiting_status)
-        # Nếu không đọc được status hiện tại thì vẫn cho phép chốt theo best-effort.
-        if cur_norm and (cur_norm != wait_norm) and (wait_norm not in cur_norm):
-            ignored.append({"studentId": st_id, "status": cur_status, "ignoredBecause": "not_waiting"})
-            continue
 
         achieved = 0
         comments_pool: list[str] = []
@@ -249,7 +288,27 @@ def mark_btvn_session_status_from_exercise_scores(
             continue
 
         new_status = "HOÀN THÀNH" if achieved >= ratio_ok_count else "CHƯA HOÀN THÀNH"
-        rand_comment = random.choice(comments_pool) if comments_pool else ""
+        rand_comment_raw = random.choice(comments_pool) if comments_pool else ""
+        rand_comment = _extract_strengths_weaknesses(rand_comment_raw)
+
+        cur_norm = _norm_status_text(cur_status)
+        wait_norm = _norm_status_text(waiting_status)
+        # Chỉ POST portal khi đang ở trạng thái chờ kiểm tra; nhưng vẫn trả dữ liệu để fill sheet.
+        should_post = not (cur_norm and (cur_norm != wait_norm) and (wait_norm not in cur_norm))
+        if not should_post:
+            ignored.append(
+                {
+                    "studentId": st_id,
+                    "status": cur_status,
+                    "ignoredBecause": "not_waiting",
+                    "newStatus": new_status,
+                    "completedExercises": achieved,
+                    "achieved": achieved,
+                    "randomComment": rand_comment,
+                    "total": total,
+                }
+            )
+            continue
         try:
             session_student_update(
                 token,
