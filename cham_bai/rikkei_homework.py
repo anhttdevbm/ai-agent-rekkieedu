@@ -87,12 +87,16 @@ def _extract_student_session_status(student: dict[str, Any], session_id: int | s
                     st = it.get("status")
                     if isinstance(st, str) and st.strip():
                         return st.strip()
-        for it in ss:
-            if not isinstance(it, dict):
-                continue
-            st = it.get("status")
-            if isinstance(st, str) and st.strip():
-                return st.strip()
+            # Nếu có session_id nhưng không match được item nào (API không trả sessionId),
+            # thì KHÔNG fallback bừa sang phần tử đầu (có thể là session khác).
+        else:
+            # Không có session_id -> best-effort: lấy status đầu tiên có giá trị
+            for it in ss:
+                if not isinstance(it, dict):
+                    continue
+                st = it.get("status")
+                if isinstance(st, str) and st.strip():
+                    return st.strip()
 
     # Fallback: các trường top-level
     for k in ("status", "homeworkStatus", "homework_status", "sessionStatus", "session_status"):
