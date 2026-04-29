@@ -1170,15 +1170,40 @@
   function extractExamCodeFromRepoLink(url) {
     const s = String(url || "").trim();
     if (!s) return null;
-    const m = /github\.com\/[^/]+\/([^/?#]+)/i.exec(s);
-    const repo = m ? m[1] : "";
-    if (!repo) return null;
-    const r = repo.replace(/\.git$/i, "");
-    const m2 = /(?:[_-])0*([0-9]{1,3})$/i.exec(r);
-    if (!m2) return null;
-    const n = parseInt(m2[1], 10);
-    if (!Number.isFinite(n) || n <= 0 || n > 999) return null;
-    return n;
+    const m = /github\.com\/[^/]+\/([^/?#]+)(?:\/(.*))?/i.exec(s);
+    const repo = m ? String(m[1] || "") : "";
+    const tail = m ? String(m[2] || "") : "";
+    const candidates = [];
+    if (repo) candidates.push(repo.replace(/\.git$/i, ""));
+    if (tail) {
+      tail
+        .split("/")
+        .map((x) => x.trim())
+        .filter(Boolean)
+        .forEach((seg) => candidates.push(seg.replace(/\.sql$/i, "").replace(/\.git$/i, "")));
+    }
+
+    function pickCode(text) {
+      const t = String(text || "");
+      if (!t) return null;
+      // ưu tiên dạng _001 / -001 ở cuối
+      let mm = /(?:[_-])0*([0-9]{1,3})$/i.exec(t);
+      if (!mm) {
+        // hỗ trợ dạng ...Nhan03 hoặc ...De02.sql (không có _ trước số)
+        mm = /([0-9]{1,3})$/i.exec(t);
+      }
+      if (!mm) return null;
+      const n = parseInt(mm[1], 10);
+      if (!Number.isFinite(n) || n <= 0 || n > 999) return null;
+      return n;
+    }
+
+    // ưu tiên segment sâu hơn (folder/file) rồi mới tới tên repo
+    for (let i = candidates.length - 1; i >= 0; i--) {
+      const n = pickCode(candidates[i]);
+      if (n != null) return n;
+    }
+    return null;
   }
 
   function normalizeGithubRepo(url) {
@@ -1314,9 +1339,6 @@
 
       const visible = [];
       for (const x of rows) {
-        // only submitted rows
-        const submitted = !!(String(x.submittedAt || "").trim()) || !!String(x.link || "").trim();
-        if (!submitted) continue;
         const already = x.point != null;
         if (!includeGraded && already) continue;
         visible.push(x);
@@ -1331,7 +1353,7 @@
         const key = code == null ? "" : String(code).padStart(2, "0");
         const docUrl = key && docs[key] ? docs[key] : "";
         let note = "";
-        if (!gitRaw) note = "Thiếu link GitHub.";
+        if (!gitRaw) note = "Không nộp bài.";
         else if (!code) note = "Sai format link (cần hậu tố _001.._005).";
         else if (!docUrl) note = `Không có link đề cho mã ${key}.`;
 
@@ -1343,7 +1365,7 @@
           c.innerHTML = html;
           return c;
         };
-        const checked = !!docUrl && !!git;
+        const checked = !gitRaw || (!!docUrl && !!git);
         tr.appendChild(td(`<input type="checkbox" class="hg-row" data-idx="${idx}" ${checked ? "checked" : ""} />`));
         tr.appendChild(td(escapeHtml(x.studentCode || "")));
         tr.appendChild(td(escapeHtml(x.fullName || "")));
@@ -1389,22 +1411,32 @@
       const code = extractExamCodeFromRepoLink(gitRaw);
       const key = code == null ? "" : String(code).padStart(2, "0");
       const docUrl = key && docs[key] ? docs[key] : "";
-      if (!git || !docUrl) return;
-      selected.push({ docUrl, git, studentCode: x.studentCode, fullName: x.fullName, resultTestId: x.id });
+      const isMissing = !gitRaw;
+      if (!isMissing && (!git || !docUrl)) return;
+      selected.push({
+        docUrl,
+        git,
+        studentCode: x.studentCode,
+        fullName: x.fullName,
+        resultTestId: x.id,
+        isMissing,
+      });
       picked += 1;
     });
     if (selected.length === 0) {
-      if (statusEl) statusEl.textContent = "Không có dòng hợp lệ (thiếu link Git hoặc thiếu link đề).";
+      if (statusEl) statusEl.textContent = "Không có dòng hợp lệ để chấm.";
       return;
     }
+    const missingSubs = selected.filter((x) => x.isMissing);
+    const normalSubs = selected.filter((x) => !x.isMissing);
     const byDoc = new Map();
-    selected.forEach((x) => {
+    normalSubs.forEach((x) => {
       if (!byDoc.has(x.docUrl)) byDoc.set(x.docUrl, []);
       byDoc.get(x.docUrl).push(x);
     });
     const parUi = parseInt((($("#hg-par") && $("#hg-par").value) || "2").toString(), 10);
     const PAR = Number.isFinite(parUi) && parUi > 0 ? Math.min(4, parUi) : 2;
-    if (statusEl) statusEl.textContent = `Đang chấm ${selected.length} bài (${byDoc.size} đề)…`;
+    if (statusEl) statusEl.textContent = `Đang xử lý ${selected.length} bài (nộp: ${normalSubs.length}, không nộp: ${missingSubs.length})…`;
     if (logEl) logEl.textContent = "";
 
     const tasks = Array.from(byDoc.entries()).map(([docUrl, arr]) => async () => {
@@ -1424,6 +1456,20 @@
 
     let next = 0;
     const exportRows = [];
+    missingSubs.forEach((meta) => {
+      exportRows.push({
+        resultTestId: meta.resultTestId || "",
+        studentCode: meta.studentCode || "",
+        fullName: meta.fullName || "",
+        repo: "",
+        assignment: "",
+        ok: true,
+        score: 0,
+        comment: "Không nộp bài.",
+        repo_error: "Không nộp bài.",
+        ai_error: "",
+      });
+    });
     async function worker() {
       while (true) {
         const i = next++;
@@ -1453,7 +1499,9 @@
       }
     }
     try {
-      await Promise.all(Array.from({ length: Math.min(PAR, tasks.length) }, () => worker()));
+      if (tasks.length > 0) {
+        await Promise.all(Array.from({ length: Math.min(PAR, tasks.length) }, () => worker()));
+      }
       hgCtx.last_export_rows = exportRows;
       if (statusEl) statusEl.textContent = "Chấm xong (xem log).";
       if (dlBtn) dlBtn.disabled = !(Array.isArray(exportRows) && exportRows.length > 0);

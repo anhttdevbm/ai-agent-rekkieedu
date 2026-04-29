@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from typing import Any
+import re
 
 from cham_bai.collector import CollectedBundle, format_bundle_for_prompt
 from cham_bai.docx_reader import DocxContent
@@ -61,6 +62,25 @@ class GradeOutcome:
     applied_ai_penalty: bool
     raw_model_text: str
     openrouter_meta: dict[str, Any]
+
+
+DOMAIN_MISMATCH_SCORE_CAP = 20
+
+
+def _looks_domain_mismatch(comment: str) -> bool:
+    s = (comment or "").lower()
+    if not s:
+        return False
+    patterns = [
+        r"sai\s+ch[uủ]\s+đ[eề]",
+        r"kh[oô]ng\s+li[êe]n\s+quan\s+[đd][ếe]n\s+đ[eề]",
+        r"kh[oô]ng\s+kh[ớo]p\s+(v[ớo]i\s+)?đ[eề]",
+        r"kh[aá]c\s+ho[àa]n\s+to[aà]n\s+so\s+v[ớo]i\s+đ[eề]",
+        r"thay\s+v[ìi]\s+.*\s+theo\s+đ[eề]",
+        r"kh[oô]ng\s+[đd][úu]ng\s+entity",
+        r"sai\s+entity",
+    ]
+    return any(re.search(p, s, re.I) for p in patterns)
 
 
 def build_user_prompt(
@@ -163,6 +183,10 @@ def grade_submission(
     applied = False
     final_score = payload.score
     final_comment = payload.comment
+
+    # Nếu AI đã nêu rõ sai chủ đề/entity chính, chặn trần điểm ở mức vừa.
+    if _looks_domain_mismatch(final_comment):
+        final_score = min(final_score, DOMAIN_MISMATCH_SCORE_CAP)
 
     if strict_ai_penalty and (
         payload.integrity_verdict == "likely_ai"
