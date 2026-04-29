@@ -71,11 +71,14 @@ def _looks_domain_mismatch(comment: str) -> bool:
     s = (comment or "").lower()
     if not s:
         return False
+    # Chỉ coi là sai đề nghiêm trọng khi có các cụm phủ định mạnh.
     strong_markers = [
         r"sai\s+ch[uủ]\s+đ[eề]",
         r"kh[oô]ng\s+li[êe]n\s+quan\s+[đd][ếe]n\s+đ[eề]",
-        r"kh[oô]ng\s+kh[ớo]p\s+(v[ớo]i\s+)?đ[eề]",
         r"kh[aá]c\s+ho[àa]n\s+to[aà]n\s+so\s+v[ớo]i\s+đ[eề]",
+        r"ho[aà]n\s+to[aà]n\s+kh[aá]c\s+(đ[eề]|y[êe]u\s*c[ầa]u)",
+        r"kh[oô]ng\s+th[uự]c\s+hi[eệ]n\s+theo\s+đ[eề]",
+        r"kh[oô]ng\s+l[aà]m\s+theo\s+đ[eề]",
         r"kh[oô]ng\s+[đd][úu]ng\s+entity",
         r"sai\s+entity",
         r"kh[oô]ng\s+đ[uủ]\s+entity",
@@ -93,7 +96,18 @@ def _looks_domain_mismatch(comment: str) -> bool:
             re.I,
         )
     )
-    return has_instead and has_negative
+    if has_instead and has_negative:
+        return True
+
+    # Nếu nhận xét tổng thể tích cực/đầy đủ thì không cap 20 chỉ vì vài cụm "không khớp đề" cục bộ.
+    positive_markers = [
+        r"b[aà]i\s+l[aà]m\s+(kh[aá]|r[aấ]t\s+)?(đ[aầ]y\s+đ[uủ]|ho[aà]n\s+chỉnh|t[ốo]t)",
+        r"h[ầa]u\s+h[eế]t\s+(đ[uú]ng|ch[ií]nh\s+x[aá]c)",
+        r"ph[ầa]n\s+l[ớo]n\s+(đ[uú]ng|ch[ií]nh\s+x[aá]c)",
+    ]
+    if any(re.search(p, s, re.I) for p in positive_markers):
+        return False
+    return False
 
 
 def build_user_prompt(
