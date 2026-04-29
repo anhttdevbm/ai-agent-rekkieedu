@@ -1242,8 +1242,6 @@
       .replace(/\bthi[eế]u\s+b[aá]o\s*c[aá]o\b[.?!]?/giu, "")
       .replace(/\s{2,}/g, " ")
       .trim();
-    // Dọn đuôi câu bị hụt từ nối do lọc cụm.
-    out = out.replace(/\b(nhưng|tuy nhiên|và|phần)\s*$/giu, "").trim();
     return out;
   }
 

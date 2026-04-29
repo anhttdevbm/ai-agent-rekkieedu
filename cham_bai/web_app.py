@@ -1219,7 +1219,29 @@ def _result_test_point_str(point_f: float) -> str:
     return s if s else "0"
 
 
-RESULT_TEST_NOTE_MAX = 2000
+RESULT_TEST_NOTE_MAX = 200
+
+
+def _normalize_result_test_note(note: str) -> str:
+    s = " ".join(str(note or "").split()).strip()
+    if not s:
+        return ""
+    if len(s) <= RESULT_TEST_NOTE_MAX:
+        return s
+
+    # Ưu tiên cắt theo ranh giới câu để tránh bị cụt "... và", "... thay vì".
+    clipped = s[:RESULT_TEST_NOTE_MAX]
+    cuts = [clipped.rfind("."), clipped.rfind("!"), clipped.rfind("?"), clipped.rfind(";"), clipped.rfind(":")]
+    cut_at = max(cuts)
+    if cut_at >= 80:
+        out = clipped[: cut_at + 1].strip()
+    else:
+        # fallback theo khoảng trắng gần cuối
+        ws = clipped.rfind(" ")
+        out = (clipped[:ws] if ws >= 60 else clipped).strip()
+        if out and out[-1] not in ".!?":
+            out += "."
+    return out
 
 
 async def _rikkei_patch_result_test(
@@ -1285,7 +1307,7 @@ async def api_rikkei_result_test_patch_batch(
                 continue
             point_f = max(0.0, min(100.0, point_f))
             point_str = _result_test_point_str(point_f)
-            note_full = note[:RESULT_TEST_NOTE_MAX] if note else ""
+            note_full = _normalize_result_test_note(note) if note else ""
 
             # Thử vài biến thể body: portal dùng point string; 500 hay gặp khi note quá dài hoặc link không khớp chuẩn hóa của Rikkei.
             attempt_bodies: list[dict] = []
@@ -1300,14 +1322,6 @@ async def api_rikkei_result_test_patch_batch(
                 if note_full:
                     b_no_link["note"] = note_full
                 attempt_bodies.append(b_no_link)
-            if note_full and len(note_full) > 500:
-                b_short = {"point": point_str, "note": note_full[:500]}
-                if link:
-                    b_short["link"] = link
-                attempt_bodies.append(b_short)
-                attempt_bodies.append({"point": point_str, "note": note_full[:500]})
-            if note_full and len(note_full) > 200:
-                attempt_bodies.append({"point": point_str, "note": note_full[:200]})
             attempt_bodies.append({"point": point_str})
 
             last_r: httpx.Response | None = None
