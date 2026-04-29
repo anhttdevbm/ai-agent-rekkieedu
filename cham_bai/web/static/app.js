@@ -1342,6 +1342,7 @@
   async function hgRunGrading() {
     const btn = $("#hg-run");
     const model = ($("#hg-model") && $("#hg-model").value) || "";
+    const token = ($("#hg-token") && $("#hg-token").value) || "";
     const statusEl = $("#hg-status");
     const logEl = $("#hg-log");
     const dlBtn = $("#hg-download");
@@ -1370,7 +1371,7 @@
       const key = code == null ? "" : String(code).padStart(2, "0");
       const docUrl = key && docs[key] ? docs[key] : "";
       if (!git || !docUrl) return;
-      selected.push({ docUrl, git, studentCode: x.studentCode, fullName: x.fullName });
+      selected.push({ docUrl, git, studentCode: x.studentCode, fullName: x.fullName, resultTestId: x.id });
       picked += 1;
     });
     if (selected.length === 0) {
@@ -1417,6 +1418,7 @@
           const meta = arr[j] || {};
           const rj = rr[j] || {};
           const out = {
+            resultTestId: meta.resultTestId || "",
             studentCode: meta.studentCode || "",
             fullName: meta.fullName || "",
             repo: meta.git || "",
@@ -1436,11 +1438,28 @@
       hgCtx.last_export_rows = exportRows;
       if (statusEl) statusEl.textContent = "Chấm xong (xem log).";
       if (dlBtn) dlBtn.disabled = !(Array.isArray(exportRows) && exportRows.length > 0);
+      const doPost = $("#hg-post") && $("#hg-post").checked;
+      if (doPost) {
+        if (!String(token || "").trim()) throw new Error("Thiếu token Rikkei để đẩy điểm.");
+        if (statusEl) statusEl.textContent = "Đang đẩy điểm lên Rikkei…";
+        const postRes = await hgPostScores(token.trim(), exportRows);
+        if (logEl) {
+          logEl.textContent =
+            (logEl.textContent || "") +
+            `\n[POST] Thành công: ${postRes.ok_count || 0}, lỗi: ${postRes.fail_count || 0}`;
+          const fails = Array.isArray(postRes.fails) ? postRes.fails : [];
+          if (fails.length) {
+            logEl.textContent += "\n[POST_FAILS]\n" + JSON.stringify(fails.slice(0, 50), null, 2);
+          }
+        }
+      }
       const doExport = $("#hg-export") && $("#hg-export").checked;
       if (doExport) {
         if (statusEl) statusEl.textContent = "Đang tạo Excel…";
         await hgDownloadExcel(exportRows);
         if (statusEl) statusEl.textContent = "Đã tạo Excel (nếu không tự tải, bấm nút Tải Excel kết quả).";
+      } else if (statusEl) {
+        statusEl.textContent = "Chấm xong.";
       }
     } catch (e) {
       if (statusEl) statusEl.textContent = String(e);
@@ -1478,6 +1497,27 @@
     } catch (e) {
       if (statusEl) statusEl.textContent = String(e);
     }
+  }
+
+  async function hgPostScores(token, rows) {
+    const patches = [];
+    (Array.isArray(rows) ? rows : []).forEach((r) => {
+      const id = parseInt(String(r && r.resultTestId != null ? r.resultTestId : ""), 10);
+      if (!Number.isFinite(id) || id <= 0) return;
+      let score = parseFloat(String(r && r.score != null ? r.score : ""));
+      if (!Number.isFinite(score)) score = 0;
+      score = Math.max(0, Math.min(10, score));
+      const note = String((r && r.comment) || "").trim();
+      patches.push({ id, point: score, note, link: String((r && r.repo) || "").trim() });
+    });
+    if (!patches.length) return { ok_count: 0, fail_count: 0, fails: [] };
+    const fd = new FormData();
+    fd.set("rikkei_token", token);
+    fd.set("patches_json", JSON.stringify(patches));
+    const r = await fetch("/api/rikkei/result-test/patch-batch", { method: "POST", body: fd });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(formatApiErr(data.detail) || "Lỗi đẩy điểm hackathon lên Rikkei.");
+    return data || {};
   }
 
   if (document.readyState === "loading") {

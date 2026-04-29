@@ -1145,6 +1145,70 @@ async def api_rikkei_test_schedule_detail(
         raise HTTPException(status_code=502, detail=f"Lỗi gọi API Rikkei (test-schedule-detail): {e}")
 
 
+@app.post("/api/rikkei/result-test/patch-batch")
+async def api_rikkei_result_test_patch_batch(
+    rikkei_token: str = Form(...),
+    patches_json: str = Form(...),
+) -> JSONResponse:
+    tok = (rikkei_token or "").strip()
+    if not tok:
+        raise HTTPException(status_code=400, detail="Thiếu token Rikkei.")
+    try:
+        patches = json.loads(patches_json or "[]")
+    except Exception:
+        raise HTTPException(status_code=400, detail="patches_json không phải JSON hợp lệ.")
+    if not isinstance(patches, list) or not patches:
+        raise HTTPException(status_code=400, detail="Danh sách patch rỗng.")
+
+    ok_count = 0
+    fails: list[dict] = []
+    async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+        for p in patches[:500]:
+            if not isinstance(p, dict):
+                continue
+            pid = p.get("id")
+            point = p.get("point")
+            note = str(p.get("note") or "").strip()
+            link = str(p.get("link") or "").strip()
+            try:
+                pid_int = int(pid)
+            except Exception:
+                fails.append({"id": pid, "error": "id không hợp lệ"})
+                continue
+            try:
+                point_f = float(point)
+            except Exception:
+                fails.append({"id": pid_int, "error": "point không hợp lệ"})
+                continue
+            point_f = max(0.0, min(10.0, point_f))
+            point_val: float | int = int(point_f) if abs(point_f - int(point_f)) < 1e-9 else round(point_f, 2)
+            body = {"point": point_val}
+            if note:
+                body["note"] = note
+            if link:
+                body["link"] = link
+            url = f"https://apiportal.rikkei.edu.vn/result-test/{pid_int}"
+            try:
+                r = await client.patch(
+                    url,
+                    json=body,
+                    headers={
+                        "Authorization": _rk_bearer(tok),
+                        "User-Agent": "AgentEdu/1.0",
+                        "Accept": "application/json",
+                    },
+                )
+                if r.status_code in (401, 403):
+                    fails.append({"id": pid_int, "error": "Token không hợp lệ hoặc không có quyền"})
+                    continue
+                r.raise_for_status()
+                ok_count += 1
+            except Exception as e:
+                fails.append({"id": pid_int, "error": str(e)[:240]})
+
+    return JSONResponse({"ok": True, "ok_count": ok_count, "fail_count": len(fails), "fails": fails[:50]})
+
+
 @app.post("/api/hackathon-grade/export-xlsx")
 async def api_hackathon_grade_export_xlsx(
     rows_json: str = Form(...),
