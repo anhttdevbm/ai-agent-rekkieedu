@@ -822,17 +822,31 @@ async def api_rikkei_login(
     # Do NOT log credentials. Only exchange to token.
     try:
         async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
-            # Attempt 1: BasicAuth, empty JSON (some setups use only auth header)
-            r = await client.post(url, auth=(em, pw), headers={"User-Agent": "AgentEdu/1.0"})
+            headers = {
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                    "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+                ),
+                "Accept": "application/json, text/plain, */*",
+            }
+
+            # Attempt 1 (like n8n): x-www-form-urlencoded body
+            r = await client.post(url, data={"email": em, "password": pw}, headers=headers)
+
+            # Attempt 2: BasicAuth + form body (some setups require both)
             if r.status_code >= 400:
-                # Attempt 2: JSON body with email/password
-                r = await client.post(
-                    url,
-                    json={"email": em, "password": pw},
-                    headers={"User-Agent": "AgentEdu/1.0", "Accept": "application/json"},
-                )
+                r = await client.post(url, auth=(em, pw), data={"email": em, "password": pw}, headers=headers)
+
+            # Attempt 3: JSON body
+            if r.status_code >= 400:
+                r = await client.post(url, json={"email": em, "password": pw}, headers={**headers, "Accept": "application/json"})
         if r.status_code in (401, 403):
-            raise HTTPException(status_code=401, detail="Sai tài khoản hoặc không có quyền.")
+            # Return portal message (best-effort) to help debug, without echoing credentials.
+            try:
+                detail = r.json()
+            except Exception:
+                detail = (r.text or "").strip()
+            raise HTTPException(status_code=401, detail={"message": "Sai tài khoản hoặc không có quyền.", "portal": detail})
         r.raise_for_status()
         data = r.json()
         tok = _extract_rikkei_token(data)
