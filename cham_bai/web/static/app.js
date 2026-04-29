@@ -1232,14 +1232,19 @@
   function hgSanitizeCommentForCodeOnly(raw) {
     const s = String(raw || "").trim();
     if (!s) return "";
-    return s
+    let out = s
       .split(/\s+/)
       .join(" ")
       .replace(/mini\s*project\s*\(chỉ\s*có\/không\)\s*:\s*[^\n.?!]*[.?!]?/giu, "")
       .replace(/\bbài\s*tập\s*đầu\s*giờ\b/giu, "Bài thi")
-      .replace(/(^|[.?!]\s+)([^.?!]*\bbáo\s*cáo\b[^.?!]*[.?!]?)/giu, "$1")
+      // Chỉ bỏ các cụm "báo cáo" cố định để tránh cắt cụt câu hợp lệ.
+      .replace(/\bkh[oô]ng\s+c[oó]\s+b[aá]o\s*c[aá]o\s+k[èe]m\s+theo\b[.?!]?/giu, "")
+      .replace(/\bthi[eế]u\s+b[aá]o\s*c[aá]o\b[.?!]?/giu, "")
       .replace(/\s{2,}/g, " ")
       .trim();
+    // Dọn đuôi câu bị hụt từ nối do lọc cụm.
+    out = out.replace(/\b(nhưng|tuy nhiên|và|phần)\s*$/giu, "").trim();
+    return out;
   }
 
   function hgSanitizeHackathonLog(raw) {
