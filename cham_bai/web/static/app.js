@@ -1362,8 +1362,7 @@
         const docUrl = key && docs[key] ? docs[key] : "";
         let note = "";
         if (!gitRaw) note = "Không nộp bài.";
-        else if (!code) note = "Sai format link (cần hậu tố _001.._005).";
-        else if (!docUrl) note = `Không có link đề cho mã ${key}.`;
+        else if (!code || !docUrl) note = "Nộp sai tên, không rõ mã đề.";
 
         const tr = document.createElement("tr");
         const td = (html) => {
@@ -1373,7 +1372,7 @@
           c.innerHTML = html;
           return c;
         };
-        const checked = !gitRaw || (!!docUrl && !!git);
+        const checked = !gitRaw || !!git;
         tr.appendChild(td(`<input type="checkbox" class="hg-row" data-idx="${idx}" ${checked ? "checked" : ""} />`));
         tr.appendChild(td(escapeHtml(x.studentCode || "")));
         tr.appendChild(td(escapeHtml(x.fullName || "")));
@@ -1420,7 +1419,8 @@
       const key = code == null ? "" : String(code).padStart(2, "0");
       const docUrl = key && docs[key] ? docs[key] : "";
       const isMissing = !gitRaw;
-      if (!isMissing && (!git || !docUrl)) return;
+      const isInvalidExamCode = !isMissing && (!code || !docUrl);
+      if (!isMissing && !git) return;
       selected.push({
         docUrl,
         git,
@@ -1428,6 +1428,7 @@
         fullName: x.fullName,
         resultTestId: x.id,
         isMissing,
+        isInvalidExamCode,
       });
       picked += 1;
     });
@@ -1436,7 +1437,8 @@
       return;
     }
     const missingSubs = selected.filter((x) => x.isMissing);
-    const normalSubs = selected.filter((x) => !x.isMissing);
+    const invalidExamSubs = selected.filter((x) => !x.isMissing && x.isInvalidExamCode);
+    const normalSubs = selected.filter((x) => !x.isMissing && !x.isInvalidExamCode);
     const byDoc = new Map();
     normalSubs.forEach((x) => {
       if (!byDoc.has(x.docUrl)) byDoc.set(x.docUrl, []);
@@ -1444,7 +1446,9 @@
     });
     const parUi = parseInt((($("#hg-par") && $("#hg-par").value) || "2").toString(), 10);
     const PAR = Number.isFinite(parUi) && parUi > 0 ? Math.min(4, parUi) : 2;
-    if (statusEl) statusEl.textContent = `Đang xử lý ${selected.length} bài (nộp: ${normalSubs.length}, không nộp: ${missingSubs.length})…`;
+    if (statusEl) {
+      statusEl.textContent = `Đang xử lý ${selected.length} bài (nộp hợp lệ: ${normalSubs.length}, không nộp: ${missingSubs.length}, sai mã đề: ${invalidExamSubs.length})…`;
+    }
     if (logEl) logEl.textContent = "";
 
     const tasks = Array.from(byDoc.entries()).map(([docUrl, arr]) => async () => {
@@ -1475,6 +1479,20 @@
         score: 0,
         comment: "Không nộp bài.",
         repo_error: "Không nộp bài.",
+        ai_error: "",
+      });
+    });
+    invalidExamSubs.forEach((meta) => {
+      exportRows.push({
+        resultTestId: meta.resultTestId || "",
+        studentCode: meta.studentCode || "",
+        fullName: meta.fullName || "",
+        repo: meta.git || "",
+        assignment: "",
+        ok: true,
+        score: 0,
+        comment: "Nộp sai tên, không rõ mã đề.",
+        repo_error: "Nộp sai tên, không rõ mã đề.",
         ai_error: "",
       });
     });
