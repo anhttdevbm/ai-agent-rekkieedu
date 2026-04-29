@@ -1189,6 +1189,10 @@
       // ưu tiên dạng _001 / -001 ở cuối
       let mm = /(?:[_-])0*([0-9]{1,3})$/i.exec(t);
       if (!mm) {
+        // hỗ trợ dạng _004_hackthon (mã nằm giữa chuỗi)
+        mm = /(?:[_-])0*([0-9]{1,3})(?:[_-][a-z0-9].*)?$/i.exec(t);
+      }
+      if (!mm) {
         // hỗ trợ dạng ...Nhan03 hoặc ...De02.sql (không có _ trước số)
         mm = /([0-9]{1,3})$/i.exec(t);
       }

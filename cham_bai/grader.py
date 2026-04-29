@@ -71,16 +71,29 @@ def _looks_domain_mismatch(comment: str) -> bool:
     s = (comment or "").lower()
     if not s:
         return False
-    patterns = [
+    strong_markers = [
         r"sai\s+ch[uủ]\s+đ[eề]",
         r"kh[oô]ng\s+li[êe]n\s+quan\s+[đd][ếe]n\s+đ[eề]",
         r"kh[oô]ng\s+kh[ớo]p\s+(v[ớo]i\s+)?đ[eề]",
         r"kh[aá]c\s+ho[àa]n\s+to[aà]n\s+so\s+v[ớo]i\s+đ[eề]",
-        r"thay\s+v[ìi]\s+.*\s+theo\s+đ[eề]",
         r"kh[oô]ng\s+[đd][úu]ng\s+entity",
         r"sai\s+entity",
+        r"kh[oô]ng\s+đ[uủ]\s+entity",
+        r"nh[aầ]m\s+đ[eề]",
     ]
-    return any(re.search(p, s, re.I) for p in patterns)
+    if any(re.search(p, s, re.I) for p in strong_markers):
+        return True
+
+    # Fallback chặt: phải có đồng thời "thay vì ... theo đề" + ngữ cảnh phủ định mạnh.
+    has_instead = bool(re.search(r"thay\s+v[ìi]\s+.*\s+theo\s+đ[eề]", s, re.I))
+    has_negative = bool(
+        re.search(
+            r"(kh[oô]ng\s+th[uự]c\s+hi[eệ]n|kh[oô]ng\s+[đd][áa]p\s+[ứu]ng|kh[oô]ng\s+c[oó]\s+b[aà]i|to[aà]n\s+b[oộ]\s+kh[oô]ng)",
+            s,
+            re.I,
+        )
+    )
+    return has_instead and has_negative
 
 
 def build_user_prompt(
