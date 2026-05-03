@@ -1425,6 +1425,12 @@
     $("#gr-status").textContent = "";
     setLog("#gr-log", "", false);
     try {
+      const yt = ($("#gr-yt-url") && $("#gr-yt-url").value ? String($("#gr-yt-url").value) : "").trim();
+      const tx = ($("#gr-transcript") && $("#gr-transcript").value ? String($("#gr-transcript").value) : "").trim();
+      if (!tx && !yt) {
+        setLog("#gr-log", "Thiếu transcript/ghi chú video hoặc link YouTube.", true);
+        return;
+      }
       const fd = new FormData(ev.target);
       const r = await fetch("/api/group-activity", { method: "POST", body: fd });
       if (!r.ok) {
@@ -1435,6 +1441,39 @@
       const txt = await r.text().catch(() => "");
       setLog("#gr-log", (txt || "").trim(), false);
       $("#gr-status").textContent = "Xong.";
+    } catch (e) {
+      setLog("#gr-log", String(e), true);
+    } finally {
+      setBusy(btn, false);
+    }
+  }
+
+  async function fetchGroupYoutubeTranscript() {
+    const btn = $("#gr-yt-fetch");
+    const urlEl = $("#gr-yt-url");
+    const txEl = $("#gr-transcript");
+    const url = urlEl && urlEl.value ? String(urlEl.value).trim() : "";
+    if (!url) {
+      alert("Nhập link YouTube trước.");
+      return;
+    }
+    setBusy(btn, true, "Đang lấy transcript…");
+    $("#gr-status").textContent = "";
+    setLog("#gr-log", "", false);
+    try {
+      const r = await fetch("/api/youtube/transcript", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ youtube_url: url }),
+      });
+      if (!r.ok) {
+        const data = await r.json().catch(() => ({}));
+        setLog("#gr-log", formatApiErr(data.detail) || JSON.stringify(data), true);
+        return;
+      }
+      const txt = (await r.text().catch(() => "")) || "";
+      if (txEl) txEl.value = txt.trim();
+      $("#gr-status").textContent = "Đã lấy transcript.";
     } catch (e) {
       setLog("#gr-log", String(e), true);
     } finally {
@@ -1465,6 +1504,8 @@
     }
     const fg = $("#form-group");
     if (fg) fg.addEventListener("submit", postGroup);
+    const gy = $("#gr-yt-fetch");
+    if (gy) gy.addEventListener("click", fetchGroupYoutubeTranscript);
     const fb = $("#form-btvn");
     if (fb) fb.addEventListener("submit", postBtvn);
     const bLoad = $("#b-rk-load");

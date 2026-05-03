@@ -727,7 +727,7 @@
       <section class="panel" id="panel-group">
         <h2>Chấm hoạt động nhóm</h2>
         <p class="hint">
-          Upload <strong>báo cáo</strong> và dán <strong>transcript/ghi chú video</strong>.
+          Upload <strong>báo cáo</strong> và cung cấp <strong>transcript/ghi chú video</strong> (dán tay hoặc lấy tự động từ link YouTube).
           Hệ thống chỉ đánh giá dựa trên nội dung bạn cung cấp (không bịa nếu thiếu dữ liệu).
         </p>
         <form id="form-group" enctype="multipart/form-data">
@@ -736,8 +736,25 @@
             <input type="file" id="gr-report-file" name="report_file" accept=".docx,.xlsx" required />
           </div>
           <div class="field">
+            <label for="gr-yt-url">Link YouTube (tuỳ chọn)</label>
+            <input
+              id="gr-yt-url"
+              name="youtube_url"
+              type="url"
+              inputmode="url"
+              placeholder="https://www.youtube.com/watch?v=..."
+            />
+            <p class="hint" style="margin-top: 8px">
+              Nút “Lấy transcript” sẽ tải phụ đề có sẵn (ưu tiên tiếng Việt, fallback tiếng Anh). Không dùng URL
+              <code>timedtext</code> có <code>signature</code>/<code>expire</code> vì các tham số đó hết hạn rất nhanh.
+            </p>
+            <div class="actions" style="margin-top: 10px">
+              <button type="button" class="secondary" id="gr-yt-fetch">Lấy transcript</button>
+            </div>
+          </div>
+          <div class="field">
             <label for="gr-transcript">Transcript / ghi chú video</label>
-            <textarea id="gr-transcript" name="video_transcript" rows="10" placeholder="Dán transcript hoặc ghi chú quan sát..." required></textarea>
+            <textarea id="gr-transcript" name="video_transcript" rows="10" placeholder="Dán transcript hoặc ghi chú quan sát..."></textarea>
           </div>
           <div class="field">
             <label for="gr-model">Model OpenRouter</label>
@@ -753,6 +770,6 @@
 
       <footer>Chạy local · OpenRouter · không lưu dữ liệu trên server sau khi tải file</footer>
     </div>
-    <script src="/static/app.js?v=20260429_40"></script>
+    <script src="/static/app.js?v=20260429_41"></script>
   </body>
 </html>

@@ -18,7 +18,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import httpx
-from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Body, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from openpyxl import Workbook
@@ -67,6 +67,7 @@ from cham_bai.google_sheets import (
     update_session_cells as _gs_update_session_cells,
 )
 from cham_bai.group_activity import GroupGradeParams, grade_group_activity
+from cham_bai.video_transcript import fetch_youtube_transcript_plain
 from cham_bai.hackathon_exam import (
     HackathonExamParams,
     build_hackathon_exam_docx_bytes,
@@ -1986,9 +1987,36 @@ async def api_btvn_rikkei_session_status(
     return JSONResponse({"ok": True, "session_update": session_update, "sheet_update": sheet_update})
 
 
+@app.post("/api/youtube/transcript")
+async def api_youtube_transcript(youtube_url: str = Body(..., embed=True)) -> PlainTextResponse:
+    url = (youtube_url or "").strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="Thiếu youtube_url.")
+
+    loop = asyncio.get_event_loop()
+
+    def work() -> str:
+        text, err = fetch_youtube_transcript_plain(url)
+        if err:
+            raise ValueError(err)
+        return (text or "").strip()
+
+    try:
+        out = await loop.run_in_executor(_executor, work)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+    if not out:
+        raise HTTPException(status_code=400, detail="Transcript rỗng.")
+    return PlainTextResponse(out, media_type="text/plain; charset=utf-8")
+
+
 @app.post("/api/group-activity")
 async def api_group_activity(
-    video_transcript: str = Form(...),
+    video_transcript: str = Form(""),
+    youtube_url: str = Form(""),
     report_file: UploadFile = File(...),
     model: str = Form(""),
 ) -> PlainTextResponse:
@@ -2000,9 +2028,42 @@ async def api_group_activity(
         raise HTTPException(status_code=400, detail=str(e))
 
     m = (model or os.getenv("OPENROUTER_MODEL", "anthropic/claude-sonnet-4.6")).strip()
-    vt = (video_transcript or "").strip()
+    manual = (video_transcript or "").strip()
+    yt_in = (youtube_url or "").strip()
+
+    loop = asyncio.get_event_loop()
+
+    yt_text = ""
+    if yt_in:
+
+        def fetch_yt() -> str:
+            text, err = fetch_youtube_transcript_plain(yt_in)
+            if err:
+                raise ValueError(err)
+            return (text or "").strip()
+
+        try:
+            yt_text = await loop.run_in_executor(_executor, fetch_yt)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e)) from e
+
+    if manual and yt_text and yt_text.strip() == manual.strip():
+        vt = manual
+    elif manual and yt_text:
+        vt = (
+            manual.rstrip()
+            + "\n\n---\nTranscript YouTube (tự động)\n---\n"
+            + yt_text.strip()
+        ).strip()
+    elif yt_text:
+        vt = yt_text
+    else:
+        vt = manual
+
     if not vt:
-        raise HTTPException(status_code=400, detail="Thiếu transcript/ghi chú video.")
+        raise HTTPException(status_code=400, detail="Thiếu transcript/ghi chú video hoặc link YouTube hợp lệ.")
 
     if not report_file or not report_file.filename:
         raise HTTPException(status_code=400, detail="Thiếu file báo cáo.")
@@ -2018,8 +2079,6 @@ async def api_group_activity(
         video_transcript=vt,
         model=m,
     )
-
-    loop = asyncio.get_event_loop()
 
     def work():
         return grade_group_activity(params)
