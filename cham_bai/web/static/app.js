@@ -1448,17 +1448,41 @@
     }
   }
 
-  async function fetchGroupYoutubeTranscript() {
-    const btn = $("#gr-yt-fetch");
+  function _isProbableYoutubeWatchUrl(s) {
+    const t = String(s || "").trim();
+    if (t.length < 12) return false;
+    if (/youtu\.be\/[\w-]{6,}/i.test(t)) return true;
+    if (/youtube\.com\/watch\?[^\s#]*\bv=[\w-]{6,}/i.test(t)) return true;
+    if (/youtube\.com\/(embed|shorts|live)\/[\w-]{6,}/i.test(t)) return true;
+    return false;
+  }
+
+  let _groupYtFetchTimer = null;
+  let _groupYtFetchInFlight = false;
+  let _groupYtLastFetchedUrl = "";
+
+  function _scheduleGroupYoutubeTranscriptFetch() {
+    if (_groupYtFetchTimer) clearTimeout(_groupYtFetchTimer);
+    _groupYtFetchTimer = setTimeout(() => {
+      _groupYtFetchTimer = null;
+      fetchGroupYoutubeTranscriptAuto();
+    }, 550);
+  }
+
+  async function fetchGroupYoutubeTranscriptAuto() {
     const urlEl = $("#gr-yt-url");
     const txEl = $("#gr-transcript");
     const url = urlEl && urlEl.value ? String(urlEl.value).trim() : "";
     if (!url) {
-      alert("Nhập link YouTube trước.");
+      _groupYtLastFetchedUrl = "";
       return;
     }
-    setBusy(btn, true, "Đang lấy transcript…");
-    $("#gr-status").textContent = "";
+    if (!_isProbableYoutubeWatchUrl(url)) return;
+    if (url === _groupYtLastFetchedUrl) return;
+    if (_groupYtFetchInFlight) return;
+
+    _groupYtFetchInFlight = true;
+    $("#gr-status").textContent = "Đang lấy transcript…";
     setLog("#gr-log", "", false);
     try {
       const r = await fetch("/api/youtube/transcript", {
@@ -1469,16 +1493,46 @@
       if (!r.ok) {
         const data = await r.json().catch(() => ({}));
         setLog("#gr-log", formatApiErr(data.detail) || JSON.stringify(data), true);
+        $("#gr-status").textContent = "";
         return;
       }
       const txt = (await r.text().catch(() => "")) || "";
       if (txEl) txEl.value = txt.trim();
+      _groupYtLastFetchedUrl = url;
       $("#gr-status").textContent = "Đã lấy transcript.";
     } catch (e) {
       setLog("#gr-log", String(e), true);
+      $("#gr-status").textContent = "";
     } finally {
-      setBusy(btn, false);
+      _groupYtFetchInFlight = false;
     }
+  }
+
+  function setupGroupYoutubeAutoTranscript() {
+    const urlEl = $("#gr-yt-url");
+    if (!urlEl) return;
+    urlEl.addEventListener("input", () => {
+      const url = String(urlEl.value || "").trim();
+      if (!url) {
+        _groupYtLastFetchedUrl = "";
+        return;
+      }
+      _scheduleGroupYoutubeTranscriptFetch();
+    });
+    urlEl.addEventListener("paste", () => {
+      setTimeout(() => {
+        const url = String(urlEl.value || "").trim();
+        if (!url) {
+          _groupYtLastFetchedUrl = "";
+          return;
+        }
+        if (_groupYtFetchTimer) {
+          clearTimeout(_groupYtFetchTimer);
+          _groupYtFetchTimer = null;
+        }
+        fetchGroupYoutubeTranscriptAuto();
+      }, 0);
+    });
   }
 
   function init() {
@@ -1504,8 +1558,7 @@
     }
     const fg = $("#form-group");
     if (fg) fg.addEventListener("submit", postGroup);
-    const gy = $("#gr-yt-fetch");
-    if (gy) gy.addEventListener("click", fetchGroupYoutubeTranscript);
+    setupGroupYoutubeAutoTranscript();
     const fb = $("#form-btvn");
     if (fb) fb.addEventListener("submit", postBtvn);
     const bLoad = $("#b-rk-load");
