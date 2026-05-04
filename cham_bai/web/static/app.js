@@ -2,6 +2,7 @@
   const $ = (sel, root = document) => root.querySelector(sel);
 
   let meta = null;
+  let _quizKindPrevLabel = "";
 
   async function loadMeta() {
     const r = await fetch("/api/meta");
@@ -132,6 +133,23 @@
     const ls = $("#quiz-lecture-single");
     if (lw) lw.style.display = warmup ? "" : "none";
     if (ls) ls.style.display = warmup ? "none" : "";
+
+    const qm = $("#q-model");
+    const sessionQuizModel =
+      (meta && meta.default_quiz_session_warmup_end_model) ||
+      "meta-llama/llama-3.3-70b-instruct:free";
+    const wasSessionQuiz =
+      _quizKindPrevLabel === "Quizz Session đầu giờ" || _quizKindPrevLabel === "Quizz Session cuối giờ";
+    const enteringSessionQuiz = (warmup || end) && !wasSessionQuiz;
+    if (qm && enteringSessionQuiz) {
+      for (let i = 0; i < qm.options.length; i++) {
+        if (qm.options[i].value === sessionQuizModel) {
+          qm.value = sessionQuizModel;
+          break;
+        }
+      }
+    }
+    _quizKindPrevLabel = kindLabel;
   }
 
   function tabsSetup() {

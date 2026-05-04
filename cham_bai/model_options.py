@@ -15,6 +15,9 @@ QUIZ_KIND_OPTIONS: tuple[tuple[str, str], ...] = (
 # Vision–language, free; phù hợp Chấm BTVN (đề có ảnh + đọc repo).
 DEFAULT_BTVN_MODEL = "nvidia/nemotron-nano-12b-v2-vl:free"
 
+# Free, context lớn; phù hợp Quizz Session đầu giờ / cuối giờ (JSON 15 câu × 3 block).
+DEFAULT_QUIZ_SESSION_WARMUP_END_MODEL = "meta-llama/llama-3.3-70b-instruct:free"
+
 MODEL_OPTIONS: tuple[str, ...] = (
     "anthropic/claude-sonnet-4.6",
     "anthropic/claude-opus-4.6",
@@ -23,6 +26,7 @@ MODEL_OPTIONS: tuple[str, ...] = (
     "google/gemini-3-flash-preview",
     "nvidia/nemotron-nano-12b-v2-vl:free",
     "nvidia/nemotron-3-super-120b-a12b:free",
+    DEFAULT_QUIZ_SESSION_WARMUP_END_MODEL,
 )
 
 IMAGE_MODEL_OPTIONS: tuple[str, ...] = (
