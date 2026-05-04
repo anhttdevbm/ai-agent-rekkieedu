@@ -5,19 +5,26 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-# Giới hạn cứng cho `comment` sau khi parse JSON (khớp mục 8 prompt chấm theo câu ~1200 ký tự).
-MAX_GRADE_COMMENT_CHARS = 1200
+# Giới hạn cứng `comment` sau parse JSON (khớp mục 8 trong prompt theo comment_style).
+MAX_GRADE_COMMENT_CHARS_HACKATHON = 200
+MAX_GRADE_COMMENT_CHARS_DEFAULT = 600
 
 
-def _truncate_grade_comment(text: str, *, max_len: int = MAX_GRADE_COMMENT_CHARS) -> str:
+def _truncate_grade_comment(
+    text: str,
+    *,
+    max_len: int,
+    collapse_whitespace: bool = False,
+) -> str:
     s = (text or "").strip()
+    if collapse_whitespace:
+        s = re.sub(r"\s+", " ", s)
     if len(s) <= max_len:
         return s
-    suffix = " … [Rút gọn do vượt giới hạn ký tự]."
-    cut = max_len - len(suffix)
-    if cut < 120:
-        return s[:max_len].rstrip()
-    return s[:cut].rstrip() + suffix
+    suffix = "…"
+    if max_len <= len(suffix):
+        return s[:max_len]
+    return s[: max_len - len(suffix)].rstrip() + suffix
 
 
 @dataclass
@@ -68,7 +75,7 @@ def parse_llm_json(text: str) -> dict[str, Any]:
     return json.loads(raw)
 
 
-def coalesce_grade(d: dict[str, Any]) -> GradePayload:
+def coalesce_grade(d: dict[str, Any], *, comment_style: str = "hackathon_per_question") -> GradePayload:
     try:
         score = int(d.get("score", 0))
     except (TypeError, ValueError):
@@ -76,7 +83,18 @@ def coalesce_grade(d: dict[str, Any]) -> GradePayload:
     score = max(0, min(100, score))
 
     comment = str(d.get("comment", "")).strip() or "(Không có nhận xét.)"
-    comment = _truncate_grade_comment(comment)
+    _cs = (comment_style or "hackathon_per_question").strip().lower()
+    if _cs not in ("default", "hackathon_per_question"):
+        _cs = "hackathon_per_question"
+    _max = (
+        MAX_GRADE_COMMENT_CHARS_HACKATHON
+        if _cs == "hackathon_per_question"
+        else MAX_GRADE_COMMENT_CHARS_DEFAULT
+    )
+    _collapse = _cs == "hackathon_per_question"
+    comment = _truncate_grade_comment(
+        comment, max_len=_max, collapse_whitespace=_collapse
+    )
 
     verdict_raw = str(d.get("integrity_verdict", "pass")).strip().lower()
     if verdict_raw in {"likely_ai", "ai", "fail", "fail_ai"}:

@@ -35,12 +35,12 @@ Quy tắc:
 _RULE8_COMMENT_DEFAULT = """8) Trường "comment": một đoạn văn ngắn duy nhất (2–4 câu, tối đa khoảng 600 ký tự), tiếng Việt. Cấm gạch đầu dòng và cấm định dạng markdown. Chỉ tóm tắt **bài tập đầu giờ** và **báo cáo** (đạt/chưa đạt); **cấm** nhắc chất lượng mini project, **cấm** dùng comment để thay thế `mini_project_present`.
 """
 
-_RULE8_COMMENT_HACKATHON = """8) Trường "comment" (chấm Hackathon / đề thực hành có **câu hỏi đánh số** trong đề):
-- Bắt buộc đối chiếu theo **số thứ tự câu trong đề** (vd. "1.", "2.", … hoặc đúng cách đề đánh số). Với mỗi câu có yêu cầu hành động rõ (CREATE/INSERT/UPDATE/DELETE/SELECT…), ghi **một dòng** theo mẫu: `Câu <số>: đúng | sai | thiếu | không đối chiếu được — <một cụm ngắn>` (cụm ngắn: vì sao sai, thiếu phần nào, hoặc vì sao không tìm thấy trong bài nộp — không bịa nếu không có bằng chứng).
-- **Cấm** mở bài bằng kiểu tóm tắt chung chung hoặc khen lan man, ví dụ: "Bài làm hoàn thành tốt phần …", "Hoàn thành tốt …", "Làm tốt phần …", "Nhìn chung …", "Đã làm đầy đủ các phần …" rồi mới vào chi tiết. **Không** viết đoạn dạng liệt kê năng lực chung (tạo bảng/chèn/UPDATE/DELETE/SELECT…) trước khi nêu từng câu theo số đề.
-- Ưu tiên liệt kê **các câu sai hoặc thiếu hoặc không đối chiếu được**; chỉ khi đã đối chiếu đủ và các câu còn lại đều đúng, được kết bằng **một câu ngắn**: "Các câu còn lại: đúng theo đề."
-- Phần **báo cáo** (nếu đề có yêu cầu và có khối BÁO CÁO để chấm): sau các dòng câu hỏi thực hành, thêm **tối đa 1 dòng**: `Báo cáo: đúng | thiếu | không đối chiếu được — ...` (không mô tả chất lượng mini project).
-- Tiếng Việt; cho phép xuống dòng; **tối đa 1200 ký tự** (hệ thống sẽ cắt nếu vượt); không markdown (không ```, không ##).
+_RULE8_COMMENT_HACKATHON = """8) Trường "comment" (chấm Hackathon / đề có **câu đánh số**):
+- **Một đoạn duy nhất** (2–3 câu văn ngắn trong ý), **tối đa 200 ký tự** (hệ thống cắt nếu vượt); **không xuống dòng** — viết liền một dòng, khoảng trắng bình thường; không markdown.
+- **Chỉ** nêu các câu **sai**, **thiếu**, hoặc **không đối chiếu được** (vd. «Câu 5 sai dùng = thay vì IN. Câu 9 sai ORDER BY ngược đề. Câu 14 thiếu HAVING.»). **Cấm** liệt kê câu **đúng**; **cấm** mở bài kiểu «Bài làm hoàn thành tốt phần …», «Hoàn thành tốt …», «Nhìn chung …».
+- Nếu không có câu sai/thiếu sau khi đối chiếu: ghi ngắn một ý như «Không thấy câu sai hoặc thiếu theo đề.» (vẫn trong giới hạn ký tự).
+- Nếu đề có **báo cáo** để chấm và có lỗi: thêm cụm rất ngắn trong cùng đoạn (vd. «Báo cáo thiếu mục kết luận.»), **cấm** mô tả chất lượng mini project.
+- Nếu nhiều lỗi mà không đủ chỗ: ưu tiên **tối đa 3** câu số quan trọng nhất, diễn đạt cực ngắn.
 """
 
 _SYSTEM_PROMPT_TAIL = """9) Cho điểm 0–100 (số nguyên), phù hợp mức độ lỏng tay ở mục 3–6 và trọng số bài tập đầu giờ ưu tiên hơn báo cáo.
@@ -74,7 +74,7 @@ def system_prompt_for_comment_style(comment_style: str) -> str:
     return _SYSTEM_PROMPT_HEAD + r8 + _SYSTEM_PROMPT_TAIL
 
 
-# Giữ tên hằng để tương thích đọc mã; bằng chế độ mặc định hiện tại (nhận xét theo từng câu đề).
+# Giữ tên hằng để tương thích đọc mã; mặc định: nhận xét Hackathon ngắn, chỉ câu sai/thiếu.
 SYSTEM_PROMPT = system_prompt_for_comment_style("hackathon_per_question")
 
 
@@ -182,7 +182,7 @@ def build_user_prompt(
     _pcs = (comment_style or "hackathon_per_question").strip().lower()
     cs = _pcs if _pcs in ("default", "hackathon_per_question") else "hackathon_per_question"
     comment_line = (
-        "- `comment` (Hackathon): **theo từng số câu trong đề**, mỗi câu một dòng `Câu k: đúng|sai|thiếu|...`; cấm mở bài kiểu «hoàn thành tốt phần …» / khen chung chung trước khi liệt kê câu — xem SYSTEM mục 8.\n"
+        "- `comment` (Hackathon): **một dòng** ≤200 ký tự, **chỉ** câu sai/thiếu/không đối chiếu được, không liệt kê câu đúng — xem SYSTEM mục 8.\n"
         if cs == "hackathon_per_question"
         else "- `comment`: một đoạn ngắn, không bullet, không markdown.\n"
     )
@@ -236,7 +236,7 @@ def grade_submission(
 
     try:
         blob = parse_llm_json(raw_text)
-        payload = coalesce_grade(blob)
+        payload = coalesce_grade(blob, comment_style=cs)
     except Exception as e:
         raise RuntimeError(
             "Model không trả về JSON hợp lệ. Thử tăng max_tokens hoặc đổi model.\n"
