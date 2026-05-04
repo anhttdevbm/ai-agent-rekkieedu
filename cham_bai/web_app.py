@@ -174,6 +174,7 @@ def _run_grade_sync(
     strict_ai: bool,
     ai_confidence: int,
     report_repos_text: str = "",
+    comment_style: str = "hackathon_per_question",
 ) -> tuple[bool, str, list[dict]]:
     try:
         from cham_bai.settings import api_key as _need_key
@@ -182,6 +183,8 @@ def _run_grade_sync(
     except RuntimeError as e:
         return False, str(e), []
 
+    _cs_raw = (comment_style or "hackathon_per_question").strip().lower()
+    _cs = _cs_raw if _cs_raw in ("default", "hackathon_per_question") else "hackathon_per_question"
     params = GradeJobParams(
         assignment_ref=assignment_ref,
         submission_ref=subs_lines[0],
@@ -192,6 +195,7 @@ def _run_grade_sync(
         ai_confidence=int(ai_confidence),
         debug=False,
         report_repos_text=report_repos_text or "",
+        comment_style=_cs,
     )
 
     log_parts: list[str] = []
@@ -242,6 +246,7 @@ async def api_grade(
     use_template: str = Form("true"),
     strict_ai: str = Form("true"),
     ai_confidence: int = Form(75),
+    comment_style: str = Form("hackathon_per_question"),
 ) -> JSONResponse:
     subs_lines = [(ln.rstrip("\r") or "").strip() for ln in (submissions_text or "").splitlines()]
 
@@ -295,6 +300,7 @@ async def api_grade(
             _parse_bool_form(strict_ai),
             ai_confidence,
             report_repos_text=report_repos_text or "",
+            comment_style=comment_style or "hackathon_per_question",
         )
 
     ok, log, results = await loop.run_in_executor(_executor, work)

@@ -35,6 +35,8 @@ class GradeJobParams:
     max_tokens: int = 4096
     temperature: float = 0.2
     debug: bool = False
+    # "default" (đoạn ngắn) | "hackathon_per_question" (theo từng câu đề). Mặc định: theo từng câu.
+    comment_style: str = "hackathon_per_question"
     # Nhiều dòng: dòng i khớp bài nộp dòng i (chấm lô). Dòng trống = không có repo báo cáo cho bài đó.
     report_repos_text: str = ""
 
@@ -309,6 +311,8 @@ def _grade_single_from_prepared(
             temperature=params.temperature,
             max_tokens=params.max_tokens,
             report_bundle=report_bundle,
+            comment_style=(params.comment_style or "hackathon_per_question").strip()
+            or "hackathon_per_question",
         )
     except RuntimeError as e:
         return GradeJobResult(ok=False, error_message=str(e), warnings=warnings)

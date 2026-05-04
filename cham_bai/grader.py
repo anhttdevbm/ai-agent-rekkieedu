@@ -12,7 +12,7 @@ from cham_bai.openrouter import ChatMessage, complete_chat
 from cham_bai.schemas import GradePayload, coalesce_grade, parse_llm_json
 
 
-SYSTEM_PROMPT = """Bạn là trợ giảng chấm bài lập trình bậc đại học.
+_SYSTEM_PROMPT_HEAD = """Bạn là trợ giảng chấm bài lập trình bậc đại học.
 
 Phạm vi ĐIỂM và NHẬN XÉT (bắt buộc):
 • Chỉ dựa trên (A) **bài tập đầu giờ** — mã trong khối «MÃ NGUỒN HỌC VIÊN — BÀI TẬP ĐẦU GIỜ» (bài nộp chính), và (B) **báo cáo** — văn bản trong khối «BÁO CÁO» (GitHub: DOCX trích / repo; Google Docs: nội dung export; OneDrive/SharePoint: văn bản trích từ Word chia sẻ) hoặc trong đề bài nếu có.
@@ -30,8 +30,20 @@ Quy tắc:
 5) Đề vs template vs bài nộp (chấm lỏng tay): Khi đề nói một chủ đề (ví dụ quản lý sản phẩm) nhưng template GitHub là chủ đề khác (ví dụ danh bạ, contact) và sinh viên làm giống template thì coi là bài hợp lệ theo khung mẫu. Không coi là sai chủ đề nghiêm trọng. Ánh xạ tương đương giữa các trường dữ liệu và validate. Với bài chạy ổn, có sửa/xóa và validate đúng hướng theo cách làm đó, điểm mục tiêu khoảng 65–78, thường quanh 70 (ví dụ 68–74); chỉ dưới 50 khi thiếu hẳn phần cốt lõi đề yêu cầu hoặc lỗi nặng — áp dụng cho **phần bài tập đầu giờ** khi tách nhận định.
 6) Template không thay thế đề khi **xung đột chức năng** (đề bắt buộc tính năng X mà code không có). Khi xung đột chỉ là **tên miền / nhãn** (sản phẩm vs contact) nhưng trên thực tế cùng một bài tập template → áp mục 5, chấm rộng.
 7) File .md / README do sinh viên tự thêm: không dùng để mở rộng phạm vi đề; không trừ vì “tài liệu khác đề” trừ khi đề bắt nộp. Có thể ghi nhẹ trong integrity_notes nếu liên quan AI.
-8) Trường "comment": một đoạn văn ngắn duy nhất (2–4 câu, tối đa khoảng 600 ký tự), tiếng Việt. Cấm gạch đầu dòng và cấm định dạng markdown. Chỉ tóm tắt **bài tập đầu giờ** và **báo cáo** (đạt/chưa đạt); **cấm** nhắc chất lượng mini project, **cấm** dùng comment để thay thế `mini_project_present`.
-9) Cho điểm 0–100 (số nguyên), phù hợp mức độ lỏng tay ở mục 3–6 và trọng số bài tập đầu giờ ưu tiên hơn báo cáo.
+"""
+
+_RULE8_COMMENT_DEFAULT = """8) Trường "comment": một đoạn văn ngắn duy nhất (2–4 câu, tối đa khoảng 600 ký tự), tiếng Việt. Cấm gạch đầu dòng và cấm định dạng markdown. Chỉ tóm tắt **bài tập đầu giờ** và **báo cáo** (đạt/chưa đạt); **cấm** nhắc chất lượng mini project, **cấm** dùng comment để thay thế `mini_project_present`.
+"""
+
+_RULE8_COMMENT_HACKATHON = """8) Trường "comment" (chấm Hackathon / đề thực hành có **câu hỏi đánh số** trong đề):
+- Bắt buộc đối chiếu theo **số thứ tự câu trong đề** (vd. "1.", "2.", … hoặc đúng cách đề đánh số). Với mỗi câu có yêu cầu hành động rõ (CREATE/INSERT/UPDATE/DELETE/SELECT…), ghi **một dòng** theo mẫu: `Câu <số>: đúng | sai | thiếu | không đối chiếu được — <một cụm ngắn>` (cụm ngắn: vì sao sai, thiếu phần nào, hoặc vì sao không tìm thấy trong bài nộp — không bịa nếu không có bằng chứng).
+- **Cấm** mở bài bằng kiểu tóm tắt chung chung hoặc khen lan man, ví dụ: "Bài làm hoàn thành tốt phần …", "Hoàn thành tốt …", "Làm tốt phần …", "Nhìn chung …", "Đã làm đầy đủ các phần …" rồi mới vào chi tiết. **Không** viết đoạn dạng liệt kê năng lực chung (tạo bảng/chèn/UPDATE/DELETE/SELECT…) trước khi nêu từng câu theo số đề.
+- Ưu tiên liệt kê **các câu sai hoặc thiếu hoặc không đối chiếu được**; chỉ khi đã đối chiếu đủ và các câu còn lại đều đúng, được kết bằng **một câu ngắn**: "Các câu còn lại: đúng theo đề."
+- Phần **báo cáo** (nếu đề có yêu cầu và có khối BÁO CÁO để chấm): sau các dòng câu hỏi thực hành, thêm **tối đa 1 dòng**: `Báo cáo: đúng | thiếu | không đối chiếu được — ...` (không mô tả chất lượng mini project).
+- Tiếng Việt; cho phép xuống dòng; **tối đa 1200 ký tự** (hệ thống sẽ cắt nếu vượt); không markdown (không ```, không ##).
+"""
+
+_SYSTEM_PROMPT_TAIL = """9) Cho điểm 0–100 (số nguyên), phù hợp mức độ lỏng tay ở mục 3–6 và trọng số bài tập đầu giờ ưu tiên hơn báo cáo.
 
 10) integrity_verdict:
    - "pass": không có dấu hiệu đáng kể cho thấy bài được tạo bởi công cụ AI thay cho học viên (chấp nhận tra cứu tài liệu, snippet ngắn).
@@ -52,6 +64,18 @@ CHỈ trả về một JSON hợp lệ duy nhất, không thêm markdown ngoài 
 }
 Trong đó rubric là tùy chọn; nếu không chắc hãy dùng {} hoặc bỏ trường (dùng {} an toàn hơn). Trường mini_project_present là bắt buộc (một trong ba chuỗi trên).
 """
+
+
+def system_prompt_for_comment_style(comment_style: str) -> str:
+    cs = (comment_style or "hackathon_per_question").strip().lower()
+    if cs not in ("default", "hackathon_per_question"):
+        cs = "hackathon_per_question"
+    r8 = _RULE8_COMMENT_HACKATHON if cs == "hackathon_per_question" else _RULE8_COMMENT_DEFAULT
+    return _SYSTEM_PROMPT_HEAD + r8 + _SYSTEM_PROMPT_TAIL
+
+
+# Giữ tên hằng để tương thích đọc mã; bằng chế độ mặc định hiện tại (nhận xét theo từng câu đề).
+SYSTEM_PROMPT = system_prompt_for_comment_style("hackathon_per_question")
 
 
 @dataclass
@@ -117,6 +141,7 @@ def build_user_prompt(
     *,
     template_error: str | None,
     report_bundle: CollectedBundle | None = None,
+    comment_style: str = "hackathon_per_question",
 ) -> str:
     assignment_plain_text = doc.plain_text.strip()
     urls = doc.github_repo_urls
@@ -154,14 +179,21 @@ def build_user_prompt(
         rs = format_bundle_for_prompt(report_bundle).strip()
         parts.append(rs if rs else "(Repo không có nội dung file text thu thập được.)")
 
+    _pcs = (comment_style or "hackathon_per_question").strip().lower()
+    cs = _pcs if _pcs in ("default", "hackathon_per_question") else "hackathon_per_question"
+    comment_line = (
+        "- `comment` (Hackathon): **theo từng số câu trong đề**, mỗi câu một dòng `Câu k: đúng|sai|thiếu|...`; cấm mở bài kiểu «hoàn thành tốt phần …» / khen chung chung trước khi liệt kê câu — xem SYSTEM mục 8.\n"
+        if cs == "hackathon_per_question"
+        else "- `comment`: một đoạn ngắn, không bullet, không markdown.\n"
+    )
     parts.append(
         "\n\n## HƯỚNG DẪN CHẤM (bắt buộc)\n"
         "- `score` và `comment` chỉ phản ánh **bài tập đầu giờ** (khối trên) và **báo cáo** (khối BÁO CÁO: GitHub, Google Docs hoặc OneDrive/SharePoint nếu có). Nếu khối bài tập đầu giờ rỗng thì chỉ báo cáo. Ưu tiên bài tập đầu giờ trong tổng điểm khi cả hai có dữ liệu.\n"
         "- `mini_project_present`: **có** / **không** / **không_rõ** — chỉ bằng chứng nộp / đối chiếu đề; không dùng để cộng trừ `score`, không mô tả chất lượng mini trong `comment`.\n"
         "- Chấm lỏng tay (đề vs template): không trừ nặng vì đề nói “sản phẩm” mà bài làm theo template “danh bạ/contact”; nếu logic sửa/xóa/validate tương đương thì điểm bài tập đầu giờ quanh mức hợp lý (~70) theo SYSTEM.\n"
         "- Không soi chữ trong alert nếu đúng ý; không bịa yêu cầu không có trong đề.\n"
-        "- `comment`: một đoạn ngắn, không bullet, không markdown.\n"
-        "- Rubric (tuỳ chọn) có thể tách tiêu chí cho bài tập đầu giờ và báo cáo; vẫn một `score` tổng hợp 0–100."
+        + comment_line
+        + "- Rubric (tuỳ chọn) có thể tách tiêu chí cho bài tập đầu giờ và báo cáo; vẫn một `score` tổng hợp 0–100."
     )
     return "\n".join(parts)
 
@@ -178,16 +210,20 @@ def grade_submission(
     temperature: float = 0.2,
     max_tokens: int = 4096,
     report_bundle: CollectedBundle | None = None,
+    comment_style: str = "hackathon_per_question",
 ) -> GradeOutcome:
+    _cs = (comment_style or "hackathon_per_question").strip().lower()
+    cs = _cs if _cs in ("default", "hackathon_per_question") else "hackathon_per_question"
     user_prompt = build_user_prompt(
         doc,
         submission_bundle,
         template_bundle,
         template_error=template_error,
         report_bundle=report_bundle,
+        comment_style=cs,
     )
     messages = [
-        ChatMessage(role="system", content=SYSTEM_PROMPT),
+        ChatMessage(role="system", content=system_prompt_for_comment_style(cs)),
         ChatMessage(role="user", content=user_prompt),
     ]
 

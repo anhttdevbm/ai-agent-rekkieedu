@@ -5,6 +5,20 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+# Giới hạn cứng cho `comment` sau khi parse JSON (khớp mục 8 prompt chấm theo câu ~1200 ký tự).
+MAX_GRADE_COMMENT_CHARS = 1200
+
+
+def _truncate_grade_comment(text: str, *, max_len: int = MAX_GRADE_COMMENT_CHARS) -> str:
+    s = (text or "").strip()
+    if len(s) <= max_len:
+        return s
+    suffix = " … [Rút gọn do vượt giới hạn ký tự]."
+    cut = max_len - len(suffix)
+    if cut < 120:
+        return s[:max_len].rstrip()
+    return s[:cut].rstrip() + suffix
+
 
 @dataclass
 class GradePayload:
@@ -62,6 +76,7 @@ def coalesce_grade(d: dict[str, Any]) -> GradePayload:
     score = max(0, min(100, score))
 
     comment = str(d.get("comment", "")).strip() or "(Không có nhận xét.)"
+    comment = _truncate_grade_comment(comment)
 
     verdict_raw = str(d.get("integrity_verdict", "pass")).strip().lower()
     if verdict_raw in {"likely_ai", "ai", "fail", "fail_ai"}:
