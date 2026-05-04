@@ -1728,24 +1728,41 @@
     function pickCode(text) {
       const t = String(text || "");
       if (!t) return null;
-      // ưu tiên dạng _001 / -001 ở cuối
-      let mm = /(?:[_-])0*([0-9]{1,3})$/i.exec(t);
-      if (!mm) {
-        // hỗ trợ dạng _004_hackthon (mã nằm giữa chuỗi)
-        mm = /(?:[_-])0*([0-9]{1,3})(?:[_-][a-z0-9].*)?$/i.exec(t);
+
+      // Mục tiêu: ưu tiên mã đề dạng _003_... hơn số ngày/tháng (09-17) hoặc giờ (_09).
+      // Thu thập mọi nhóm số 1–3 chữ số được phân tách bởi _ hoặc -.
+      const reSeg = /(?:^|[_-])0*([0-9]{1,3})(?=[_-]|$)/g;
+      const hits = [];
+      let mm;
+      while ((mm = reSeg.exec(t))) {
+        const raw = String(mm[1] || "");
+        const n = parseInt(raw, 10);
+        if (!Number.isFinite(n) || n <= 0 || n > 999) continue;
+        hits.push({ n, raw, idx: mm.index });
       }
-      if (!mm) {
-        // hỗ trợ dạng ...-004- (có ký tự phân tách treo ở cuối)
-        mm = /(?:[_-])0*([0-9]{1,3})[_-]+$/i.exec(t);
+      if (!hits.length) {
+        // fallback rất lỏng: số ở cuối chuỗi (vd. ...De02)
+        const tailNum = /([0-9]{1,3})$/.exec(t);
+        if (!tailNum) return null;
+        const n = parseInt(tailNum[1], 10);
+        if (!Number.isFinite(n) || n <= 0 || n > 999) return null;
+        return n;
       }
-      if (!mm) {
-        // hỗ trợ dạng ...Nhan03 hoặc ...De02.sql (không có _ trước số)
-        mm = /([0-9]{1,3})$/i.exec(t);
+
+      function scoreHit(h) {
+        let score = 0;
+        // Ưu tiên 3 chữ số (003) vì thường là mã đề.
+        if (String(h.raw || "").length >= 3) score += 120;
+        // Mã đề thường nhỏ (1–50).
+        if (h.n >= 1 && h.n <= 50) score += 60;
+        if (h.n >= 1 && h.n <= 30) score += 20;
+        // Tránh picking các số nhỏ nhưng nằm ở cuối (hay là phút/giờ/ngày) bằng cách ưu tiên xuất hiện sớm hơn.
+        score += Math.max(0, 30 - Math.min(30, h.idx));
+        return score;
       }
-      if (!mm) return null;
-      const n = parseInt(mm[1], 10);
-      if (!Number.isFinite(n) || n <= 0 || n > 999) return null;
-      return n;
+
+      hits.sort((a, b) => scoreHit(b) - scoreHit(a));
+      return hits[0].n;
     }
 
     // ưu tiên segment sâu hơn (folder/file) rồi mới tới tên repo
