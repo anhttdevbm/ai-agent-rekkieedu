@@ -907,6 +907,7 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
         for part, start_stt, n_need in blocks:
             last_raw = ""
             arr_block: list[Any] | None = None
+            last_call_error: str | None = None
             for attempt in range(3):
                 if qkind == QUIZ_KIND_SESSION_WARMUP:
                     if attempt == 0:
@@ -934,13 +935,22 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
                         )
                     else:
                         msgs = _end_block_retry_messages(bad_raw=last_raw, n=n_need)
-                raw, _data = complete_chat(
-                    msgs,
-                    model=m,
-                    temperature=min(temp0, 0.35),
-                    max_tokens=9000,
-                    timeout_s=420.0,
-                )
+                try:
+                    raw, _data = complete_chat(
+                        msgs,
+                        model=m,
+                        temperature=min(temp0, 0.35),
+                        max_tokens=8192,
+                        timeout_s=420.0,
+                    )
+                except Exception as ex:
+                    last_call_error = str(ex)
+                    last_raw = f"[Lỗi gọi OpenRouter/model] {last_call_error}"
+                    if attempt >= 2:
+                        arr_block = None
+                        break
+                    continue
+                last_call_error = None
                 last_raw = raw
                 try:
                     arr_block = _parse_json_array(raw)
@@ -952,6 +962,11 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
                         arr_block = None
                         break
             if arr_block is None:
+                if last_call_error:
+                    return (
+                        False,
+                        f"Lỗi gọi model «{m}» (block câu {start_stt}–{start_stt + n_need - 1}): {last_call_error[:3500]}",
+                    )
                 if qkind == QUIZ_KIND_SESSION_WARMUP:
                     return (
                         False,

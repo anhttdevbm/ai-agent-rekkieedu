@@ -88,20 +88,34 @@ def message_content_to_assistant_text(message: dict[str, Any]) -> str:
 
 
 def post_chat_completions(body: dict[str, Any], *, timeout_s: float = 300.0) -> dict[str, Any]:
-    with httpx.Client(timeout=timeout_s) as client:
-        h = _chat_headers()
-        r = client.post(settings.OPENROUTER_URL, headers=h, json=body)
-        # Một số key có thể bị chặn khi gửi HTTP-Referer/X-Title; thử lại 1 lần với header tối giản.
-        if r.status_code == 401 and ("HTTP-Referer" in h or "X-Title" in h):
-            r2 = client.post(
-                settings.OPENROUTER_URL,
-                headers=_chat_headers_minimal(),
-                json=body,
-            )
-            r2.raise_for_status()
-            return r2.json()
-        r.raise_for_status()
-        return r.json()
+    try:
+        with httpx.Client(timeout=timeout_s) as client:
+            h = _chat_headers()
+            r = client.post(settings.OPENROUTER_URL, headers=h, json=body)
+            # Một số key có thể bị chặn khi gửi HTTP-Referer/X-Title; thử lại 1 lần với header tối giản.
+            if r.status_code == 401 and ("HTTP-Referer" in h or "X-Title" in h):
+                r2 = client.post(
+                    settings.OPENROUTER_URL,
+                    headers=_chat_headers_minimal(),
+                    json=body,
+                )
+                if r2.status_code >= 400:
+                    _raise_openrouter_http_error(r2)
+                return r2.json()
+            if r.status_code >= 400:
+                _raise_openrouter_http_error(r)
+            return r.json()
+    except httpx.RequestError as e:
+        raise RuntimeError(f"OpenRouter không kết nối được hoặc hết thời gian chờ: {e}") from e
+
+
+def _raise_openrouter_http_error(r: httpx.Response) -> None:
+    """Ném RuntimeError có body OpenRouter để API trả detail thay vì 500 trống."""
+    try:
+        body = (r.text or "")[:4000]
+    except Exception:
+        body = ""
+    raise RuntimeError(f"OpenRouter HTTP {r.status_code}: {body}") from None
 
 
 def complete_chat(

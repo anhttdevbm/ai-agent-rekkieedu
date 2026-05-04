@@ -460,7 +460,12 @@ async def api_quiz(
     def gen():
         return run_quiz_generation(params)
 
-    ok, msg = await loop.run_in_executor(_executor, gen)
+    try:
+        ok, msg = await loop.run_in_executor(_executor, gen)
+    except Exception as e:
+        _cleanup_quiz_temp(tmp_tpl, tmp_docx, out_dir)
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
     if tmp_tpl:
         try:
             os.unlink(tmp_tpl)
