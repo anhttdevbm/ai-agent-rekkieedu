@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import re
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -35,6 +36,21 @@ def _chat_headers_minimal() -> dict[str, str]:
         "Authorization": f"Bearer {settings.api_key()}",
         "Content-Type": "application/json",
     }
+
+
+def _sleep_openrouter_rate_limit(r: httpx.Response, attempt_idx: int) -> None:
+    """Chờ trước khi gọi lại sau 429/Rate limit (OpenRouter / provider upstream)."""
+    ra = r.headers.get("Retry-After") or r.headers.get("retry-after")
+    sec = 0.0
+    if ra:
+        try:
+            sec = float(str(ra).strip())
+        except ValueError:
+            sec = 0.0
+    if sec <= 0:
+        # 4s, 8s, 16s, … tối đa ~90s
+        sec = min(90.0, 4.0 * (2**attempt_idx))
+    time.sleep(min(120.0, max(2.0, sec)))
 
 
 def _normalize_content_part_to_text(part: Any) -> str:
@@ -88,23 +104,47 @@ def message_content_to_assistant_text(message: dict[str, Any]) -> str:
 
 
 def post_chat_completions(body: dict[str, Any], *, timeout_s: float = 300.0) -> dict[str, Any]:
+    """
+    Gọi OpenRouter chat completions. Tự chờ và gọi lại khi gặp HTTP 429 (rate limit tạm provider).
+    """
+    max_rounds = 8
+    last_429: str | None = None
     try:
-        with httpx.Client(timeout=timeout_s) as client:
-            h = _chat_headers()
-            r = client.post(settings.OPENROUTER_URL, headers=h, json=body)
-            # Một số key có thể bị chặn khi gửi HTTP-Referer/X-Title; thử lại 1 lần với header tối giản.
-            if r.status_code == 401 and ("HTTP-Referer" in h or "X-Title" in h):
-                r2 = client.post(
-                    settings.OPENROUTER_URL,
-                    headers=_chat_headers_minimal(),
-                    json=body,
-                )
-                if r2.status_code >= 400:
-                    _raise_openrouter_http_error(r2)
-                return r2.json()
-            if r.status_code >= 400:
-                _raise_openrouter_http_error(r)
-            return r.json()
+        for round_idx in range(max_rounds):
+            with httpx.Client(timeout=timeout_s) as client:
+                h = _chat_headers()
+                r = client.post(settings.OPENROUTER_URL, headers=h, json=body)
+                # Một số key có thể bị chặn khi gửi HTTP-Referer/X-Title; thử lại 1 lần với header tối giản.
+                if r.status_code == 401 and ("HTTP-Referer" in h or "X-Title" in h):
+                    r2 = client.post(
+                        settings.OPENROUTER_URL,
+                        headers=_chat_headers_minimal(),
+                        json=body,
+                    )
+                    if r2.status_code == 429:
+                        last_429 = (r2.text or "")[:2000]
+                        if round_idx >= max_rounds - 1:
+                            _raise_openrouter_http_error(r2)
+                        _sleep_openrouter_rate_limit(r2, round_idx)
+                        continue
+                    if r2.status_code >= 400:
+                        _raise_openrouter_http_error(r2)
+                    return r2.json()
+
+                if r.status_code == 429:
+                    last_429 = (r.text or "")[:2000]
+                    if round_idx >= max_rounds - 1:
+                        _raise_openrouter_http_error(r)
+                    _sleep_openrouter_rate_limit(r, round_idx)
+                    continue
+
+                if r.status_code >= 400:
+                    _raise_openrouter_http_error(r)
+                return r.json()
+
+        raise RuntimeError(
+            f"OpenRouter vẫn trả 429 sau {max_rounds} lần thử (rate limit). Lần cuối: {last_429 or '?'}"
+        )
     except httpx.RequestError as e:
         raise RuntimeError(f"OpenRouter không kết nối được hoặc hết thời gian chờ: {e}") from e
 
