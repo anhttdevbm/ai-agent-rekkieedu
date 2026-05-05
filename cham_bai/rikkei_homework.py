@@ -188,53 +188,55 @@ def _extract_strengths_weaknesses(comment: str) -> str:
     if not raw:
         return ""
 
-    # Portal có thể trả HTML (div/p/span/hr...). Cần strip để chỉ lấy phần nhận xét text.
-    # Mục tiêu: điền cột "Nhận xét" trên sheet bằng nội dung plain text, bỏ dòng "Kết quả/điểm".
+    # Portal có thể trả HTML (div/p/span/hr...) và đôi khi bị cụt giữa chừng.
+    # Cần strip robust để luôn lấy plain text, bỏ block "Kết quả/điểm".
     if "<" in raw and ">" in raw:
         try:
             from html import unescape as _html_unescape
 
             s = raw
-            # keep paragraph/newline boundaries
+            # Keep boundaries even if missing closing tags
             s = re.sub(r"(?is)<\s*br\s*/?\s*>", "\n", s)
-            s = re.sub(r"(?is)</\s*p\s*>", "\n\n", s)
+            s = re.sub(r"(?is)<\s*/\s*p\s*>", "\n\n", s)
+            s = re.sub(r"(?is)<\s*p\b[^>]*>", "\n\n", s)
             s = re.sub(r"(?is)<\s*hr\b[^>]*>", "\n\n", s)
-            # strip all tags
-            s = re.sub(r"(?is)<[^>]+>", " ", s)
+            # Strip all tags (best-effort even for truncated HTML)
+            s = re.sub(r"(?is)<[^>]*>", " ", s)
             s = _html_unescape(s)
-            # normalize whitespace
+
+            # Normalize whitespace
+            s = s.replace("\u00a0", " ")
             s = re.sub(r"[ \t\r\f\v]+", " ", s)
             s = re.sub(r"\n[ \t]+", "\n", s)
             s = re.sub(r"\n{3,}", "\n\n", s).strip()
 
-            # Drop "Kết quả" / score lines (thường nằm ở đoạn đầu).
+            # Remove "Kết quả" block + score patterns
             lines = [ln.strip() for ln in s.splitlines()]
             kept: list[str] = []
             for ln in lines:
-                low_ln = ln.lower()
                 if not ln:
                     kept.append("")
                     continue
+                low_ln = ln.lower()
                 if "kết quả" in low_ln:
                     continue
-                if re.search(r"\b\d+\s*/\s*100\b", ln):
+                if "đạt" in low_ln and ("✔" in ln or "✘" in ln):
                     continue
-                # các biểu tượng check/x thường đi kèm kết quả
-                if "✔" in ln or "✘" in ln:
+                if re.search(r"\b\d+\s*/\s*100\b", ln):
                     continue
                 kept.append(ln)
             s2 = "\n".join(kept)
             s2 = re.sub(r"\n{3,}", "\n\n", s2).strip()
 
-            # Prefer the longest paragraph (thường là phần nhận xét chính).
+            # Prefer longest paragraph; fallback to whole
             paras = [p.strip() for p in re.split(r"\n\s*\n", s2) if p.strip()]
-            if paras:
-                raw = max(paras, key=len)
-            else:
-                raw = s2 or raw
+            raw = max(paras, key=len) if paras else (s2 or raw)
         except Exception:
-            # fallback: keep raw
-            pass
+            # worst case: aggressively strip tags without unescape
+            s = re.sub(r"(?is)<[^>]*>", " ", raw)
+            s = re.sub(r"[ \t\r\f\v]+", " ", s).strip()
+            if s:
+                raw = s
 
     low = raw.lower()
     # Find anchors (Vietnamese with/without accents already handled upstream in sheet matching)
