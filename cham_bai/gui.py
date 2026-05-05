@@ -15,7 +15,12 @@ from cham_bai.quiz_excel import (
     ensure_lesson_quiz_example_template,
     ensure_session_warmup_quiz_example_template,
 )
-from cham_bai.model_options import IMAGE_MODEL_OPTIONS, MODEL_OPTIONS, QUIZ_KIND_OPTIONS
+from cham_bai.model_options import (
+    DEFAULT_QUIZ_SESSION_WARMUP_END_MODEL,
+    IMAGE_MODEL_OPTIONS,
+    MODEL_OPTIONS,
+    QUIZ_KIND_OPTIONS,
+)
 from cham_bai.session_warmup_plan import session_warmup_distribution_summary_vi
 from cham_bai.quiz_gen import (
     QUIZ_KIND_LESSON,
@@ -579,10 +584,23 @@ def _build_quiz_tab(main: ttk.Frame, root: tk.Tk) -> None:
             session_ent.grid(row=row + 1, column=1, columnspan=2, sticky=tk.EW, padx=(8, 0), pady=2)
 
     _toggle_quiz_fields()
-    q_kind_cb.bind(
-        "<<ComboboxSelected>>",
-        lambda _e: (_toggle_quiz_fields(), sync_quiz_template_to_kind(), _sync_quiz_num_questions_row()),
-    )
+    _quiz_kind_prev_lbl: list[str] = [QUIZ_KIND_OPTIONS[0][0]]
+
+    def _on_quiz_kind_selected(_e: object | None = None) -> None:
+        lbl = q_kind_var.get().strip()
+        kind_map = dict(QUIZ_KIND_OPTIONS)
+        prev_qk = normalize_quiz_kind(kind_map.get(_quiz_kind_prev_lbl[0], QUIZ_KIND_SESSION))
+        qk = normalize_quiz_kind(kind_map.get(lbl, QUIZ_KIND_SESSION))
+        was_sess_quiz = prev_qk in (QUIZ_KIND_SESSION_WARMUP, QUIZ_KIND_SESSION_END)
+        now_sess_quiz = qk in (QUIZ_KIND_SESSION_WARMUP, QUIZ_KIND_SESSION_END)
+        if now_sess_quiz and not was_sess_quiz:
+            q_model.set(DEFAULT_QUIZ_SESSION_WARMUP_END_MODEL)
+        _toggle_quiz_fields()
+        sync_quiz_template_to_kind()
+        _sync_quiz_num_questions_row()
+        _quiz_kind_prev_lbl[0] = lbl
+
+    q_kind_cb.bind("<<ComboboxSelected>>", lambda _e: _on_quiz_kind_selected())
     row += 2
 
     q_model = tk.StringVar(value=os.getenv("OPENROUTER_MODEL", "anthropic/claude-sonnet-4.6"))

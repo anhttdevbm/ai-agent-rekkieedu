@@ -4,7 +4,10 @@ Hằng số model / loại quiz dùng chung GUI và web — không phụ thuộc
 
 from __future__ import annotations
 
-from cham_bai.quiz_gen import QUIZ_KIND_SESSION, QUIZ_KIND_SESSION_END, QUIZ_KIND_SESSION_WARMUP
+# Trùng giá trị với cham_bai.quiz_gen (không import quiz_gen — tránh vòng import khi quiz_gen dùng resolve_quiz_llm_model).
+QUIZ_KIND_SESSION = "session"
+QUIZ_KIND_SESSION_WARMUP = "session_warmup"
+QUIZ_KIND_SESSION_END = "session_end"
 
 QUIZ_KIND_OPTIONS: tuple[tuple[str, str], ...] = (
     ("Quizz đầu giờ — theo session", QUIZ_KIND_SESSION),
@@ -15,8 +18,55 @@ QUIZ_KIND_OPTIONS: tuple[tuple[str, str], ...] = (
 # Vision–language, free; phù hợp Chấm BTVN (đề có ảnh + đọc repo).
 DEFAULT_BTVN_MODEL = "nvidia/nemotron-nano-12b-v2-vl:free"
 
-# Free, context lớn; phù hợp Quizz Session đầu giờ / cuối giờ (JSON 15 câu × 3 block).
-DEFAULT_QUIZ_SESSION_WARMUP_END_MODEL = "meta-llama/llama-3.3-70b-instruct:free"
+# Model chat (OpenRouter /v1/chat/completions) khi sinh Excel quiz (JSON 15 câu × 3 block + tài liệu dài).
+# Mistral Nemo: instruct ~12B, ctx ~128k, bám định dạng tốt — phù hợp hơn free tier cho pipeline này.
+DEFAULT_QUIZ_SESSION_WARMUP_END_CHAT_MODEL = "mistralai/mistral-nemo"
+
+# Mặc định UI khi chọn «Quizz Session đầu giờ» / «Quizz Session cuối giờ»:
+# Phải là model instruct (sinh văn bản). Các model chỉ có API embeddings không phù hợp làm mặc định — để trong MODEL_OPTIONS (nhóm embedding).
+DEFAULT_QUIZ_SESSION_WARMUP_END_MODEL = DEFAULT_QUIZ_SESSION_WARMUP_END_CHAT_MODEL
+
+# Slug OpenRouter chỉ hỗ trợ /v1/embeddings (không dùng trực tiếp cho sinh quiz).
+OPENROUTER_EMBEDDING_ONLY_IDS: frozenset[str] = frozenset(
+    {
+        "perplexity/pplx-embed-v1-0.6b",
+        "perplexity/pplx-embed-v1-4b",
+        "thenlper/gte-base",
+        "thenlper/gte-large",
+        "intfloat/e5-base-v2",
+        "intfloat/e5-large-v2",
+        "intfloat/multilingual-e5-large",
+        "sentence-transformers/paraphrase-minilm-l6-v2",
+        "sentence-transformers/all-minilm-l12-v2",
+        "sentence-transformers/all-mpnet-base-v2",
+        "sentence-transformers/multi-qa-mpnet-base-dot-v1",
+        "sentence-transformers/all-minilm-l6-v2",
+        "baai/bge-base-en-v1.5",
+        "baai/bge-large-en-v1.5",
+        "baai/bge-m3",
+        "qwen/qwen3-embedding-8b",
+        "qwen/qwen3-embedding-4b",
+        "openai/text-embedding-3-small",
+    }
+)
+
+
+def resolve_quiz_llm_model(requested: str | None) -> tuple[str, str]:
+    """
+    Trả về (slug cho /v1/chat/completions, ghi chú hoặc chuỗi rỗng).
+    Nếu user chọn model embedding-only, tự dùng DEFAULT_QUIZ_SESSION_WARMUP_END_CHAT_MODEL.
+    """
+    from cham_bai.settings import model as _or_model
+
+    r = (requested or "").strip()
+    if r in OPENROUTER_EMBEDDING_ONLY_IDS:
+        chat = _or_model(DEFAULT_QUIZ_SESSION_WARMUP_END_CHAT_MODEL)
+        return (
+            chat,
+            f"Ghi chú: «{r}» là model nhúng vector (embeddings API); sinh quiz dùng «{chat}».",
+        )
+    return _or_model(r if r else None), ""
+
 
 MODEL_OPTIONS: tuple[str, ...] = (
     "anthropic/claude-sonnet-4.6",
@@ -27,6 +77,21 @@ MODEL_OPTIONS: tuple[str, ...] = (
     "nvidia/nemotron-nano-12b-v2-vl:free",
     "nvidia/nemotron-3-super-120b-a12b:free",
     DEFAULT_QUIZ_SESSION_WARMUP_END_MODEL,
+    "meta-llama/llama-3.3-70b-instruct:free",
+    # Instruct (chat) — tuỳ chọn thay mặc định (Nemo):
+    "meta-llama/llama-3.1-8b-instruct",
+    "ibm-granite/granite-4.0-h-micro",
+    # Embeddings OpenRouter (API /v1/embeddings — chọn thủ công: sinh quiz map sang CHAT_MODEL ở trên).
+    "openai/text-embedding-3-small",
+    "qwen/qwen3-embedding-4b",
+    "perplexity/pplx-embed-v1-0.6b",
+    "perplexity/pplx-embed-v1-4b",
+    "thenlper/gte-large",
+    "intfloat/e5-large-v2",
+    "intfloat/multilingual-e5-large",
+    "baai/bge-large-en-v1.5",
+    "baai/bge-m3",
+    "qwen/qwen3-embedding-8b",
 )
 
 IMAGE_MODEL_OPTIONS: tuple[str, ...] = (

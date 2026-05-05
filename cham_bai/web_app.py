@@ -29,6 +29,7 @@ from cham_bai.gdocs_reader import fetch_google_doc_plain_text, is_google_docs_ur
 from cham_bai.git_remote import normalize_github_repo_url
 from cham_bai.model_options import (
     DEFAULT_BTVN_MODEL,
+    DEFAULT_QUIZ_SESSION_WARMUP_END_CHAT_MODEL,
     DEFAULT_QUIZ_SESSION_WARMUP_END_MODEL,
     IMAGE_MODEL_OPTIONS,
     MODEL_OPTIONS,
@@ -128,6 +129,7 @@ async def api_meta() -> JSONResponse:
             "quiz_kinds": [{"label": a, "value": b} for a, b in QUIZ_KIND_OPTIONS],
             "default_model": os.getenv("OPENROUTER_MODEL", "anthropic/claude-sonnet-4.6"),
             "default_quiz_session_warmup_end_model": DEFAULT_QUIZ_SESSION_WARMUP_END_MODEL,
+            "default_quiz_session_warmup_end_chat_model": DEFAULT_QUIZ_SESSION_WARMUP_END_CHAT_MODEL,
             "default_btvn_model": os.getenv("OPENROUTER_BTVN_MODEL", DEFAULT_BTVN_MODEL),
             "default_image_model": IMAGE_MODEL_OPTIONS[0],
             "default_learning_goals": DEFAULT_LEARNING_GOALS,

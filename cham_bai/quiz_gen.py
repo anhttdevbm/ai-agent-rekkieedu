@@ -22,9 +22,9 @@ from cham_bai.quiz_excel import (
     is_vertical_quiz_template,
     read_headers_from_template,
 )
+from cham_bai.model_options import resolve_quiz_llm_model
 from cham_bai.session_warmup_plan import apply_session_warmup_plan
 from cham_bai.session_end_plan import apply_session_end_plan
-from cham_bai.settings import model as resolve_model
 
 
 def sanitize_quiz_filename_part(s: str, max_len: int = 48) -> str:
@@ -894,7 +894,7 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
         curr_s = (params.session_current or "").strip()
         prev_excerpt = (lecture_prev or lecture_text)[:9000] if (lecture_prev or lecture_text).strip() else ""
         curr_excerpt = (lecture_curr or lecture_text)[:9000] if (lecture_curr or lecture_text).strip() else ""
-        m = resolve_model(params.model or None)
+        m, chat_remap_note = resolve_quiz_llm_model(params.model or None)
         temp0 = max(0.0, min(2.0, float(params.temperature)))
 
         # Chia 45 câu thành 3 block 15 câu để giảm lỗi cắt/thiếu JSON và thường nhanh hơn.
@@ -989,7 +989,10 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
             )
 
         fill_template_session_warmup_quiz(params.template_xlsx, params.output_xlsx, rows)
-        return True, str(params.output_xlsx)
+        out_msg = str(params.output_xlsx)
+        if chat_remap_note:
+            out_msg = f"{chat_remap_note}\n{out_msg}"
+        return True, out_msg
 
     try:
         headers = read_headers_from_template(params.template_xlsx)
@@ -1085,7 +1088,7 @@ Nội dung bài giảng (tài liệu cung cấp):
         )
         system_msg = SYSTEM_QUIZ
 
-    m = resolve_model(params.model or None)
+    m, chat_remap_note = resolve_quiz_llm_model(params.model or None)
     mt_user = max(256, int(params.max_tokens))
     max_tok = max(mt_user, 32768 if vertical else 16384)
     temp0 = max(0.0, min(2.0, float(params.temperature)))
@@ -1178,4 +1181,7 @@ Nội dung bài giảng (tài liệu cung cấp):
     except Exception as e:
         return False, f"Lỗi ghi Excel: {e}"
 
-    return True, str(Path(params.output_xlsx).resolve())
+    out_msg = str(Path(params.output_xlsx).resolve())
+    if chat_remap_note:
+        out_msg = f"{chat_remap_note}\n{out_msg}"
+    return True, out_msg
