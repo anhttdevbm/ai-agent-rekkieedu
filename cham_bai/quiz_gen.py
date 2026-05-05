@@ -181,6 +181,11 @@ def _finish_reason(data: dict[str, Any]) -> str | None:
         return None
 
 
+# Mỗi lần gọi sinh 15 object JSON (warmup/cuối giờ). max_tokens=8192 hay bị cắt giữa mảng.
+_SESSION_QUIZ_BLOCK_OUT_TOKENS_FIRST = 24576
+_SESSION_QUIZ_BLOCK_OUT_TOKENS_RETRY = 32768
+
+
 QUIZ_KIND_SESSION = "session"
 QUIZ_KIND_LESSON = "lesson"
 QUIZ_KIND_SESSION_WARMUP = "session_warmup"
@@ -364,6 +369,7 @@ def _end_block_messages(
         "Mỗi object có đúng các khóa ASCII: part, question_content, answers, explanations, isCorrect, difficulty.\n"
         "answers và explanations là mảng đúng 4 string; isCorrect là 1..4; difficulty chỉ được là 6/10/11; part luôn là 'current'.\n"
         "Để tránh bị cắt output: viết NGẮN — question_content <= 220 ký tự; mỗi explanation <= 120 ký tự.\n"
+        "Ngôn ngữ: tiếng Việt cho câu hỏi, đáp án và giải thích (trừ thuật ngữ/code).\n"
         "Nếu có code: đặt code ở CUỐI question_content theo đúng cấu trúc:\n"
         "Code:\\n<dòng 1>\\n<dòng 2>... (giữ thụt lề chuẩn bằng 4 dấu cách, không dùng markdown fence). "
         "Chỉ question_content được phép có xuống dòng; answers/explanations phải 1 dòng.\n"
@@ -382,6 +388,7 @@ def _end_block_retry_messages(*, bad_raw: str, n: int) -> list[ChatMessage]:
                 f"{n} object. Không markdown, không ```, không chữ ngoài mảng. "
                 "Mỗi object có đúng các khóa ASCII: part, question_content, answers, explanations, isCorrect, difficulty. "
                 "answers và explanations là mảng đúng 4 string; isCorrect là 1..4; difficulty chỉ được là 6/10/11; part luôn là 'current'. "
+                "Câu hỏi/đáp án/giải thích bằng tiếng Việt (trừ thuật ngữ/code). "
                 "Output phải bắt đầu bằng [ và kết thúc bằng ]."
             ),
         ),
@@ -513,6 +520,8 @@ def _warmup_block_messages(
         "answers và explanations là mảng đúng 4 string; isCorrect là 1..4; difficulty chỉ được là 4/5/6/7/8/9.\n"
         "Để tránh bị cắt output: viết NGẮN — question_content <= 220 ký tự; "
         "mỗi explanation <= 120 ký tự.\n"
+        "Ngôn ngữ: toàn bộ câu hỏi, đáp án và giải thích bằng tiếng Việt (trừ thuật ngữ/identifier trong code bắt buộc).\n"
+        "Không dùng ví dụ kiến thức phổ thông tiếng Anh có sẵn (kiểu địa lý/wikipedia nước ngoài) trừ khi đúng chủ đề trong tài liệu.\n"
         "Nếu có code: đặt code ở CUỐI question_content theo đúng cấu trúc:\n"
         "Code:\\n<dòng 1>\\n<dòng 2>... (giữ thụt lề chuẩn, không dùng markdown fence). "
         "Chỉ question_content được phép có xuống dòng; answers/explanations phải 1 dòng.\n"
@@ -535,6 +544,7 @@ def _warmup_block_retry_messages(*, bad_raw: str, n: int, part: str) -> list[Cha
                 "Mỗi object có đúng các khóa ASCII: part, question_content, answers, explanations, isCorrect, difficulty. "
                 "answers và explanations là mảng đúng 4 string; isCorrect là 1..4; difficulty là số nguyên 4..11. "
                 "Viết NGẮN để không bị cắt: question_content <= 220 ký tự; mỗi explanation <= 120 ký tự. "
+                "Toàn bộ câu hỏi/đáp án/giải thích tiếng Việt (trừ code). "
                 "Nếu có code: đặt ở cuối question_content theo dạng 'Code:\\n...' (không markdown fence). "
                 "Chỉ question_content được phép có xuống dòng; answers/explanations phải 1 dòng. "
                 f"Mọi object phải có part='{part_norm}'. "
@@ -936,11 +946,16 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
                     else:
                         msgs = _end_block_retry_messages(bad_raw=last_raw, n=n_need)
                 try:
-                    raw, _data = complete_chat(
+                    mt_out = (
+                        _SESSION_QUIZ_BLOCK_OUT_TOKENS_FIRST
+                        if attempt == 0
+                        else _SESSION_QUIZ_BLOCK_OUT_TOKENS_RETRY
+                    )
+                    raw, data = complete_chat(
                         msgs,
                         model=m,
                         temperature=min(temp0, 0.35),
-                        max_tokens=8192,
+                        max_tokens=mt_out,
                         timeout_s=420.0,
                     )
                 except Exception as ex:
@@ -970,11 +985,14 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
                 if qkind == QUIZ_KIND_SESSION_WARMUP:
                     return (
                         False,
-                        f"JSON warmup bị cắt/sai ở block {start_stt}–{start_stt + n_need - 1}.\n---\n{last_raw[:2800]}",
+                        f"JSON warmup bị cắt/sai ở block {start_stt}–{start_stt + n_need - 1}. "
+                        f"(Đã thử output tới {_SESSION_QUIZ_BLOCK_OUT_TOKENS_RETRY} token; rút ngắn câu hỏi trong prompt hoặc đổi model nếu vẫn lỗi.)\n---\n"
+                        + last_raw[:2800],
                     )
                 return (
                     False,
-                    f"JSON session cuối giờ bị cắt/sai ở block {start_stt}–{start_stt + n_need - 1}.\n---\n{last_raw[:2800]}",
+                    f"JSON session cuối giờ bị cắt/sai ở block {start_stt}–{start_stt + n_need - 1}. "
+                    f"(Đã thử tới {_SESSION_QUIZ_BLOCK_OUT_TOKENS_RETRY} token.)\n---\n{last_raw[:2800]}",
                 )
             all_items.extend(arr_block)
 
