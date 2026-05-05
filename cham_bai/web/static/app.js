@@ -137,7 +137,7 @@
     const qm = $("#q-model");
     const sessionQuizModel =
       (meta && meta.default_quiz_session_warmup_end_model) ||
-      "qwen/qwen3-235b-a22b-instruct";
+      "qwen/qwen3-235b-a22b-instruct-2507";
     const wasSessionQuiz =
       _quizKindPrevLabel === "Quizz Session đầu giờ" || _quizKindPrevLabel === "Quizz Session cuối giờ";
     const enteringSessionQuiz = (warmup || end) && !wasSessionQuiz;
