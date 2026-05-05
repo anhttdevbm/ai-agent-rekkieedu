@@ -187,6 +187,55 @@ def _extract_strengths_weaknesses(comment: str) -> str:
     raw = str(comment or "").strip()
     if not raw:
         return ""
+
+    # Portal có thể trả HTML (div/p/span/hr...). Cần strip để chỉ lấy phần nhận xét text.
+    # Mục tiêu: điền cột "Nhận xét" trên sheet bằng nội dung plain text, bỏ dòng "Kết quả/điểm".
+    if "<" in raw and ">" in raw:
+        try:
+            from html import unescape as _html_unescape
+
+            s = raw
+            # keep paragraph/newline boundaries
+            s = re.sub(r"(?is)<\s*br\s*/?\s*>", "\n", s)
+            s = re.sub(r"(?is)</\s*p\s*>", "\n\n", s)
+            s = re.sub(r"(?is)<\s*hr\b[^>]*>", "\n\n", s)
+            # strip all tags
+            s = re.sub(r"(?is)<[^>]+>", " ", s)
+            s = _html_unescape(s)
+            # normalize whitespace
+            s = re.sub(r"[ \t\r\f\v]+", " ", s)
+            s = re.sub(r"\n[ \t]+", "\n", s)
+            s = re.sub(r"\n{3,}", "\n\n", s).strip()
+
+            # Drop "Kết quả" / score lines (thường nằm ở đoạn đầu).
+            lines = [ln.strip() for ln in s.splitlines()]
+            kept: list[str] = []
+            for ln in lines:
+                low_ln = ln.lower()
+                if not ln:
+                    kept.append("")
+                    continue
+                if "kết quả" in low_ln:
+                    continue
+                if re.search(r"\b\d+\s*/\s*100\b", ln):
+                    continue
+                # các biểu tượng check/x thường đi kèm kết quả
+                if "✔" in ln or "✘" in ln:
+                    continue
+                kept.append(ln)
+            s2 = "\n".join(kept)
+            s2 = re.sub(r"\n{3,}", "\n\n", s2).strip()
+
+            # Prefer the longest paragraph (thường là phần nhận xét chính).
+            paras = [p.strip() for p in re.split(r"\n\s*\n", s2) if p.strip()]
+            if paras:
+                raw = max(paras, key=len)
+            else:
+                raw = s2 or raw
+        except Exception:
+            # fallback: keep raw
+            pass
+
     low = raw.lower()
     # Find anchors (Vietnamese with/without accents already handled upstream in sheet matching)
     idx_s = low.find("điểm mạnh")
