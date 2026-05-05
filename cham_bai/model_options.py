@@ -19,8 +19,8 @@ QUIZ_KIND_OPTIONS: tuple[tuple[str, str], ...] = (
 DEFAULT_BTVN_MODEL = "nvidia/nemotron-nano-12b-v2-vl:free"
 
 # Model chat (OpenRouter /v1/chat/completions) khi sinh Excel quiz (JSON 45 câu = nhiều sub-block 5 câu + tài liệu).
-# Qwen3 235B A22B (2507): ctx ~262k, bám schema JSON ổn (chi phí/latency có thể cao).
-DEFAULT_QUIZ_SESSION_WARMUP_END_CHAT_MODEL = "qwen/qwen3-235b-a22b-instruct-2507"
+# Qwen3.5 Flash: nhanh, ctx lớn, hợp sinh quiz theo block.
+DEFAULT_QUIZ_SESSION_WARMUP_END_CHAT_MODEL = "qwen/qwen3.5-flash-02-23"
 
 # Mặc định UI khi chọn «Quizz Session đầu giờ» / «Quizz Session cuối giờ»:
 # Phải là model instruct (sinh văn bản). Các model chỉ có API embeddings không phù hợp làm mặc định — để trong MODEL_OPTIONS (nhóm embedding).
@@ -79,6 +79,8 @@ MODEL_OPTIONS: tuple[str, ...] = (
     DEFAULT_QUIZ_SESSION_WARMUP_END_MODEL,
     "openai/gpt-oss-120b",
     "qwen/qwen-turbo",
+    "qwen/qwen3.5-flash-02-23",
+    "qwen/qwen3-8b",
     "mistralai/mistral-nemo",
     "meta-llama/llama-3.3-70b-instruct:free",
     # Instruct (chat) — thêm lựa chọn:
