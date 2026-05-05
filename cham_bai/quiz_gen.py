@@ -367,7 +367,8 @@ def _end_block_messages(
         "Chỉ output DUY NHẤT một mảng JSON hợp lệ gồm đúng "
         f"{n} object. Không markdown, không ```, không chữ ngoài mảng.\n"
         "Mỗi object có đúng các khóa ASCII: part, question_content, answers, explanations, isCorrect, difficulty.\n"
-        "answers và explanations là mảng đúng 4 string; isCorrect là 1..4; difficulty chỉ được là 6/10/11; part luôn là 'current'.\n"
+        "QUAN TRỌNG — trắc nghiệm 4 lựa chọn: \"answers\" và \"explanations\" mỗi mảng ĐÚNG 4 string; cấm 2 hoặc 3 phần tử. "
+        "isCorrect 1..4. difficulty chỉ 6/10/11; part luôn 'current'.\n"
         "Để tránh bị cắt output: viết NGẮN — question_content <= 220 ký tự; mỗi explanation <= 120 ký tự.\n"
         "Ngôn ngữ: tiếng Việt cho câu hỏi, đáp án và giải thích (trừ thuật ngữ/code).\n"
         "Nếu có code: đặt code ở CUỐI question_content theo đúng cấu trúc:\n"
@@ -387,7 +388,7 @@ def _end_block_retry_messages(*, bad_raw: str, n: int) -> list[ChatMessage]:
                 "Chỉ output DUY NHẤT một mảng JSON hợp lệ gồm đúng "
                 f"{n} object. Không markdown, không ```, không chữ ngoài mảng. "
                 "Mỗi object có đúng các khóa ASCII: part, question_content, answers, explanations, isCorrect, difficulty. "
-                "answers và explanations là mảng đúng 4 string; isCorrect là 1..4; difficulty chỉ được là 6/10/11; part luôn là 'current'. "
+                "answers và explanations mỗi mảng ĐÚNG 4 string (cấm 3); isCorrect 1..4; difficulty 6/10/11; part 'current'. "
                 "Câu hỏi/đáp án/giải thích bằng tiếng Việt (trừ thuật ngữ/code). "
                 "Output phải bắt đầu bằng [ và kết thúc bằng ]."
             ),
@@ -396,7 +397,8 @@ def _end_block_retry_messages(*, bad_raw: str, n: int) -> list[ChatMessage]:
             role="user",
             content=(
                 "Output trước bị thiếu/cụt hoặc sai định dạng. "
-                "Hãy output LẠI TOÀN BỘ mảng (đừng cố nối tiếp).\n\n"
+                "Hãy output LẠI TOÀN BỘ mảng (đừng cố nối tiếp). "
+                f"Mỗi phần tử: \"answers\" và \"explanations\" mỗi cái ĐÚNG 4 chuỗi.\n\n"
                 f"Output trước (có thể bị cắt):\n{tail}"
             ),
         ),
@@ -517,7 +519,9 @@ def _warmup_block_messages(
         "Chỉ output DUY NHẤT một mảng JSON hợp lệ gồm đúng "
         f"{n} object. Không markdown, không ```, không chữ ngoài mảng.\n"
         "Mỗi object có đúng các khóa ASCII: part, question_content, answers, explanations, isCorrect, difficulty.\n"
-        "answers và explanations là mảng đúng 4 string; isCorrect là 1..4; difficulty chỉ được là 4/5/6/7/8/9.\n"
+        "QUAN TRỌNG — trắc nghiệm 4 lựa chọn (A–D): \"answers\" và \"explanations\" mỗi cái là mảng JSON ĐÚNG 4 string; "
+        "cấm 2 hoặc 3 phần tử. isCorrect là 1..4 (thứ tự đáp án đúng).\n"
+        "difficulty chỉ được là 4/5/6/7/8/9.\n"
         "Để tránh bị cắt output: viết NGẮN — question_content <= 220 ký tự; "
         "mỗi explanation <= 120 ký tự.\n"
         "Ngôn ngữ: toàn bộ câu hỏi, đáp án và giải thích bằng tiếng Việt (trừ thuật ngữ/identifier trong code bắt buộc).\n"
@@ -542,7 +546,7 @@ def _warmup_block_retry_messages(*, bad_raw: str, n: int, part: str) -> list[Cha
                 "Chỉ output DUY NHẤT một mảng JSON hợp lệ gồm đúng "
                 f"{n} object. Không markdown, không ```, không chữ ngoài mảng. "
                 "Mỗi object có đúng các khóa ASCII: part, question_content, answers, explanations, isCorrect, difficulty. "
-                "answers và explanations là mảng đúng 4 string; isCorrect là 1..4; difficulty là số nguyên 4..11. "
+                "answers và explanations mỗi mảng ĐÚNG 4 string (trắc nghiệm A–D), cấm 3 phần tử; isCorrect 1..4; difficulty chỉ 4/5/6/7/8/9. "
                 "Viết NGẮN để không bị cắt: question_content <= 220 ký tự; mỗi explanation <= 120 ký tự. "
                 "Toàn bộ câu hỏi/đáp án/giải thích tiếng Việt (trừ code). "
                 "Nếu có code: đặt ở cuối question_content theo dạng 'Code:\\n...' (không markdown fence). "
@@ -556,11 +560,43 @@ def _warmup_block_retry_messages(*, bad_raw: str, n: int, part: str) -> list[Cha
             content=(
                 "Output trước bị thiếu/cụt hoặc sai định dạng. "
                 "Hãy output LẠI TOÀN BỘ mảng (đừng cố nối tiếp). "
-                f"Phải đúng {n} phần tử.\n\n"
+                f"Phải đúng {n} phần tử. Mỗi phần tử: \"answers\" và \"explanations\" mỗi cái ĐÚNG 4 chuỗi (không 3).\n\n"
                 f"Output trước (có thể bị cắt):\n{tail}"
             ),
         ),
     ]
+
+
+def _validate_session_quiz_block_items(items: list[Any], n_need: int) -> None:
+    """
+    Kiểm tra ngay sau khi parse từng block (15 câu): model hay trả 3 đáp án thay vì 4 hoặc JSON cụt.
+    Nếu sai → ném ValueError để vòng lặp retry với prompt sửa.
+    """
+    if len(items) != n_need:
+        raise ValueError(f"Cần {n_need} object trong block, nhận {len(items)}.")
+    for i, it in enumerate(items):
+        if not isinstance(it, dict):
+            raise ValueError(f"Object {i + 1} trong block: phải là JSON object.")
+        ans = it.get("answers")
+        exps = it.get("explanations")
+        na = len(ans) if isinstance(ans, list) else -1
+        ne = len(exps) if isinstance(exps, list) else -1
+        if na != 4 or ne != 4:
+            raise ValueError(
+                f"Object {i + 1}: trắc nghiệm 4 lựa chọn A–D — "
+                f'"answers" và "explanations" mỗi mảng phải ĐÚNG 4 chuỗi; đang answers={na}, explanations={ne}.'
+            )
+        if not all(isinstance(x, str) and x.strip() for x in ans):
+            raise ValueError(f"Object {i + 1}: mỗi phần tử trong answers phải là chuỗi không rỗng.")
+        if not all(isinstance(x, str) and x.strip() for x in exps):
+            raise ValueError(f"Object {i + 1}: mỗi phần tử trong explanations phải là chuỗi không rỗng.")
+        ic = it.get("isCorrect")
+        try:
+            icn = int(ic)
+        except Exception:
+            raise ValueError(f"Object {i + 1}: isCorrect phải là số 1..4.") from None
+        if icn not in (1, 2, 3, 4):
+            raise ValueError(f"Object {i + 1}: isCorrect phải là 1..4 (thứ tự đáp án đúng trong 4 lựa chọn).")
 
 
 def _parse_session_warmup_items(arr: list[Any], *, plan: str = "warmup") -> list[dict[str, object]]:
@@ -971,6 +1007,7 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
                     arr_block = _parse_json_array(raw)
                     if len(arr_block) != n_need:
                         raise ValueError(f"Cần {n_need} câu, nhận {len(arr_block)}.")
+                    _validate_session_quiz_block_items(arr_block, n_need)
                     break
                 except Exception:
                     if attempt >= 2:
