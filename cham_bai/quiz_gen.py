@@ -181,9 +181,12 @@ def _finish_reason(data: dict[str, Any]) -> str | None:
         return None
 
 
-# Mỗi lần gọi sinh 15 object JSON (warmup/cuối giờ). max_tokens=8192 hay bị cắt giữa mảng.
+# Mỗi lần gọi sinh N object JSON (warmup/cuối giờ). max_tokens=8192 hay bị cắt giữa mảng.
 _SESSION_QUIZ_BLOCK_OUT_TOKENS_FIRST = 24576
 _SESSION_QUIZ_BLOCK_OUT_TOKENS_RETRY = 32768
+# 5 câu/lần gọi → JSON ngắn, ít bị cụt và model ít nhầm 3 đáp án; 9 lần gọi cho đủ 45 câu.
+_SESSION_QUIZ_ITEMS_PER_CALL = 5
+_SESSION_BLOCK_PARSE_ATTEMPTS = 5
 
 
 QUIZ_KIND_SESSION = "session"
@@ -368,8 +371,9 @@ def _end_block_messages(
         f"{n} object. Không markdown, không ```, không chữ ngoài mảng.\n"
         "Mỗi object có đúng các khóa ASCII: part, question_content, answers, explanations, isCorrect, difficulty.\n"
         "QUAN TRỌNG — trắc nghiệm 4 lựa chọn: \"answers\" và \"explanations\" mỗi mảng ĐÚNG 4 string; cấm 2 hoặc 3 phần tử. "
+        "Mẫu: \"answers\":[\"...\",\"...\",\"...\",\"...\"], \"explanations\":[\"...\",\"...\",\"...\",\"...\"]. "
         "isCorrect 1..4. difficulty chỉ 6/10/11; part luôn 'current'.\n"
-        "Để tránh bị cắt output: viết NGẮN — question_content <= 220 ký tự; mỗi explanation <= 120 ký tự.\n"
+        "Để tránh bị cắt output: viết RẤT NGẮN — question_content <= 180 ký tự; mỗi explanation <= 90 ký tự.\n"
         "Ngôn ngữ: tiếng Việt cho câu hỏi, đáp án và giải thích (trừ thuật ngữ/code).\n"
         "Nếu có code: đặt code ở CUỐI question_content theo đúng cấu trúc:\n"
         "Code:\\n<dòng 1>\\n<dòng 2>... (giữ thụt lề chuẩn bằng 4 dấu cách, không dùng markdown fence). "
@@ -388,7 +392,7 @@ def _end_block_retry_messages(*, bad_raw: str, n: int) -> list[ChatMessage]:
                 "Chỉ output DUY NHẤT một mảng JSON hợp lệ gồm đúng "
                 f"{n} object. Không markdown, không ```, không chữ ngoài mảng. "
                 "Mỗi object có đúng các khóa ASCII: part, question_content, answers, explanations, isCorrect, difficulty. "
-                "answers và explanations mỗi mảng ĐÚNG 4 string (cấm 3); isCorrect 1..4; difficulty 6/10/11; part 'current'. "
+                "answers và explanations mỗi mảng ĐÚNG 4 string (cấm 3); mẫu 4+4 phần tử như warmup; isCorrect 1..4; difficulty 6/10/11; part 'current'. "
                 "Câu hỏi/đáp án/giải thích bằng tiếng Việt (trừ thuật ngữ/code). "
                 "Output phải bắt đầu bằng [ và kết thúc bằng ]."
             ),
@@ -521,9 +525,11 @@ def _warmup_block_messages(
         "Mỗi object có đúng các khóa ASCII: part, question_content, answers, explanations, isCorrect, difficulty.\n"
         "QUAN TRỌNG — trắc nghiệm 4 lựa chọn (A–D): \"answers\" và \"explanations\" mỗi cái là mảng JSON ĐÚNG 4 string; "
         "cấm 2 hoặc 3 phần tử. isCorrect là 1..4 (thứ tự đáp án đúng).\n"
+        "Mẫu đúng một object: \"answers\":[\"...\",\"...\",\"...\",\"...\"], \"explanations\":[\"...\",\"...\",\"...\",\"...\"] "
+        "(luôn 4 phần tử mỗi mảng).\n"
         "difficulty chỉ được là 4/5/6/7/8/9.\n"
-        "Để tránh bị cắt output: viết NGẮN — question_content <= 220 ký tự; "
-        "mỗi explanation <= 120 ký tự.\n"
+        "Để tránh bị cắt output: viết RẤT NGẮN — question_content <= 180 ký tự; "
+        "mỗi explanation <= 90 ký tự.\n"
         "Ngôn ngữ: toàn bộ câu hỏi, đáp án và giải thích bằng tiếng Việt (trừ thuật ngữ/identifier trong code bắt buộc).\n"
         "Không dùng ví dụ kiến thức phổ thông tiếng Anh có sẵn (kiểu địa lý/wikipedia nước ngoài) trừ khi đúng chủ đề trong tài liệu.\n"
         "Nếu có code: đặt code ở CUỐI question_content theo đúng cấu trúc:\n"
@@ -547,7 +553,8 @@ def _warmup_block_retry_messages(*, bad_raw: str, n: int, part: str) -> list[Cha
                 f"{n} object. Không markdown, không ```, không chữ ngoài mảng. "
                 "Mỗi object có đúng các khóa ASCII: part, question_content, answers, explanations, isCorrect, difficulty. "
                 "answers và explanations mỗi mảng ĐÚNG 4 string (trắc nghiệm A–D), cấm 3 phần tử; isCorrect 1..4; difficulty chỉ 4/5/6/7/8/9. "
-                "Viết NGẮN để không bị cắt: question_content <= 220 ký tự; mỗi explanation <= 120 ký tự. "
+                "Mẫu: \"answers\":[\"a\",\"b\",\"c\",\"d\"],\"explanations\":[\"e1\",\"e2\",\"e3\",\"e4\"]. "
+                "Viết RẤT NGẮN: question_content <= 180 ký tự; mỗi explanation <= 90 ký tự. "
                 "Toàn bộ câu hỏi/đáp án/giải thích tiếng Việt (trừ code). "
                 "Nếu có code: đặt ở cuối question_content theo dạng 'Code:\\n...' (không markdown fence). "
                 "Chỉ question_content được phép có xuống dòng; answers/explanations phải 1 dòng. "
@@ -569,7 +576,7 @@ def _warmup_block_retry_messages(*, bad_raw: str, n: int, part: str) -> list[Cha
 
 def _validate_session_quiz_block_items(items: list[Any], n_need: int) -> None:
     """
-    Kiểm tra ngay sau khi parse từng block (15 câu): model hay trả 3 đáp án thay vì 4 hoặc JSON cụt.
+    Kiểm tra ngay sau khi parse từng sub-block (thường 5 câu): model hay trả 3 đáp án thay vì 4 hoặc JSON cụt.
     Nếu sai → ném ValueError để vòng lặp retry với prompt sửa.
     """
     if len(items) != n_need:
@@ -943,18 +950,23 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
         m, chat_remap_note = resolve_quiz_llm_model(params.model or None)
         temp0 = max(0.0, min(2.0, float(params.temperature)))
 
-        # Chia 45 câu thành 3 block 15 câu để giảm lỗi cắt/thiếu JSON và thường nhanh hơn.
+        # Chia 45 câu thành nhiều lần gọi (mặc định 5 câu/lần) để JSON không cụt và đủ 4 đáp án/câu.
+        qpc = _SESSION_QUIZ_ITEMS_PER_CALL
         blocks: list[tuple[str, int, int]]
         if qkind == QUIZ_KIND_SESSION_WARMUP:
-            blocks = [("prev", 1, 15), ("prev", 16, 15), ("current", 31, 15)]
+            blocks = []
+            for st in range(1, 31, qpc):
+                blocks.append(("prev", st, qpc))
+            for st in range(31, 46, qpc):
+                blocks.append(("current", st, qpc))
         else:
-            blocks = [("current", 1, 15), ("current", 16, 15), ("current", 31, 15)]
+            blocks = [("current", st, qpc) for st in range(1, 46, qpc)]
         all_items: list[Any] = []
         for part, start_stt, n_need in blocks:
             last_raw = ""
             arr_block: list[Any] | None = None
             last_call_error: str | None = None
-            for attempt in range(3):
+            for attempt in range(_SESSION_BLOCK_PARSE_ATTEMPTS):
                 if qkind == QUIZ_KIND_SESSION_WARMUP:
                     if attempt == 0:
                         docx_excerpt = prev_excerpt if part == "prev" else curr_excerpt
@@ -990,14 +1002,14 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
                     raw, data = complete_chat(
                         msgs,
                         model=m,
-                        temperature=min(temp0, 0.35),
+                        temperature=(min(temp0, 0.35) if attempt == 0 else min(temp0, 0.12)),
                         max_tokens=mt_out,
                         timeout_s=420.0,
                     )
                 except Exception as ex:
                     last_call_error = str(ex)
                     last_raw = f"[Lỗi gọi OpenRouter/model] {last_call_error}"
-                    if attempt >= 2:
+                    if attempt >= _SESSION_BLOCK_PARSE_ATTEMPTS - 1:
                         arr_block = None
                         break
                     continue
@@ -1010,7 +1022,7 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
                     _validate_session_quiz_block_items(arr_block, n_need)
                     break
                 except Exception:
-                    if attempt >= 2:
+                    if attempt >= _SESSION_BLOCK_PARSE_ATTEMPTS - 1:
                         arr_block = None
                         break
             if arr_block is None:

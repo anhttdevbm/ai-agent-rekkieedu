@@ -18,7 +18,7 @@ QUIZ_KIND_OPTIONS: tuple[tuple[str, str], ...] = (
 # Vision–language, free; phù hợp Chấm BTVN (đề có ảnh + đọc repo).
 DEFAULT_BTVN_MODEL = "nvidia/nemotron-nano-12b-v2-vl:free"
 
-# Model chat (OpenRouter /v1/chat/completions) khi sinh Excel quiz (JSON 15 câu × 3 block + tài liệu dài).
+# Model chat (OpenRouter /v1/chat/completions) khi sinh Excel quiz (JSON 45 câu = nhiều sub-block 5 câu + tài liệu).
 # Mistral Nemo: instruct ~12B, ctx ~128k, bám định dạng tốt — phù hợp hơn free tier cho pipeline này.
 DEFAULT_QUIZ_SESSION_WARMUP_END_CHAT_MODEL = "mistralai/mistral-nemo"
 
