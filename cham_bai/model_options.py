@@ -19,8 +19,8 @@ QUIZ_KIND_OPTIONS: tuple[tuple[str, str], ...] = (
 DEFAULT_BTVN_MODEL = "nvidia/nemotron-nano-12b-v2-vl:free"
 
 # Model chat (OpenRouter /v1/chat/completions) khi sinh Excel quiz (JSON 45 câu = nhiều sub-block 5 câu + tài liệu).
-# Mistral Nemo: instruct ~12B, ctx ~128k, bám định dạng tốt — phù hợp hơn free tier cho pipeline này.
-DEFAULT_QUIZ_SESSION_WARMUP_END_CHAT_MODEL = "mistralai/mistral-nemo"
+# Qwen-Turbo: ctx lớn, tiếng Việt ổn, giá/tốc độ hợp pipeline session quiz.
+DEFAULT_QUIZ_SESSION_WARMUP_END_CHAT_MODEL = "qwen/qwen-turbo"
 
 # Mặc định UI khi chọn «Quizz Session đầu giờ» / «Quizz Session cuối giờ»:
 # Phải là model instruct (sinh văn bản). Các model chỉ có API embeddings không phù hợp làm mặc định — để trong MODEL_OPTIONS (nhóm embedding).
@@ -77,8 +77,9 @@ MODEL_OPTIONS: tuple[str, ...] = (
     "nvidia/nemotron-nano-12b-v2-vl:free",
     "nvidia/nemotron-3-super-120b-a12b:free",
     DEFAULT_QUIZ_SESSION_WARMUP_END_MODEL,
+    "mistralai/mistral-nemo",
     "meta-llama/llama-3.3-70b-instruct:free",
-    # Instruct (chat) — tuỳ chọn thay mặc định (Nemo):
+    # Instruct (chat) — thêm lựa chọn:
     "meta-llama/llama-3.1-8b-instruct",
     "ibm-granite/granite-4.0-h-micro",
     # Embeddings OpenRouter (API /v1/embeddings — chọn thủ công: sinh quiz map sang CHAT_MODEL ở trên).
