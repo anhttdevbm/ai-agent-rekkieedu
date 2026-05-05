@@ -53,16 +53,76 @@ _SCORE_FROM_COMMENT_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Portal mới: "Kết quả: ✔ ĐẠT — 90/100" (không dùng ngoặc vuông).
+_KET_QUA_SCORE_RE = re.compile(
+    r"Kết\s*quả\s*:\s*[^\n]*?(?P<score>\d+(?:\.\d+)?)\s*/\s*100",
+    re.IGNORECASE,
+)
+# Cùng dòng có ĐẠT và điểm (dự phòng khi thiếu tiền tố "Kết quả:").
+_DAT_LINE_SCORE_RE = re.compile(
+    r"(?:✔\s*)?(?:ĐẠT|đạt)\s*[—\-–]?\s*(?P<score>\d+(?:\.\d+)?)\s*/\s*100",
+    re.IGNORECASE,
+)
+
+
+def _scores_from_comment(comment: str | None) -> list[float]:
+    c = str(comment or "")
+    scores: list[float] = []
+    for rx in (_SCORE_FROM_COMMENT_RE, _KET_QUA_SCORE_RE, _DAT_LINE_SCORE_RE):
+        for m in rx.finditer(c):
+            try:
+                scores.append(float(m.group("score")))
+            except Exception:
+                continue
+    return scores
+
 
 def _score_from_comment(comment: str | None) -> float | None:
+    """
+    Trả về điểm cao nhất tìm được trong nhận xét (một bài có thể ghép nhiều khối "Kết quả:").
+    """
+    s = _scores_from_comment(comment)
+    return max(s) if s else None
+
+
+_KET_QUA_LINE_START_RE = re.compile(r"(?i)^\s*Kết\s*quả\s*:")
+
+
+def _ket_qua_dat_decision(comment: str | None) -> bool | None:
+    """
+    Định dạng portal: dòng bắt đầu bằng "Kết quả: ...".
+    - True: có ít nhất một dòng ĐẠT (không phải CHƯA ĐẠT).
+    - False: có CHƯA ĐẠT và không có dòng ĐẠT thuần nào.
+    - None: không có dòng Kết quả:, hoặc có nhưng không suy ra được → dùng điểm.
+    """
     c = str(comment or "")
-    m = _SCORE_FROM_COMMENT_RE.search(c)
-    if not m:
+    lines = [ln for ln in c.splitlines() if _KET_QUA_LINE_START_RE.match(ln)]
+    if not lines:
         return None
-    try:
-        return float(m.group("score"))
-    except Exception:
-        return None
+    found_pass = False
+    found_chua = False
+    for line in lines:
+        if re.search(r"(?i)chưa\s*đạt", line):
+            found_chua = True
+            continue
+        if re.search(r"(?i)ĐẠT|\bđạt\b", line):
+            found_pass = True
+    if found_pass:
+        return True
+    if found_chua:
+        return False
+    return None
+
+
+def _exercise_achieved_for_session(comment: str | None, score_threshold: float) -> bool:
+    """Một bài tính là đạt khi portal ghi rõ ĐẠT, hoặc (fallback) điểm > ngưỡng."""
+    d = _ket_qua_dat_decision(comment)
+    if d is True:
+        return True
+    if d is False:
+        return False
+    sc = _score_from_comment(comment)
+    return sc is not None and sc > score_threshold
 
 
 def _extract_student_session_status(student: dict[str, Any], session_id: int | str | None = None) -> str:
@@ -276,11 +336,10 @@ def mark_btvn_session_status_from_exercise_scores(
             for ex in exercises:
                 if not isinstance(ex, dict):
                     continue
-                sc = _score_from_comment(ex.get("comment"))
                 cmt = ex.get("comment")
                 if isinstance(cmt, str) and cmt.strip():
                     comments_pool.append(cmt.strip())
-                if sc is not None and sc > score_threshold:
+                if _exercise_achieved_for_session(cmt, score_threshold):
                     achieved += 1
         except Exception:
             fail += 1
@@ -315,7 +374,7 @@ def mark_btvn_session_status_from_exercise_scores(
                 student_id=st_id,
                 session_id=sid,
                 status=new_status,
-                # Fill số bài "đạt" (điểm > 50) vào completedExercises.
+                # Fill số bài đạt: "Kết quả: ... ĐẠT" hoặc điểm > ngưỡng (mặc định 50).
                 completed_exercises=achieved,
             )
             ok += 1
