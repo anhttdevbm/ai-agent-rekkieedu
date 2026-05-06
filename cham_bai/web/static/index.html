@@ -762,6 +762,13 @@
           <div class="actions">
             <button type="submit" class="primary" id="ga-submit">Chấm Nhóm A</button>
           </div>
+          <div class="actions" style="margin-top: 0.5rem">
+            <div class="checkline">
+              <input type="checkbox" id="ga-export" checked />
+              <label for="ga-export" style="margin:0">Tải file Excel kết quả sau khi chấm</label>
+            </div>
+            <button type="button" class="primary" id="ga-download" disabled>Tải Excel kết quả</button>
+          </div>
           <p class="status" id="ga-status"></p>
           <pre class="log" id="ga-log"></pre>
         </form>
@@ -830,6 +837,6 @@
 
       <footer>Chạy local · OpenRouter · không lưu dữ liệu trên server sau khi tải file</footer>
     </div>
-    <script src="/static/app.js?v=20260506_03"></script>
+    <script src="/static/app.js?v=20260506_04"></script>
   </body>
 </html>

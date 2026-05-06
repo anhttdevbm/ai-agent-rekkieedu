@@ -1551,6 +1551,55 @@ async def api_hackathon_grade_export_xlsx(
     )
 
 
+@app.post("/api/group-a/export-xlsx")
+async def api_group_a_export_xlsx(
+    rows_json: str = Form(...),
+) -> FileResponse:
+    try:
+        rows = json.loads(rows_json or "[]")
+    except Exception:
+        raise HTTPException(status_code=400, detail="rows_json không phải JSON hợp lệ.")
+    if not isinstance(rows, list):
+        raise HTTPException(status_code=400, detail="rows_json phải là list.")
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "NhomA"
+    headers = ["Mã SV", "Họ tên", "Repo", "Link đề", "Model", "OK", "Điểm", "Nhận xét"]
+    ws.append(headers)
+    for r in rows[:5000]:
+        if not isinstance(r, dict):
+            continue
+        ws.append(
+            [
+                str(r.get("studentCode") or ""),
+                str(r.get("fullName") or ""),
+                str(r.get("repo") or ""),
+                str(r.get("assignment") or ""),
+                str(r.get("model") or ""),
+                "OK" if r.get("ok") else "FAIL",
+                str(r.get("score") or ""),
+                str(r.get("comment") or ""),
+            ]
+        )
+
+    for col in range(1, len(headers) + 1):
+        letter = get_column_letter(col)
+        ws.column_dimensions[letter].width = 28 if col in (3, 4, 8) else 16
+
+    out_dir = tempfile.mkdtemp(prefix="ga_xlsx_")
+    out_path = Path(out_dir) / "nhom_a_results.xlsx"
+    wb.save(str(out_path))
+    background_tasks = BackgroundTasks()
+    background_tasks.add_task(shutil.rmtree, out_dir, True)
+    return FileResponse(
+        path=str(out_path),
+        filename=out_path.name,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        background=background_tasks,
+    )
+
+
 @app.post("/api/btvn")
 async def api_btvn(
     background_tasks: BackgroundTasks,

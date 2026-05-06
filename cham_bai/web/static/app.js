@@ -1401,6 +1401,8 @@
     }
   }
 
+  let gaCtx = { last_export_rows: [] };
+
   function gaParseStudents(text) {
     const lines = String(text || "")
       .split(/\r?\n/)
@@ -1473,6 +1475,37 @@
     if (wrap) wrap.style.display = "";
   }
 
+  async function gaDownloadExcel(rows) {
+    const statusEl = $("#ga-status");
+    if (!Array.isArray(rows) || rows.length === 0) return;
+    try {
+      const fd = new FormData();
+      fd.set("rows_json", JSON.stringify(rows));
+      const r = await fetch("/api/group-a/export-xlsx", { method: "POST", body: fd });
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({}));
+        if (statusEl) statusEl.textContent = formatApiErr(err.detail) || "Lỗi xuất Excel.";
+        return;
+      }
+      const blob = await r.blob();
+      if (!blob || !blob.size) {
+        if (statusEl) statusEl.textContent = "File Excel rỗng (blob.size=0).";
+        return;
+      }
+      const cd = r.headers.get("Content-Disposition") || "";
+      let name = "nhom_a_results.xlsx";
+      const m = /filename\*?=(?:UTF-8'')?([^;\n]+)/i.exec(cd);
+      if (m) name = decodeURIComponent(m[1].replace(/['"]/g, "").trim());
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch (e) {
+      if (statusEl) statusEl.textContent = String(e);
+    }
+  }
+
   async function postGroupA(ev) {
     ev.preventDefault();
     const btn = $("#ga-submit");
@@ -1537,6 +1570,8 @@
           studentCode: meta.studentCode || "",
           fullName: meta.fullName || "",
           repo: meta.repo || "",
+          assignment: docsUrl,
+          model: ($("#ga-model") && $("#ga-model").value ? String($("#ga-model").value) : "").trim(),
           ok,
           score,
           comment,
@@ -1544,7 +1579,14 @@
       }
       setLog("#ga-log", (data.log || "").trim(), !data.ok);
       gaSetResults(out);
+      gaCtx.last_export_rows = out;
+      const dlBtn = $("#ga-download");
+      if (dlBtn) dlBtn.disabled = !(Array.isArray(out) && out.length > 0);
       $("#ga-status").textContent = data.ok ? "Xong." : "Có lỗi — xem log.";
+      const autoExport = $("#ga-export") && $("#ga-export").checked;
+      if (autoExport && Array.isArray(out) && out.length > 0) {
+        await gaDownloadExcel(out);
+      }
     } catch (e) {
       setLog("#ga-log", String(e), true);
     } finally {
@@ -1712,6 +1754,13 @@
     $("#form-reading").addEventListener("submit", postReading);
     const fga = $("#form-group-a");
     if (fga) fga.addEventListener("submit", postGroupA);
+    const gaDl = $("#ga-download");
+    if (gaDl) {
+      gaDl.addEventListener("click", async () => {
+        const rows = (gaCtx && gaCtx.last_export_rows) || [];
+        await gaDownloadExcel(rows);
+      });
+    }
     const fh = $("#form-hackathon");
     if (fh) fh.addEventListener("submit", postHackathon);
     const hAI = $("#h-ai");
