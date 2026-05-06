@@ -54,6 +54,18 @@
     qk.addEventListener("change", applyQuizKindUI);
   }
 
+  function pickCheapestTextModel(models, fallback) {
+    const arr = Array.isArray(models) ? models : [];
+    // Prefer the explicitly requested default for this popup (cheap/fast text)
+    const flash = arr.find((m) => m === "google/gemini-3-flash-preview");
+    if (flash) return flash;
+    // Fallback: any free-tier models
+    const free = arr.find((m) => typeof m === "string" && m.includes(":free"));
+    if (free) return free;
+    // Last: meta default or fallback
+    return fallback || (arr[0] || "");
+  }
+
   function formatApiErr(detail) {
     if (detail == null) return "";
     if (typeof detail === "string") return detail;
@@ -1005,13 +1017,23 @@
     if (!body) return;
     const items = Array.isArray(exercises) ? exercises : [];
     const esc = (s) => escapeHtml(String(s || ""));
+    const defaultModalModel = pickCheapestTextModel(
+      meta && meta.models ? meta.models : [],
+      meta && (meta.default_btvn_model || meta.default_model)
+    );
     body.innerHTML = `
+      <style>
+        #btvn-modal-body { color:#0f172a; }
+        #btvn-modal-body .tbl th, #btvn-modal-body .tbl td { color:#0f172a; }
+        #btvn-modal-body .small { color:#475569; }
+      </style>
       <div style="display:flex;gap:10px;align-items:center;justify-content:space-between;margin:0 0 10px 0">
         <div>
           <div style="font-weight:700">Bài nộp của sinh viên</div>
           <div class="small" style="margin-top:4px">Chọn 1 hoặc nhiều bài để ghi nhận xét lên portal.</div>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
+          <select id="btvn-modal-model" style="max-width:340px;background:#fff;color:#0f172a;border:1px solid #cbd5e1;border-radius:10px;padding:8px"></select>
           <button type="button" class="primary" id="btvn-modal-ai">AI chấm (đã chọn)</button>
           <button type="button" class="primary" id="btvn-modal-push">Ghi nhận xét (đã chọn)</button>
         </div>
@@ -1049,11 +1071,11 @@
                       <div style="font-weight:700">${esc(hwTitle || ("Exercise " + exId))}</div>
                       <div class="small">exercise_id=${esc(exId)} · homework_id=${esc(hwId || "")}</div>
                     </td>
-                    <td style="padding:10px;border-bottom:1px solid #f3f4f6;max-width:260px">
-                      ${link ? `<a href="${esc(link)}" target="_blank" rel="noreferrer">${esc(link)}</a>` : "<span class='small'>(trống)</span>"}
+                    <td style="padding:10px;border-bottom:1px solid #f3f4f6;max-width:260px;word-break:break-word">
+                      ${link ? `<a href="${esc(link)}" target="_blank" rel="noreferrer" style="color:#0ea5e9;text-decoration:underline">${esc(link)}</a>` : "<span class='small'>(trống)</span>"}
                     </td>
                     <td style="padding:10px;border-bottom:1px solid #f3f4f6;width:110px">
-                      <input class="btvn-ex-score" data-idx="${idx}" type="number" min="0" max="100" value="${esc(score)}" style="width:88px;background:#fff;color:#0f172a;border:1px solid #cbd5e1;border-radius:10px;padding:8px" />
+                      <input class="btvn-ex-score" data-idx="${idx}" type="number" min="0" max="100" value="${esc(score)}" style="display:block;width:96px;box-sizing:border-box;background:#fff;color:#0f172a;border:1px solid #cbd5e1;border-radius:10px;padding:8px" />
                     </td>
                     <td style="padding:10px;border-bottom:1px solid #f3f4f6;min-width:320px">
                       <textarea class="btvn-ex-note" data-idx="${idx}" rows="4" style="width:100%;background:#fff;color:#0f172a;border:1px solid #cbd5e1;border-radius:10px;padding:10px" placeholder="Nhận xét 2–4 câu…">${esc(commentTxt)}</textarea>
@@ -1072,6 +1094,23 @@
     `;
 
     const statusEl = $("#btvn-modal-status");
+
+    // fill model select
+    const msel = $("#btvn-modal-model");
+    if (msel) {
+      const values = (meta && meta.models) || [];
+      msel.innerHTML = "";
+      (Array.isArray(values) ? values : []).forEach((v) => {
+        if (typeof v !== "string" || !v.trim()) return;
+        const o = document.createElement("option");
+        o.value = v;
+        o.textContent = v;
+        if (v === defaultModalModel) o.selected = true;
+        msel.appendChild(o);
+      });
+      // If default isn't present, still set value (best-effort)
+      if (defaultModalModel && !msel.value) msel.value = defaultModalModel;
+    }
     const all = $("#btvn-modal-checkall");
     if (all) {
       all.addEventListener("change", () => {
@@ -1085,7 +1124,23 @@
       aiBtn.addEventListener("click", async () => {
         const token = ($("#b-rk-token") && $("#b-rk-token").value) || "";
         const assignmentText = ($("#b-assignment-text") && $("#b-assignment-text").value) || "";
-        const model = ($("#b-model") && $("#b-model").value) || "";
+        const model =
+          ($("#btvn-modal-model") && $("#btvn-modal-model").value) ||
+          ($("#b-model") && $("#b-model").value) ||
+          "";
+        const hwSel = $("#b-homework");
+        let hwItems = [];
+        try {
+          hwItems = hwSel && hwSel.dataset && hwSel.dataset.items ? JSON.parse(hwSel.dataset.items || "[]") : [];
+        } catch {
+          hwItems = [];
+        }
+        const hwMap = new Map();
+        (Array.isArray(hwItems) ? hwItems : []).forEach((h) => {
+          if (!h || typeof h !== "object") return;
+          if (h.id == null) return;
+          hwMap.set(String(h.id), h);
+        });
         if (!String(assignmentText).trim()) {
           if (statusEl) statusEl.textContent = "Thiếu đề bài (assignment_text). Hãy tải session và chọn homework.";
           return;
@@ -1095,46 +1150,55 @@
           if (statusEl) statusEl.textContent = "Chưa chọn bài nào.";
           return;
         }
-        const repos = [];
-        const idxs = [];
+        // Group by homeworkId so each exercise matches correct assignment text
+        const groups = new Map(); // key=hwid string (or "default"), value={assignment_text, idxs, repos}
         for (const c of checks) {
           const idx = parseInt(String(c.getAttribute("data-idx") || ""), 10);
           const it = items[idx] || {};
           const link = String(it.link_git || it.linkGit || it.link || "").trim();
           if (!link) continue;
-          repos.push(link);
-          idxs.push(idx);
+          const hwid =
+            it.homeworkId || it.homework_id || (it.homework && it.homework.id) || ($("#b-homework-id") && $("#b-homework-id").value) || "";
+          const hwKey = hwid != null && String(hwid).trim() ? String(hwid).trim() : "default";
+          const hwObj = hwKey !== "default" ? hwMap.get(hwKey) : null;
+          const at = hwObj && hwObj.plain_text ? String(hwObj.plain_text).trim() : String(assignmentText).trim();
+          if (!groups.has(hwKey)) groups.set(hwKey, { assignment_text: at, idxs: [], repos: [] });
+          const g = groups.get(hwKey);
+          g.idxs.push(idx);
+          g.repos.push(link);
         }
-        if (!repos.length) {
+        if (groups.size === 0) {
           if (statusEl) statusEl.textContent = "Không có link repo trong các bài đã chọn.";
           return;
         }
 
         try {
-          if (statusEl) statusEl.textContent = `AI đang chấm ${repos.length} bài…`;
+          const total = Array.from(groups.values()).reduce((a, g) => a + (g.repos ? g.repos.length : 0), 0);
+          if (statusEl) statusEl.textContent = `AI đang chấm ${total} bài…`;
           aiBtn.disabled = true;
-          const fd = new FormData();
-          fd.set("assignment_text", String(assignmentText));
-          fd.set("submissions_text", repos.join("\n"));
-          fd.set("model", String(model || ""));
-          // github_token: reuse nếu bạn có input chung (hiện tab này không có) → bỏ trống
-          fd.set("github_token", "");
-          const r = await fetch("/api/btvn/grade", { method: "POST", body: fd });
-          const data = await r.json().catch(() => ({}));
-          if (!r.ok) {
-            if (statusEl) statusEl.textContent = formatApiErr(data.detail) || "Lỗi AI chấm.";
-            return;
-          }
-          const rows = (data && data.rows) || [];
-          for (let j = 0; j < idxs.length; j++) {
-            const idx = idxs[j];
-            const row = rows[j] || {};
-            const score = row.score;
-            const comment = row.comment || "";
-            const scoreEl = document.querySelector(`input.btvn-ex-score[data-idx="${idx}"]`);
-            const noteEl = document.querySelector(`textarea.btvn-ex-note[data-idx="${idx}"]`);
-            if (scoreEl && score != null) scoreEl.value = String(score);
-            if (noteEl) noteEl.value = String(comment);
+          for (const g of Array.from(groups.values())) {
+            const fd = new FormData();
+            fd.set("assignment_text", String(g.assignment_text || ""));
+            fd.set("submissions_text", (g.repos || []).join("\n"));
+            fd.set("model", String(model || ""));
+            fd.set("github_token", "");
+            const r = await fetch("/api/btvn/grade", { method: "POST", body: fd });
+            const data = await r.json().catch(() => ({}));
+            if (!r.ok) {
+              if (statusEl) statusEl.textContent = formatApiErr(data.detail) || "Lỗi AI chấm.";
+              return;
+            }
+            const rows = (data && data.rows) || [];
+            for (let j = 0; j < (g.idxs || []).length; j++) {
+              const idx = g.idxs[j];
+              const row = rows[j] || {};
+              const score = row.score;
+              const comment = row.comment || "";
+              const scoreEl = document.querySelector(`input.btvn-ex-score[data-idx="${idx}"]`);
+              const noteEl = document.querySelector(`textarea.btvn-ex-note[data-idx="${idx}"]`);
+              if (scoreEl && score != null) scoreEl.value = String(score);
+              if (noteEl) noteEl.value = String(comment);
+            }
           }
           if (statusEl) statusEl.textContent = "AI chấm xong. Bạn có thể chỉnh sửa rồi bấm “Ghi nhận xét”.";
         } catch (e) {
