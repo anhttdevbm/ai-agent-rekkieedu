@@ -26,7 +26,7 @@ from openpyxl.utils import get_column_letter
 
 from cham_bai import __version__
 from cham_bai.gdocs_reader import fetch_google_doc_plain_text, is_google_docs_url
-from cham_bai.git_remote import normalize_github_repo_url
+from cham_bai.git_remote import fetch_repo_sources_bundle, normalize_github_repo_url
 from cham_bai.model_options import (
     DEFAULT_BTVN_MODEL,
     DEFAULT_QUIZ_SESSION_WARMUP_END_CHAT_MODEL,
@@ -56,7 +56,7 @@ from cham_bai.reading_gen import (
     run_reading_generation,
     sanitize_reading_filename_part,
 )
-from cham_bai.btvn_comment import BtvnCommentParams, run_btvn_comments_json
+from cham_bai.btvn_comment import BtvnCommentParams, grade_one as _btvn_grade_one, run_btvn_comments_json
 from cham_bai.rikkei_homework import (
     fetch_students as _btvn_fetch_students,
     fetch_all_exercises_for_student as _btvn_fetch_all_exercises_for_student,
@@ -1746,6 +1746,92 @@ async def api_btvn(
                 "sha1_10": fp,
                 "head": at[:160],
             },
+        }
+    )
+
+
+@app.post("/api/btvn/grade")
+async def api_btvn_grade(
+    assignment_text: str = Form(""),
+    submissions_text: str = Form(...),
+    model: str = Form(""),
+    github_token: str = Form(""),
+) -> JSONResponse:
+    """
+    Chấm nhanh BTVN theo repo: trả score + comment ngắn để UI ghép theo mẫu portal.
+    """
+    subs_lines = [
+        ln.strip()
+        for ln in (submissions_text or "").splitlines()
+        if ln.strip() and not ln.strip().startswith("#")
+    ]
+    if not subs_lines:
+        raise HTTPException(status_code=400, detail="Chưa có danh sách bài nộp (mỗi dòng 1 link GitHub).")
+    at = (assignment_text or "").strip()
+    if not at:
+        raise HTTPException(status_code=400, detail="Thiếu assignment_text (đề bài).")
+
+    try:
+        from cham_bai import settings
+
+        settings.api_key()
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    btvn_model = (model or "").strip() or (
+        os.getenv("OPENROUTER_BTVN_MODEL", DEFAULT_BTVN_MODEL).strip()
+        or os.getenv("OPENROUTER_MODEL", "anthropic/claude-sonnet-4.6").strip()
+    )
+
+    rows: list[dict] = []
+    for ref in subs_lines[:120]:
+        gh = normalize_github_repo_url(ref)
+        repo_err = ""
+        bundle = None
+        if gh:
+            bundle, err = fetch_repo_sources_bundle(gh, github_token=(github_token or "").strip() or None)
+            if err:
+                repo_err = err
+                bundle = None
+            elif not bundle or not getattr(bundle, "files", None):
+                repo_err = "Repo không có file mã nguồn đọc được (hoặc toàn binary/ignored)."
+                bundle = None
+        else:
+            repo_err = "Chỉ hỗ trợ link GitHub (github.com / git@github.com)."
+
+        score: int | None = None
+        comment = ""
+        ai_err = ""
+        if not repo_err:
+            try:
+                sc, cmt = _btvn_grade_one(
+                    assignment_text=at,
+                    submission_ref=gh or ref,
+                    submission_bundle=bundle,
+                    model=btvn_model,
+                )
+                score = sc
+                comment = cmt
+            except Exception as e:
+                ai_err = str(e)[:900]
+
+        rows.append(
+            {
+                "submission": ref,
+                "repo": gh or "",
+                "repo_error": repo_err,
+                "score": score,
+                "comment": comment,
+                "ai_error": ai_err,
+            }
+        )
+
+    fp = hashlib.sha1(at.encode("utf-8", errors="ignore")).hexdigest()[:10] if at else ""
+    return JSONResponse(
+        {
+            "ok": True,
+            "rows": rows,
+            "assignment_fingerprint": {"chars": len(at), "sha1_10": fp, "head": at[:160]},
         }
     )
 

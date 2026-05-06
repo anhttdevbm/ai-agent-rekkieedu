@@ -47,6 +47,73 @@ Hình thức:
 - Chỉ chọn Có khi có dấu hiệu mạnh (văn phong tutorial quá “mượt”, giải thích không bám mã, pattern AI phổ biến, hoặc code/giải thích vượt xa mức bài). Nếu không chắc thì chọn Không.
 """
 
+_SYSTEM_SCORE = """Bạn là giảng viên chấm bài tập về nhà. Hãy CHO ĐIỂM và NHẬN XÉT NGẮN theo mẫu.
+
+Yêu cầu bắt buộc:
+- Chỉ dựa trên đề bài và mã nguồn trong repo; không bịa.
+- Output CHỈ là một JSON object hợp lệ, không markdown, không giải thích ngoài JSON.
+- Schema:
+  {
+    "score": <0-100 số nguyên>,
+    "comment": "<một đoạn tiếng Việt 2–4 câu, đủ cụ thể, không markdown, không xuống dòng>"
+  }
+- Comment không cần quá dài; mục tiêu khoảng 280–520 ký tự.
+- Nên có 1 câu khen cụ thể và 1 câu bắt đầu bằng “Tuy nhiên,” nêu điểm cần bổ sung/cải thiện.
+"""
+
+
+def grade_one(
+    *,
+    assignment_text: str,
+    submission_ref: str,
+    submission_bundle: CollectedBundle | None,
+    model: str,
+) -> tuple[int, str]:
+    """
+    Trả về (score, comment_body) để UI ghép thành:
+    Kết quả: ✔ ĐẠT — 85/100
+
+    <comment_body>
+    """
+    user = (
+        "ĐỀ BÀI (tóm tắt/plain text):\n"
+        f"{(assignment_text or '').strip()[:7000]}\n\n"
+        f"Link nộp: {submission_ref}\n\n"
+        "Mã nguồn trong repo (có thể bị cắt bớt):\n"
+        f"{format_bundle_for_prompt(submission_bundle) if submission_bundle is not None else '(Không có file đọc được)'}\n"
+    )
+    text, _ = complete_chat_raw(
+        [
+            {"role": "system", "content": _SYSTEM_SCORE},
+            {"role": "user", "content": user},
+        ],
+        model=model,
+        temperature=0.35,
+        max_tokens=900,
+        timeout_s=180.0,
+    )
+    raw = (text or "").strip()
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start < 0 or end <= start:
+        raise RuntimeError(f"Model không trả JSON hợp lệ.\n---\n{raw[:2000]}")
+    import json as _json
+
+    obj = _json.loads(raw[start : end + 1])
+    try:
+        sc = int(obj.get("score", 0))
+    except Exception:
+        sc = 0
+    sc = max(0, min(100, sc))
+    cmt = str(obj.get("comment", "")).strip()
+    cmt = re.sub(r"\s+", " ", cmt).strip()
+    if not cmt:
+        cmt = "(Không có nhận xét.)"
+    # giới hạn mềm: đúng nhu cầu "không dài quá"
+    if len(cmt) > 800:
+        cmt = cmt[:797] + "..."
+    return sc, cmt
+
 
 _AI_LINE_RE = re.compile(
     r"(?im)^\s*Nghi\s*ngờ\s*dùng\s*AI\s*:\s*(?P<flag>Có|Không)\s*$"

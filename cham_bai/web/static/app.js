@@ -1012,6 +1012,7 @@
           <div class="small" style="margin-top:4px">Chọn 1 hoặc nhiều bài để ghi nhận xét lên portal.</div>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
+          <button type="button" class="primary" id="btvn-modal-ai">AI chấm (đã chọn)</button>
           <button type="button" class="primary" id="btvn-modal-push">Ghi nhận xét (đã chọn)</button>
         </div>
       </div>
@@ -1052,10 +1053,10 @@
                       ${link ? `<a href="${esc(link)}" target="_blank" rel="noreferrer">${esc(link)}</a>` : "<span class='small'>(trống)</span>"}
                     </td>
                     <td style="padding:10px;border-bottom:1px solid #f3f4f6;width:110px">
-                      <input class="btvn-ex-score" data-idx="${idx}" type="number" min="0" max="100" value="${esc(score)}" style="width:88px" />
+                      <input class="btvn-ex-score" data-idx="${idx}" type="number" min="0" max="100" value="${esc(score)}" style="width:88px;background:#fff;color:#0f172a;border:1px solid #cbd5e1;border-radius:10px;padding:8px" />
                     </td>
                     <td style="padding:10px;border-bottom:1px solid #f3f4f6;min-width:320px">
-                      <textarea class="btvn-ex-note" data-idx="${idx}" rows="4" style="width:100%" placeholder="Nhận xét 2–4 câu…">${esc(commentTxt)}</textarea>
+                      <textarea class="btvn-ex-note" data-idx="${idx}" rows="4" style="width:100%;background:#fff;color:#0f172a;border:1px solid #cbd5e1;border-radius:10px;padding:10px" placeholder="Nhận xét 2–4 câu…">${esc(commentTxt)}</textarea>
                       <div class="small" style="margin-top:6px;color:#64748b">
                         Sẽ ghi lên portal theo dạng: <code>Kết quả: ✔ ĐẠT — 85/100</code> + 1 đoạn nhận xét.
                       </div>
@@ -1076,6 +1077,71 @@
       all.addEventListener("change", () => {
         const on = all.checked;
         document.querySelectorAll("input.btvn-ex-chk").forEach((c) => (c.checked = on));
+      });
+    }
+
+    const aiBtn = $("#btvn-modal-ai");
+    if (aiBtn) {
+      aiBtn.addEventListener("click", async () => {
+        const token = ($("#b-rk-token") && $("#b-rk-token").value) || "";
+        const assignmentText = ($("#b-assignment-text") && $("#b-assignment-text").value) || "";
+        const model = ($("#b-model") && $("#b-model").value) || "";
+        if (!String(assignmentText).trim()) {
+          if (statusEl) statusEl.textContent = "Thiếu đề bài (assignment_text). Hãy tải session và chọn homework.";
+          return;
+        }
+        const checks = Array.from(document.querySelectorAll("input.btvn-ex-chk")).filter((c) => c.checked);
+        if (!checks.length) {
+          if (statusEl) statusEl.textContent = "Chưa chọn bài nào.";
+          return;
+        }
+        const repos = [];
+        const idxs = [];
+        for (const c of checks) {
+          const idx = parseInt(String(c.getAttribute("data-idx") || ""), 10);
+          const it = items[idx] || {};
+          const link = String(it.link_git || it.linkGit || it.link || "").trim();
+          if (!link) continue;
+          repos.push(link);
+          idxs.push(idx);
+        }
+        if (!repos.length) {
+          if (statusEl) statusEl.textContent = "Không có link repo trong các bài đã chọn.";
+          return;
+        }
+
+        try {
+          if (statusEl) statusEl.textContent = `AI đang chấm ${repos.length} bài…`;
+          aiBtn.disabled = true;
+          const fd = new FormData();
+          fd.set("assignment_text", String(assignmentText));
+          fd.set("submissions_text", repos.join("\n"));
+          fd.set("model", String(model || ""));
+          // github_token: reuse nếu bạn có input chung (hiện tab này không có) → bỏ trống
+          fd.set("github_token", "");
+          const r = await fetch("/api/btvn/grade", { method: "POST", body: fd });
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok) {
+            if (statusEl) statusEl.textContent = formatApiErr(data.detail) || "Lỗi AI chấm.";
+            return;
+          }
+          const rows = (data && data.rows) || [];
+          for (let j = 0; j < idxs.length; j++) {
+            const idx = idxs[j];
+            const row = rows[j] || {};
+            const score = row.score;
+            const comment = row.comment || "";
+            const scoreEl = document.querySelector(`input.btvn-ex-score[data-idx="${idx}"]`);
+            const noteEl = document.querySelector(`textarea.btvn-ex-note[data-idx="${idx}"]`);
+            if (scoreEl && score != null) scoreEl.value = String(score);
+            if (noteEl) noteEl.value = String(comment);
+          }
+          if (statusEl) statusEl.textContent = "AI chấm xong. Bạn có thể chỉnh sửa rồi bấm “Ghi nhận xét”.";
+        } catch (e) {
+          if (statusEl) statusEl.textContent = String(e);
+        } finally {
+          aiBtn.disabled = false;
+        }
       });
     }
 
