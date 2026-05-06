@@ -934,8 +934,8 @@
             <div style="font-weight:700">Nội dung bài nộp</div>
             <button type="button" class="primary" id="btvn-modal-close">Đóng</button>
           </div>
-          <div style="padding:16px; max-height:70vh; overflow:auto">
-            <pre id="btvn-modal-body" style="white-space:pre-wrap;word-break:break-word;margin:0;color:#000"></pre>
+          <div style="padding:16px; max-height:72vh; overflow:auto">
+            <div id="btvn-modal-body"></div>
           </div>
         </div>
       `;
@@ -949,16 +949,184 @@
     return modal || $("#btvn-modal");
   }
 
-  function btvnShowModal(text) {
+  function btvnShowModal(textOrHtml) {
     const modal = btvnEnsureModal();
     const body = $("#btvn-modal-body");
-    if (body) body.textContent = text || "";
+    if (body) {
+      if (typeof textOrHtml === "string") {
+        body.textContent = textOrHtml || "";
+      } else {
+        body.textContent = "";
+      }
+    }
     if (modal) modal.style.display = "block";
   }
 
   function btvnHideModal() {
     const modal = $("#btvn-modal");
     if (modal) modal.style.display = "none";
+  }
+
+  function btvnHtmlToText(html) {
+    const s = String(html || "");
+    return s
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/p\s*>/gi, "\n\n")
+      .replace(/<hr\b[^>]*>/gi, "\n\n")
+      .replace(/<[^>]*>/g, " ")
+      .replace(/&nbsp;/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/\s+\n/g, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .replace(/[ \t]{2,}/g, " ")
+      .trim();
+  }
+
+  function btvnFormatResultLine(score) {
+    const n = parseInt(String(score || ""), 10);
+    if (!Number.isFinite(n)) return "";
+    const ok = n >= 50;
+    return `Kết quả: ${ok ? "✔ ĐẠT" : "✘ CHƯA ĐẠT"} — ${n}/100`;
+  }
+
+  function btvnComposePortalComment(score, note) {
+    const head = btvnFormatResultLine(score);
+    const body = String(note || "").trim();
+    if (!head && !body) return "";
+    if (head && body) return head + "\n\n" + body;
+    return head || body;
+  }
+
+  function btvnRenderStudentExercisesModal({ studentId, exercises }) {
+    const body = $("#btvn-modal-body");
+    if (!body) return;
+    const items = Array.isArray(exercises) ? exercises : [];
+    const esc = (s) => escapeHtml(String(s || ""));
+    body.innerHTML = `
+      <div style="display:flex;gap:10px;align-items:center;justify-content:space-between;margin:0 0 10px 0">
+        <div>
+          <div style="font-weight:700">Bài nộp của sinh viên</div>
+          <div class="small" style="margin-top:4px">Chọn 1 hoặc nhiều bài để ghi nhận xét lên portal.</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button type="button" class="primary" id="btvn-modal-push">Ghi nhận xét (đã chọn)</button>
+        </div>
+      </div>
+      <div style="overflow:auto;border:1px solid #e5e7eb;border-radius:12px">
+        <table class="tbl" style="width:100%;border-collapse:collapse">
+          <thead>
+            <tr>
+              <th style="text-align:left;padding:10px;border-bottom:1px solid #e5e7eb">
+                <input type="checkbox" id="btvn-modal-checkall" />
+              </th>
+              <th style="text-align:left;padding:10px;border-bottom:1px solid #e5e7eb">Bài</th>
+              <th style="text-align:left;padding:10px;border-bottom:1px solid #e5e7eb">Repo</th>
+              <th style="text-align:left;padding:10px;border-bottom:1px solid #e5e7eb">Điểm</th>
+              <th style="text-align:left;padding:10px;border-bottom:1px solid #e5e7eb">Nhận xét (ngắn)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items
+              .map((it, idx) => {
+                const exId = it && (it.id != null ? it.id : it.exercise_id);
+                const link = (it && (it.link_git || it.linkGit || it.linkGitHub || it.link)) || "";
+                const hwTitle = (it && (it.homework_title || (it.homework && it.homework.title))) || "";
+                const hwId = it && (it.homeworkId || it.homework_id || (it.homework && it.homework.id));
+                const rawComment = it && (it.comment || it.note || "");
+                const commentTxt = btvnHtmlToText(rawComment);
+                const short = commentTxt.length > 220 ? commentTxt.slice(0, 217).trim() + "…" : commentTxt;
+                const score = it && (it.score != null ? it.score : "");
+                return `
+                  <tr data-idx="${idx}" style="vertical-align:top">
+                    <td style="padding:10px;border-bottom:1px solid #f3f4f6">
+                      <input type="checkbox" class="btvn-ex-chk" data-idx="${idx}" />
+                    </td>
+                    <td style="padding:10px;border-bottom:1px solid #f3f4f6">
+                      <div style="font-weight:700">${esc(hwTitle || ("Exercise " + exId))}</div>
+                      <div class="small">exercise_id=${esc(exId)} · homework_id=${esc(hwId || "")}</div>
+                    </td>
+                    <td style="padding:10px;border-bottom:1px solid #f3f4f6;max-width:260px">
+                      ${link ? `<a href="${esc(link)}" target="_blank" rel="noreferrer">${esc(link)}</a>` : "<span class='small'>(trống)</span>"}
+                    </td>
+                    <td style="padding:10px;border-bottom:1px solid #f3f4f6;width:110px">
+                      <input class="btvn-ex-score" data-idx="${idx}" type="number" min="0" max="100" value="${esc(score)}" style="width:88px" />
+                    </td>
+                    <td style="padding:10px;border-bottom:1px solid #f3f4f6;min-width:320px">
+                      <textarea class="btvn-ex-note" data-idx="${idx}" rows="4" style="width:100%" placeholder="Nhận xét 2–4 câu…">${esc(commentTxt)}</textarea>
+                      <div class="small" style="margin-top:6px;color:#64748b">
+                        Sẽ ghi lên portal theo dạng: <code>Kết quả: ✔ ĐẠT — 85/100</code> + 1 đoạn nhận xét.
+                      </div>
+                    </td>
+                  </tr>
+                `;
+              })
+              .join("")}
+          </tbody>
+        </table>
+      </div>
+      <div class="small" id="btvn-modal-status" style="margin-top:10px"></div>
+    `;
+
+    const statusEl = $("#btvn-modal-status");
+    const all = $("#btvn-modal-checkall");
+    if (all) {
+      all.addEventListener("change", () => {
+        const on = all.checked;
+        document.querySelectorAll("input.btvn-ex-chk").forEach((c) => (c.checked = on));
+      });
+    }
+
+    const pushBtn = $("#btvn-modal-push");
+    if (pushBtn) {
+      pushBtn.addEventListener("click", async () => {
+        const token = ($("#b-rk-token") && $("#b-rk-token").value) || "";
+        if (!String(token).trim()) {
+          if (statusEl) statusEl.textContent = "Thiếu token Rikkei.";
+          return;
+        }
+        const checks = Array.from(document.querySelectorAll("input.btvn-ex-chk")).filter((c) => c.checked);
+        if (!checks.length) {
+          if (statusEl) statusEl.textContent = "Chưa chọn bài nào.";
+          return;
+        }
+        const patches = [];
+        for (const c of checks) {
+          const idx = parseInt(String(c.getAttribute("data-idx") || ""), 10);
+          const it = items[idx] || {};
+          const exId = it.id != null ? it.id : it.exercise_id;
+          const link_git = String(it.link_git || it.linkGit || it.link || "").trim();
+          const hwid = it.homeworkId || it.homework_id || (it.homework && it.homework.id) || null;
+          const scoreEl = document.querySelector(`input.btvn-ex-score[data-idx="${idx}"]`);
+          const noteEl = document.querySelector(`textarea.btvn-ex-note[data-idx="${idx}"]`);
+          const score = scoreEl && scoreEl.value != null ? String(scoreEl.value).trim() : "";
+          const note = noteEl && noteEl.value != null ? String(noteEl.value) : "";
+          const comment = btvnComposePortalComment(score, note);
+          patches.push({ exercise_id: exId, link_git, homework_id: hwid, comment, full_body: it });
+        }
+
+        try {
+          if (statusEl) statusEl.textContent = `Đang ghi ${patches.length} bài lên portal…`;
+          pushBtn.disabled = true;
+          const fd = new FormData();
+          fd.set("rikkei_token", token.trim());
+          fd.set("patches_json", JSON.stringify(patches));
+          const r = await fetch("/api/rikkei/exercise/patch-batch", { method: "POST", body: fd });
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok) {
+            if (statusEl) statusEl.textContent = formatApiErr(data.detail) || "Lỗi ghi nhận xét.";
+            return;
+          }
+          if (statusEl) statusEl.textContent = `Xong: OK=${data.ok_count || 0}, lỗi=${data.fail_count || 0}`;
+        } catch (e) {
+          if (statusEl) statusEl.textContent = String(e);
+        } finally {
+          pushBtn.disabled = false;
+        }
+      });
+    }
   }
 
   async function btvnLogin() {
@@ -1836,25 +2004,10 @@
           btvnShowModal("Không có bài nộp (exercise) cho sinh viên này trong session.");
           return;
         }
-        const lines = [];
-        items.slice(0, 20).forEach((it) => {
-          const eid = it.id != null ? it.id : "";
-          const link = it.link_git || it.linkGit || "";
-          const hw = it.homework || {};
-          const hwTitle = (hw && (hw.title || hw.name)) || it.homeworkTitle || "";
-          lines.push(
-            JSON.stringify(
-              {
-                exercise_id: eid,
-                homework_title: hwTitle,
-                link_git: link,
-              },
-              null,
-              2,
-            )
-          );
-        });
-        btvnShowModal(lines.join("\n\n"));
+        btvnEnsureModal();
+        btvnRenderStudentExercisesModal({ studentId: sid, exercises: items });
+        const modal = $("#btvn-modal");
+        if (modal) modal.style.display = "block";
       } catch (e) {
         btvnShowModal(String(e));
       }

@@ -61,6 +61,7 @@ from cham_bai.rikkei_homework import (
     fetch_students as _btvn_fetch_students,
     fetch_all_exercises_for_student as _btvn_fetch_all_exercises_for_student,
     _homework_id as _btvn_homework_id,
+    put_exercise_comment,
 )
 from cham_bai.rikkei_homework import mark_btvn_session_status_from_exercise_scores as _mark_btvn_session
 from cham_bai.google_sheets import (
@@ -700,6 +701,69 @@ async def api_rikkei_btvn_student_exercises(
         raise HTTPException(status_code=502, detail=f"Lỗi gọi API Rikkei (student-exercises): {e}")
 
     return JSONResponse({"ok": True, "payload": payload, "items": _unwrap_list_payload(payload)})
+
+
+@app.post("/api/rikkei/exercise/patch-batch")
+async def api_rikkei_exercise_patch_batch(
+    rikkei_token: str = Form(...),
+    patches_json: str = Form(...),
+) -> JSONResponse:
+    tok = (rikkei_token or "").strip()
+    if not tok:
+        raise HTTPException(status_code=400, detail="Thiếu token Rikkei.")
+    try:
+        patches = json.loads(patches_json or "[]")
+    except Exception:
+        raise HTTPException(status_code=400, detail="patches_json không phải JSON hợp lệ.")
+    if not isinstance(patches, list) or not patches:
+        raise HTTPException(status_code=400, detail="Danh sách patch rỗng.")
+
+    ok_count = 0
+    fails: list[dict] = []
+    for p in patches[:300]:
+        if not isinstance(p, dict):
+            continue
+        ex_id = p.get("exercise_id")
+        link_git = str(p.get("link_git") or p.get("linkGit") or "").strip()
+        comment = str(p.get("comment") or "").strip()
+        hwid = p.get("homework_id", None)
+        cid = p.get("course_id", None)
+        full_body = p.get("full_body") if isinstance(p.get("full_body"), dict) else None
+        try:
+            ex_id_int = int(ex_id)
+        except Exception:
+            fails.append({"exercise_id": ex_id, "error": "exercise_id không hợp lệ"})
+            continue
+        if not comment:
+            fails.append({"exercise_id": ex_id_int, "error": "comment rỗng"})
+            continue
+        if not link_git and not full_body:
+            fails.append({"exercise_id": ex_id_int, "error": "Thiếu link_git"})
+            continue
+        try:
+            hwid_int = int(hwid) if hwid is not None and str(hwid).strip() else None
+        except Exception:
+            hwid_int = None
+        try:
+            cid_int = int(cid) if cid is not None and str(cid).strip() else None
+        except Exception:
+            cid_int = None
+
+        ok, err = put_exercise_comment(
+            tok,
+            ex_id_int,
+            comment=comment,
+            link_git=link_git,
+            homework_id=hwid_int,
+            course_id=cid_int,
+            full_body=full_body,
+        )
+        if ok:
+            ok_count += 1
+        else:
+            fails.append({"exercise_id": ex_id_int, "error": err[:500]})
+
+    return JSONResponse({"ok": True, "ok_count": ok_count, "fail_count": len(fails), "fails": fails[:50]})
 
 
 def _extract_rikkei_token(payload: object) -> str:
