@@ -29,6 +29,7 @@
         <button type="button" data-tab="hackathon">Làm đề thi Hackathon</button>
         <button type="button" data-tab="hackathon-grade">Chấm bài Hackathon</button>
         <button type="button" data-tab="btvn">Chấm BTVN (Rikkei)</button>
+        <button type="button" data-tab="group-a">Chấm bài Nhóm A</button>
         <button type="button" data-tab="group">Chấm hoạt động nhóm</button>
       </nav>
 
@@ -723,6 +724,68 @@
         </div>
       </section>
 
+      <!-- Chấm bài Nhóm A -->
+      <section class="panel" id="panel-group-a">
+        <h2>Chấm bài Nhóm A</h2>
+        <p class="hint">
+          Dán link Google Docs đề bài và danh sách sinh viên (mỗi dòng: <code>Họ tên[TAB]Mã SV[TAB]Link repo</code>).
+          Hệ thống sẽ chấm theo lô và trả về điểm + nhận xét chi tiết (4–8 câu).
+        </p>
+        <form id="form-group-a" enctype="multipart/form-data">
+          <div class="field">
+            <label for="ga-docs-url">Link Google Docs đề bài</label>
+            <input
+              id="ga-docs-url"
+              name="assignment_text"
+              type="url"
+              inputmode="url"
+              placeholder="https://docs.google.com/document/d/..."
+              required
+            />
+          </div>
+          <div class="field">
+            <label for="ga-students">Danh sách sinh viên</label>
+            <textarea
+              id="ga-students"
+              rows="10"
+              placeholder="Nguyễn Tuấn Dũng 2\tK25_CNTT1\thttps://github.com/.../repo.git"
+              required
+            ></textarea>
+            <p class="hint" style="margin-top:8px">
+              Nếu không có TAB, hệ thống sẽ hiểu: <code>repo</code> là token cuối, <code>mã</code> là token áp cuối, còn lại là họ tên.
+            </p>
+          </div>
+          <div class="field">
+            <label for="ga-model">Model OpenRouter</label>
+            <select id="ga-model" name="model"></select>
+          </div>
+          <div class="actions">
+            <button type="submit" class="primary" id="ga-submit">Chấm Nhóm A</button>
+          </div>
+          <p class="status" id="ga-status"></p>
+          <pre class="log" id="ga-log"></pre>
+        </form>
+
+        <div id="ga-results" style="display:none;margin-top:14px">
+          <div class="hint" style="margin:0 0 8px 0">Kết quả</div>
+          <div style="overflow:auto;border:1px solid #e5e7eb;border-radius:10px">
+            <table style="width:100%;border-collapse:collapse">
+              <thead>
+                <tr>
+                  <th style="text-align:left;padding:10px;border-bottom:1px solid #e5e7eb">Mã SV</th>
+                  <th style="text-align:left;padding:10px;border-bottom:1px solid #e5e7eb">Họ tên</th>
+                  <th style="text-align:left;padding:10px;border-bottom:1px solid #e5e7eb">Repo</th>
+                  <th style="text-align:left;padding:10px;border-bottom:1px solid #e5e7eb">OK</th>
+                  <th style="text-align:left;padding:10px;border-bottom:1px solid #e5e7eb">Điểm</th>
+                  <th style="text-align:left;padding:10px;border-bottom:1px solid #e5e7eb">Nhận xét (chi tiết)</th>
+                </tr>
+              </thead>
+              <tbody id="ga-results-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
       <!-- Chấm hoạt động nhóm -->
       <section class="panel" id="panel-group">
         <h2>Chấm hoạt động nhóm</h2>
@@ -767,6 +830,6 @@
 
       <footer>Chạy local · OpenRouter · không lưu dữ liệu trên server sau khi tải file</footer>
     </div>
-    <script src="/static/app.js?v=20260506_02"></script>
+    <script src="/static/app.js?v=20260506_03"></script>
   </body>
 </html>

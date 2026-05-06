@@ -35,6 +35,13 @@ Quy tắc:
 _RULE8_COMMENT_DEFAULT = """8) Trường "comment": một đoạn văn ngắn duy nhất (2–4 câu, tối đa khoảng 600 ký tự), tiếng Việt. Cấm gạch đầu dòng và cấm định dạng markdown. Chỉ tóm tắt **bài tập đầu giờ** và **báo cáo** (đạt/chưa đạt); **cấm** nhắc chất lượng mini project, **cấm** dùng comment để thay thế `mini_project_present`.
 """
 
+_RULE8_COMMENT_DETAILED = """8) Trường "comment" (chi tiết):
+- Viết **một đoạn** tiếng Việt, **4–8 câu**, tối đa khoảng 1400 ký tự.
+- Nhận xét phải **cụ thể theo yêu cầu đề**: nêu 2–4 điểm làm tốt + 1–3 điểm cần cải thiện (nêu rõ chỗ nào/thiếu gì/đề yêu cầu gì).
+- Không dùng bullet, không markdown, không xuống dòng.
+- Không nhắc chất lượng mini project, không dùng comment để thay thế `mini_project_present`.
+"""
+
 _RULE8_COMMENT_HACKATHON = """8) Trường "comment" (chấm Hackathon / đề có **câu đánh số**):
 - **Một đoạn duy nhất** (2–3 câu văn ngắn trong ý), **tối đa 200 ký tự** (hệ thống cắt nếu vượt); **không xuống dòng** — viết liền một dòng, khoảng trắng bình thường; không markdown.
 - **Chỉ** nêu các câu **sai**, **thiếu**, hoặc **không đối chiếu được** (vd. «Câu 5 sai dùng = thay vì IN. Câu 9 sai ORDER BY ngược đề. Câu 14 thiếu HAVING.»). **Cấm** liệt kê câu **đúng**; **cấm** mở bài kiểu «Bài làm hoàn thành tốt phần …», «Hoàn thành tốt …», «Nhìn chung …».
@@ -68,9 +75,14 @@ Trong đó rubric là tùy chọn; nếu không chắc hãy dùng {} hoặc bỏ
 
 def system_prompt_for_comment_style(comment_style: str) -> str:
     cs = (comment_style or "hackathon_per_question").strip().lower()
-    if cs not in ("default", "hackathon_per_question"):
+    if cs not in ("default", "detailed", "hackathon_per_question"):
         cs = "hackathon_per_question"
-    r8 = _RULE8_COMMENT_HACKATHON if cs == "hackathon_per_question" else _RULE8_COMMENT_DEFAULT
+    if cs == "hackathon_per_question":
+        r8 = _RULE8_COMMENT_HACKATHON
+    elif cs == "detailed":
+        r8 = _RULE8_COMMENT_DETAILED
+    else:
+        r8 = _RULE8_COMMENT_DEFAULT
     return _SYSTEM_PROMPT_HEAD + r8 + _SYSTEM_PROMPT_TAIL
 
 
@@ -180,11 +192,11 @@ def build_user_prompt(
         parts.append(rs if rs else "(Repo không có nội dung file text thu thập được.)")
 
     _pcs = (comment_style or "hackathon_per_question").strip().lower()
-    cs = _pcs if _pcs in ("default", "hackathon_per_question") else "hackathon_per_question"
+    cs = _pcs if _pcs in ("default", "detailed", "hackathon_per_question") else "hackathon_per_question"
     comment_line = (
         "- `comment` (Hackathon): **một dòng** ≤200 ký tự, **chỉ** câu sai/thiếu/không đối chiếu được, không liệt kê câu đúng — xem SYSTEM mục 8.\n"
         if cs == "hackathon_per_question"
-        else "- `comment`: một đoạn ngắn, không bullet, không markdown.\n"
+        else ("- `comment` (chi tiết): một đoạn 4–8 câu, không bullet/markdown/xuống dòng.\n" if cs == "detailed" else "- `comment`: một đoạn ngắn, không bullet, không markdown.\n")
     )
     parts.append(
         "\n\n## HƯỚNG DẪN CHẤM (bắt buộc)\n"
@@ -213,7 +225,7 @@ def grade_submission(
     comment_style: str = "hackathon_per_question",
 ) -> GradeOutcome:
     _cs = (comment_style or "hackathon_per_question").strip().lower()
-    cs = _cs if _cs in ("default", "hackathon_per_question") else "hackathon_per_question"
+    cs = _cs if _cs in ("default", "detailed", "hackathon_per_question") else "hackathon_per_question"
     user_prompt = build_user_prompt(
         doc,
         submission_bundle,

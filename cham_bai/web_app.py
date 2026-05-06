@@ -188,7 +188,7 @@ def _run_grade_sync(
         return False, str(e), []
 
     _cs_raw = (comment_style or "hackathon_per_question").strip().lower()
-    _cs = _cs_raw if _cs_raw in ("default", "hackathon_per_question") else "hackathon_per_question"
+    _cs = _cs_raw if _cs_raw in ("default", "detailed", "hackathon_per_question") else "hackathon_per_question"
     params = GradeJobParams(
         assignment_ref=assignment_ref,
         submission_ref=subs_lines[0],

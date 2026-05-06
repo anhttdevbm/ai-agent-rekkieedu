@@ -32,6 +32,7 @@
         meta.models,
         meta.default_btvn_model || meta.default_model
       );
+    if ($("#ga-model")) fillSelect($("#ga-model"), meta.models, meta.default_model);
     if ($("#gr-model")) fillSelect($("#gr-model"), meta.models, meta.default_model);
     if ($("#h-model")) fillSelect($("#h-model"), meta.models, meta.default_model);
     if ($("#hg-model")) fillSelect($("#hg-model"), meta.models, meta.default_model);
@@ -1400,6 +1401,157 @@
     }
   }
 
+  function gaParseStudents(text) {
+    const lines = String(text || "")
+      .split(/\r?\n/)
+      .map((x) => x.trim())
+      .filter((x) => x && !x.startsWith("#"));
+    const out = [];
+    for (const ln of lines) {
+      // Prefer TAB-separated: name \t code \t repo
+      const partsTab = ln
+        .split("\t")
+        .map((x) => x.trim())
+        .filter(Boolean);
+      if (partsTab.length >= 3) {
+        const name = partsTab[0];
+        const code = partsTab[1];
+        const repo = partsTab.slice(2).join("\t").trim();
+        out.push({ fullName: name, studentCode: code, repo });
+        continue;
+      }
+      // Fallback: whitespace; repo=last token, code=prev token, name=rest
+      const toks = ln.split(/\s+/).filter(Boolean);
+      if (toks.length < 3) continue;
+      const repo = toks[toks.length - 1];
+      const code = toks[toks.length - 2];
+      const name = toks.slice(0, toks.length - 2).join(" ").trim();
+      out.push({ fullName: name, studentCode: code, repo });
+    }
+    return out;
+  }
+
+  function gaSetResults(rows) {
+    const wrap = $("#ga-results");
+    const body = $("#ga-results-body");
+    if (body) body.innerHTML = "";
+    if (!Array.isArray(rows) || rows.length === 0) {
+      if (wrap) wrap.style.display = "none";
+      return;
+    }
+    const esc = (s) => escapeHtml(String(s || ""));
+    rows.forEach((r) => {
+      const tr = document.createElement("tr");
+      const td = (html) => {
+        const c = document.createElement("td");
+        c.style.padding = "10px";
+        c.style.borderBottom = "1px solid #f3f4f6";
+        c.innerHTML = html;
+        return c;
+      };
+      const repo = String(r.repo || "").trim();
+      tr.appendChild(td(esc(r.studentCode || "")));
+      tr.appendChild(td(esc(r.fullName || "")));
+      tr.appendChild(
+        td(
+          repo
+            ? `<a href="${esc(repo)}" target="_blank" rel="noreferrer">${esc(repo)}</a>`
+            : "<span class='small'>(trống)</span>"
+        )
+      );
+      tr.appendChild(
+        td(
+          r.ok
+            ? "<span style='color:#16a34a;font-weight:700'>OK</span>"
+            : "<span style='color:#dc2626;font-weight:700'>LỖI</span>"
+        )
+      );
+      tr.appendChild(td(esc(r.score == null ? "" : r.score)));
+      tr.appendChild(td(esc(r.comment || "")));
+      if (body) body.appendChild(tr);
+    });
+    if (wrap) wrap.style.display = "";
+  }
+
+  async function postGroupA(ev) {
+    ev.preventDefault();
+    const btn = $("#ga-submit");
+    setBusy(btn, true, "Đang chấm…");
+    $("#ga-status").textContent = "";
+    setLog("#ga-log", "", false);
+    gaSetResults([]);
+    try {
+      const docsUrl = (
+        $("#ga-docs-url") && $("#ga-docs-url").value
+          ? String($("#ga-docs-url").value)
+          : ""
+      ).trim();
+      const studentsText = (
+        $("#ga-students") && $("#ga-students").value
+          ? String($("#ga-students").value)
+          : ""
+      ).trim();
+      if (!docsUrl) {
+        setLog("#ga-log", "Thiếu link Google Docs đề bài.", true);
+        return;
+      }
+      const st = gaParseStudents(studentsText);
+      if (!st.length) {
+        setLog("#ga-log", "Danh sách sinh viên rỗng hoặc sai định dạng.", true);
+        return;
+      }
+      const repos = st.map((x) => (x.repo || "").trim()).join("\n");
+      const fd = new FormData();
+      fd.set("assignment_text", docsUrl);
+      fd.set("submissions_text", repos);
+      fd.set("report_repos_text", "");
+      fd.set(
+        "model",
+        ($("#ga-model") && $("#ga-model").value ? String($("#ga-model").value) : "").trim()
+      );
+      fd.set("use_template", "true");
+      fd.set("strict_ai", "true");
+      fd.set("ai_confidence", "75");
+      fd.set("comment_style", "detailed");
+      const r = await fetch("/api/grade", { method: "POST", body: fd });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setLog("#ga-log", formatApiErr(data.detail) || JSON.stringify(data), true);
+        return;
+      }
+      const rr = (data && data.results) || [];
+      const out = [];
+      for (let i = 0; i < st.length; i++) {
+        const meta = st[i] || {};
+        const row = rr[i] || {};
+        const blob = row.result || {};
+        const ok = !!row.ok;
+        const score = blob && blob.final_score != null ? blob.final_score : "";
+        const comment =
+          blob && blob.final_comment
+            ? String(blob.final_comment)
+            : row.error
+              ? String(row.error)
+              : "";
+        out.push({
+          studentCode: meta.studentCode || "",
+          fullName: meta.fullName || "",
+          repo: meta.repo || "",
+          ok,
+          score,
+          comment,
+        });
+      }
+      setLog("#ga-log", (data.log || "").trim(), !data.ok);
+      gaSetResults(out);
+      $("#ga-status").textContent = data.ok ? "Xong." : "Có lỗi — xem log.";
+    } catch (e) {
+      setLog("#ga-log", String(e), true);
+    } finally {
+      setBusy(btn, false);
+    }
+  }
+
   async function postHackathon(ev) {
     ev.preventDefault();
     const btn = $("#h-submit");
@@ -1558,6 +1710,8 @@
     $("#form-grade").addEventListener("submit", postGrade);
     $("#form-quiz").addEventListener("submit", postQuiz);
     $("#form-reading").addEventListener("submit", postReading);
+    const fga = $("#form-group-a");
+    if (fga) fga.addEventListener("submit", postGroupA);
     const fh = $("#form-hackathon");
     if (fh) fh.addEventListener("submit", postHackathon);
     const hAI = $("#h-ai");

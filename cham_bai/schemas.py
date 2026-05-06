@@ -8,6 +8,7 @@ from typing import Any
 # Giới hạn cứng `comment` sau parse JSON (khớp mục 8 trong prompt theo comment_style).
 MAX_GRADE_COMMENT_CHARS_HACKATHON = 200
 MAX_GRADE_COMMENT_CHARS_DEFAULT = 600
+MAX_GRADE_COMMENT_CHARS_DETAILED = 1400
 
 
 def _truncate_grade_comment(
@@ -84,12 +85,12 @@ def coalesce_grade(d: dict[str, Any], *, comment_style: str = "hackathon_per_que
 
     comment = str(d.get("comment", "")).strip() or "(Không có nhận xét.)"
     _cs = (comment_style or "hackathon_per_question").strip().lower()
-    if _cs not in ("default", "hackathon_per_question"):
+    if _cs not in ("default", "detailed", "hackathon_per_question"):
         _cs = "hackathon_per_question"
     _max = (
         MAX_GRADE_COMMENT_CHARS_HACKATHON
         if _cs == "hackathon_per_question"
-        else MAX_GRADE_COMMENT_CHARS_DEFAULT
+        else (MAX_GRADE_COMMENT_CHARS_DETAILED if _cs == "detailed" else MAX_GRADE_COMMENT_CHARS_DEFAULT)
     )
     _collapse = _cs == "hackathon_per_question"
     comment = _truncate_grade_comment(
