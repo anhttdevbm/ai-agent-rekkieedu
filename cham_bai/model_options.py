@@ -19,8 +19,8 @@ QUIZ_KIND_OPTIONS: tuple[tuple[str, str], ...] = (
 DEFAULT_BTVN_MODEL = "nvidia/nemotron-nano-12b-v2-vl:free"
 
 # Model chat (OpenRouter /v1/chat/completions) khi sinh Excel quiz (JSON 45 câu = nhiều sub-block 5 câu + tài liệu).
-# Gemma 4 26B A4B: ctx ~262k, bám cấu trúc tốt, hợp pipeline session quiz.
-DEFAULT_QUIZ_SESSION_WARMUP_END_CHAT_MODEL = "google/gemma-4-26b-a4b"
+# Gemma 4 26B A4B (IT): ctx ~262k, bám cấu trúc tốt, hợp pipeline session quiz.
+DEFAULT_QUIZ_SESSION_WARMUP_END_CHAT_MODEL = "google/gemma-4-26b-a4b-it"
 
 # Mặc định UI khi chọn «Quizz Session đầu giờ» / «Quizz Session cuối giờ»:
 # Phải là model instruct (sinh văn bản). Các model chỉ có API embeddings không phù hợp làm mặc định — để trong MODEL_OPTIONS (nhóm embedding).
