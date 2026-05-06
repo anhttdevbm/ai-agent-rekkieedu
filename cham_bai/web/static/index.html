@@ -660,6 +660,25 @@
           </div>
           <p class="status" id="b-homework-status" style="margin:.35rem 0 0"></p>
 
+          <div class="field">
+            <label for="b-homework">Danh sách bài tập (homework) của session</label>
+            <select id="b-homework">
+              <option value="">(Chưa tải đề)</option>
+            </select>
+            <p class="small" style="margin-top:.35rem">
+              Chọn 1 bài để hệ thống dùng làm “đề bài” khi chấm và khi fill nhận xét/điểm.
+            </p>
+          </div>
+          <div class="field">
+            <label>Preview đề bài</label>
+            <div
+              id="b-preview"
+              style="border:1px solid #e5e7eb;border-radius:12px;padding:12px;background:#fff;max-height:38vh;overflow:auto"
+            >
+              (Chọn một bài để xem đề.)
+            </div>
+          </div>
+
           <!-- hidden fields gửi sang /api/btvn -->
           <input type="hidden" id="b-assignment-text" name="assignment_text" />
           <input type="hidden" id="b-assignment-image-urls" name="assignment_image_urls" />
@@ -837,6 +856,6 @@
 
       <footer>Chạy local · OpenRouter · không lưu dữ liệu trên server sau khi tải file</footer>
     </div>
-    <script src="/static/app.js?v=20260506_04"></script>
+    <script src="/static/app.js?v=20260506_05"></script>
   </body>
 </html>

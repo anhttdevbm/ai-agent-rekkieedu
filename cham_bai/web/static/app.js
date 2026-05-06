@@ -541,12 +541,18 @@
     const sid = ($("#b-rk-session") && $("#b-rk-session").value) || "";
     const statusEl = $("#b-session-status");
     const hwStatusEl = $("#b-homework-status");
+    const hwSel = $("#b-homework");
     if (!token.trim() || !String(sid).trim()) {
       if (statusEl) statusEl.textContent = "Nhập token và session id trước.";
       return;
     }
     if (statusEl) statusEl.textContent = "";
     if (hwStatusEl) hwStatusEl.textContent = "Đang tải đề...";
+    if (hwSel) {
+      hwSel.innerHTML = "<option value=''>Đang tải…</option>";
+      hwSel.disabled = true;
+      delete hwSel.dataset.items;
+    }
     try {
       const fd = new FormData();
       fd.set("session_id", String(sid).trim());
@@ -561,17 +567,40 @@
       if (!Array.isArray(hw) || hw.length === 0) {
         if (statusEl) statusEl.textContent = "Session không có homework hoặc API trả rỗng.";
         if (hwStatusEl) hwStatusEl.textContent = "(Không có đề.)";
+        if (hwSel) {
+          hwSel.innerHTML = "<option value=''> (Không có bài tập) </option>";
+          hwSel.disabled = false;
+        }
         return;
       }
-      const picked = hw[0];
-      const hid = $("#b-homework-id");
-      const aText = $("#b-assignment-text");
-      const aImgs = $("#b-assignment-image-urls");
-      if (hid) hid.value = String(picked.id || "");
-      if (aText) aText.value = String(picked.plain_text || "").trim();
-      if (aImgs) aImgs.value = JSON.stringify(picked.image_urls || []);
-      if (statusEl) statusEl.textContent = `Đã chọn homework: ${picked.title || picked.id || ""}`;
-      if (hwStatusEl) hwStatusEl.textContent = `Đã tải đề (${picked.title || picked.id || ""}).`;
+
+      // Fill homework select + auto-pick first
+      if (hwSel) {
+        hwSel.dataset.items = JSON.stringify(hw);
+        hwSel.innerHTML = "<option value=''>-- Chọn bài tập --</option>";
+        hw.forEach((x) => {
+          const o = document.createElement("option");
+          o.value = String(x.id ?? "");
+          o.textContent = String((x.title || x.id || "")).trim();
+          hwSel.appendChild(o);
+        });
+        hwSel.disabled = false;
+        const first = hw.find((x) => x && (x.id != null || x.title)) || hw[0];
+        if (first && first.id != null) hwSel.value = String(first.id);
+        btvnOnPickHomework();
+      } else {
+        // fallback: keep previous behavior
+        const picked = hw[0];
+        const hid = $("#b-homework-id");
+        const aText = $("#b-assignment-text");
+        const aImgs = $("#b-assignment-image-urls");
+        if (hid) hid.value = String(picked.id || "");
+        if (aText) aText.value = String(picked.plain_text || "").trim();
+        if (aImgs) aImgs.value = JSON.stringify(picked.image_urls || []);
+      }
+
+      if (statusEl) statusEl.textContent = `Đã tải session: ${data && data.name ? data.name : sid}`;
+      if (hwStatusEl) hwStatusEl.textContent = `Đã tải ${hw.length} bài tập của session.`;
 
       // Auto load students ngay khi chọn session
       await btvnLoadStudents();
