@@ -137,7 +137,7 @@
     const qm = $("#q-model");
     const sessionQuizModel =
       (meta && meta.default_quiz_session_warmup_end_model) ||
-      "qwen/qwen3.5-flash-02-23";
+      "google/gemma-4-26b-a4b";
     const wasSessionQuiz =
       _quizKindPrevLabel === "Quizz Session đầu giờ" || _quizKindPrevLabel === "Quizz Session cuối giờ";
     const enteringSessionQuiz = (warmup || end) && !wasSessionQuiz;
