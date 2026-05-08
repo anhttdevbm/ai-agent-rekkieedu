@@ -2187,6 +2187,9 @@ async def api_btvn_rikkei_session_status(
                     ce_int = None
                 so_bt_text = f"{ce_int}/{total}" if (ce_int is not None and total) else ""
                 nx = str(it.get("randomComment") or "").strip()
+                # Đôi khi portal trả HTML trong comment và có thể bị cụt; sheet cần plain text.
+                if _looks_html(nx):
+                    nx = _rk_html_to_plain_text(_rk_sanitize_html(nx)).strip()
                 # If comment has "[Điểm số - ...]" keep it; sheet is for report so ok.
                 sheet_rows.append({"fullName": nm, "so_bt_text": so_bt_text, "nhan_xet": nx})
 

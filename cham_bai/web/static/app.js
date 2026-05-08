@@ -1864,35 +1864,26 @@
       const fd = new FormData();
       fd.set("assignment_text", docsUrl);
       fd.set("submissions_text", repos);
-      fd.set("report_repos_text", "");
       fd.set(
         "model",
         ($("#ga-model") && $("#ga-model").value ? String($("#ga-model").value) : "").trim()
       );
-      fd.set("use_template", "true");
-      fd.set("strict_ai", "true");
-      fd.set("ai_confidence", "75");
-      fd.set("comment_style", "detailed");
-      const r = await fetch("/api/grade", { method: "POST", body: fd });
+      // Chấm bài thường (không dùng prompt "bài tập đầu giờ")
+      fd.set("github_token", "");
+      const r = await fetch("/api/btvn/grade", { method: "POST", body: fd });
       const data = await r.json().catch(() => ({}));
       if (!r.ok) {
         setLog("#ga-log", formatApiErr(data.detail) || JSON.stringify(data), true);
         return;
       }
-      const rr = (data && data.results) || [];
+      const rr = (data && data.rows) || [];
       const out = [];
       for (let i = 0; i < st.length; i++) {
         const meta = st[i] || {};
         const row = rr[i] || {};
-        const blob = row.result || {};
-        const ok = !!row.ok;
-        const score = blob && blob.final_score != null ? blob.final_score : "";
-        const comment =
-          blob && blob.final_comment
-            ? String(blob.final_comment)
-            : row.error
-              ? String(row.error)
-              : "";
+        const ok = !(row && (row.repo_error || row.ai_error));
+        const score = row && row.score != null ? row.score : "";
+        const comment = row && row.comment ? String(row.comment) : row && row.repo_error ? String(row.repo_error) : "";
         out.push({
           studentCode: meta.studentCode || "",
           fullName: meta.fullName || "",
@@ -1904,12 +1895,13 @@
           comment,
         });
       }
-      setLog("#ga-log", (data.log || "").trim(), !data.ok);
+      // /api/btvn/grade không trả log; hiển thị lỗi tổng nếu có
+      setLog("#ga-log", "", false);
       gaSetResults(out);
       gaCtx.last_export_rows = out;
       const dlBtn = $("#ga-download");
       if (dlBtn) dlBtn.disabled = !(Array.isArray(out) && out.length > 0);
-      $("#ga-status").textContent = data.ok ? "Xong." : "Có lỗi — xem log.";
+      $("#ga-status").textContent = "Xong.";
       const autoExport = $("#ga-export") && $("#ga-export").checked;
       if (autoExport && Array.isArray(out) && out.length > 0) {
         await gaDownloadExcel(out);

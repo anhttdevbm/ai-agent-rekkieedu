@@ -88,6 +88,24 @@ def _score_from_comment(comment: str | None) -> float | None:
 _KET_QUA_LINE_START_RE = re.compile(r"(?i)^\s*Kết\s*quả\s*:")
 
 
+def _ai_detected_in_comment(comment: str | None) -> bool:
+    """
+    Portal đôi khi có cảnh báo AI (tiếng Việt/Anh). Nếu có, cộng +10 vào điểm trước khi so ngưỡng đạt.
+    """
+    c = str(comment or "")
+    if not c.strip():
+        return False
+    low = c.lower()
+    if "ai detected" in low:
+        return True
+    if "nghi" in low and "ai" in low:
+        # "Nghi dùng AI", "Nghi ngờ dùng AI: Có", ...
+        return True
+    if "⚠" in c:
+        return True
+    return False
+
+
 def _ket_qua_dat_decision(comment: str | None) -> bool | None:
     """
     Định dạng portal: dòng bắt đầu bằng "Kết quả: ...".
@@ -122,7 +140,11 @@ def _exercise_achieved_for_session(comment: str | None, score_threshold: float) 
     if d is False:
         return False
     sc = _score_from_comment(comment)
-    return sc is not None and sc > score_threshold
+    if sc is None:
+        return False
+    if _ai_detected_in_comment(comment):
+        sc = min(100.0, sc + 10.0)
+    return sc > score_threshold
 
 
 def _extract_student_session_status(student: dict[str, Any], session_id: int | str | None = None) -> str:
@@ -237,6 +259,38 @@ def _extract_strengths_weaknesses(comment: str) -> str:
             s = re.sub(r"[ \t\r\f\v]+", " ", s).strip()
             if s:
                 raw = s
+
+    # Loại bỏ các đoạn cảnh báo AI / tiếng Anh dài (portal đôi khi trả kèm "AI detected ...").
+    # Mục tiêu sheet: chỉ giữ nhận xét tiếng Việt ngắn gọn.
+    def _has_vn_marks(t: str) -> bool:
+        return bool(
+            re.search(
+                r"[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ"
+                r"ÀÁẠẢÃÂẦẤẬẨẪĂẰẮẶẲẴÈÉẸẺẼÊỀẾỆỂỄÌÍỊỈĨÒÓỌỎÕÔỒỐỘỔỖƠỜỚỢỞỠÙÚỤỦŨƯỪỨỰỬỮỲÝỴỶỸĐ]",
+                t,
+            )
+        )
+
+    raw_lines = [ln.strip() for ln in raw.splitlines()]
+    kept2: list[str] = []
+    for ln in raw_lines:
+        if not ln:
+            kept2.append("")
+            continue
+        low_ln = ln.lower()
+        if low_ln.startswith("⚠") or "ai detected" in low_ln:
+            continue
+        if ("nghi" in low_ln and "ai" in low_ln) or ("ngờ" in low_ln and "ai" in low_ln):
+            # ví dụ: "Nghi dùng AI: ..." / "Nghi ngờ dùng AI: ..."
+            continue
+        # Nếu là tiếng Anh dài (không có dấu tiếng Việt) thì bỏ.
+        if not _has_vn_marks(ln) and len(ln) >= 60:
+            continue
+        kept2.append(ln)
+    raw2 = "\n".join(kept2)
+    raw2 = re.sub(r"\n{3,}", "\n\n", raw2).strip()
+    if raw2:
+        raw = raw2
 
     low = raw.lower()
     # Find anchors (Vietnamese with/without accents already handled upstream in sheet matching)
