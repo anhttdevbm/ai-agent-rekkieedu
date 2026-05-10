@@ -22,7 +22,6 @@ from fastapi import BackgroundTasks, Body, FastAPI, File, Form, HTTPException, U
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from openpyxl import Workbook
-from pydantic import BaseModel, Field
 from openpyxl.utils import get_column_letter
 
 from cham_bai import __version__
@@ -71,11 +70,6 @@ from cham_bai.google_sheets import (
     update_session_cells as _gs_update_session_cells,
 )
 from cham_bai.group_activity import GroupGradeParams, grade_group_activity
-from cham_bai.lark_bitable import (
-    DEFAULT_BITABLE_APP_TOKEN,
-    DEFAULT_BITABLE_TABLE_ID,
-    fetch_today_youtube_links,
-)
 from cham_bai.video_transcript import fetch_youtube_transcript_plain
 from cham_bai.hackathon_exam import (
     HackathonExamParams,
@@ -2210,57 +2204,6 @@ async def api_btvn_rikkei_session_status(
     return JSONResponse({"ok": True, "session_update": session_update, "sheet_update": sheet_update})
 
 
-class LarkBitableTodayYoutubeBody(BaseModel):
-    app_token: str = Field(default="", max_length=120)
-    table_id: str = Field(default="", max_length=80)
-    date_field: str = Field(default="Ngày", max_length=200)
-    video_field: str = Field(default="Record", max_length=200)
-    # Để trống = Lark "Today"; có giá trị YYYY-MM-DD = lọc đúng ngày (ExactDate, TZ xem LARK_BITABLE_DATE_TIMEZONE)
-    filter_date: str = Field(default="", max_length=16)
-    # Trình duyệt: dán từ DevTools (request tới open.larksuite.com/.../records/search). Không lưu trên server.
-    session_authorization: str = Field(default="", max_length=16000)
-    session_cookie: str = Field(default="", max_length=120000)
-
-
-@app.post("/api/lark/bitable/today-youtube-links")
-async def api_lark_bitable_today_youtube_links(body: LarkBitableTodayYoutubeBody) -> JSONResponse:
-    """Trả về mọi link YouTube trong các bản ghi có cột ngày = Hôm nay (theo Lark Base)."""
-    app_token = (body.app_token or "").strip() or DEFAULT_BITABLE_APP_TOKEN
-    table_id = (body.table_id or "").strip() or DEFAULT_BITABLE_TABLE_ID
-    date_field = (body.date_field or "").strip()
-    video_field = (body.video_field or "").strip()
-    if not date_field:
-        raise HTTPException(status_code=400, detail="Thiếu date_field (tên cột ngày trong Base, kiểu Ngày).")
-    if not video_field:
-        raise HTTPException(status_code=400, detail="Thiếu video_field (tên cột chứa link video).")
-
-    loop = asyncio.get_event_loop()
-
-    sa = (body.session_authorization or "").strip() or None
-    sc = (body.session_cookie or "").strip() or None
-    fd = (body.filter_date or "").strip() or None
-
-    def work() -> tuple[list[str], int]:
-        return fetch_today_youtube_links(
-            app_token=app_token,
-            table_id=table_id,
-            date_field_name=date_field,
-            video_field_name=video_field,
-            session_authorization=sa,
-            session_cookie=sc,
-            filter_date_yyyy_mm_dd=fd,
-        )
-
-    try:
-        urls, nrec = await loop.run_in_executor(_executor, work)
-    except RuntimeError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
-
-    return JSONResponse({"ok": True, "urls": urls, "record_count": nrec})
-
-
 @app.post("/api/youtube/transcript")
 async def api_youtube_transcript(youtube_url: str = Body(..., embed=True)) -> PlainTextResponse:
     url = (youtube_url or "").strip()
@@ -2287,11 +2230,27 @@ async def api_youtube_transcript(youtube_url: str = Body(..., embed=True)) -> Pl
     return PlainTextResponse(out, media_type="text/plain; charset=utf-8")
 
 
+def _merge_manual_and_youtube_transcript(manual: str, yt_text: str) -> str:
+    manual = (manual or "").strip()
+    yt_text = (yt_text or "").strip()
+    if manual and yt_text and yt_text == manual:
+        return manual
+    if manual and yt_text:
+        return (
+            manual.rstrip()
+            + "\n\n---\nTranscript YouTube (tự động)\n---\n"
+            + yt_text
+        ).strip()
+    if yt_text:
+        return yt_text
+    return manual
+
+
 @app.post("/api/group-activity")
 async def api_group_activity(
-    video_transcript: str = Form(""),
-    youtube_url: str = Form(""),
-    report_file: UploadFile = File(...),
+    youtube_url_row: list[str] = Form(default_factory=list),
+    video_transcript_row: list[str] = Form(default_factory=list),
+    report_files: list[UploadFile] = File(...),
     model: str = Form(""),
 ) -> PlainTextResponse:
     try:
@@ -2302,67 +2261,78 @@ async def api_group_activity(
         raise HTTPException(status_code=400, detail=str(e))
 
     m = (model or os.getenv("OPENROUTER_MODEL", "anthropic/claude-sonnet-4.6")).strip()
-    manual = (video_transcript or "").strip()
-    yt_in = (youtube_url or "").strip()
+
+    if not report_files:
+        raise HTTPException(status_code=400, detail="Chọn ít nhất một file báo cáo.")
+
+    n_files = len(report_files)
+    if len(youtube_url_row) != n_files or len(video_transcript_row) != n_files:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Số dòng link/transcript ({len(youtube_url_row)}/{len(video_transcript_row)}) phải bằng số file ({n_files}). Hãy chọn lại file hoặc tải lại trang.",
+        )
+    yt_lines = [(u or "").strip() for u in youtube_url_row]
+    manual_lines = [(t or "") for t in video_transcript_row]
 
     loop = asyncio.get_event_loop()
+    out_chunks: list[str] = []
 
-    yt_text = ""
-    if yt_in:
+    for idx, report_file in enumerate(report_files):
+        stt = idx + 1
+        if not report_file.filename:
+            raise HTTPException(status_code=400, detail=f"File thứ {stt}: thiếu tên file.")
+        fname = str(report_file.filename).strip()
+        raw = await report_file.read()
+        if not raw:
+            raise HTTPException(status_code=400, detail=f"{fname}: file rỗng.")
+        if len(raw) > 12_000_000:
+            raise HTTPException(status_code=400, detail=f"{fname}: quá lớn (>12MB).")
 
-        def fetch_yt() -> str:
-            text, err = fetch_youtube_transcript_plain(yt_in)
-            if err:
-                raise ValueError(err)
-            return (text or "").strip()
+        yt_in = yt_lines[idx]
+        manual_row = manual_lines[idx]
+
+        yt_text = ""
+        if yt_in:
+
+            def fetch_yt(url: str = yt_in) -> str:
+                text, err = fetch_youtube_transcript_plain(url)
+                if err:
+                    raise ValueError(err)
+                return (text or "").strip()
+
+            try:
+                yt_text = await loop.run_in_executor(_executor, fetch_yt)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=f"{fname}: {e}") from e
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"{fname}: {e}") from e
+
+        vt = _merge_manual_and_youtube_transcript(manual_row, yt_text)
+        if not vt:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{fname}: thiếu link YouTube (cột dòng {stt}) và transcript/ghi chú trống cho dòng đó.",
+            )
+
+        params = GroupGradeParams(
+            report_filename=fname,
+            report_bytes=raw,
+            video_transcript=vt,
+            model=m,
+        )
+
+        def work(p: GroupGradeParams = params) -> str:
+            return grade_group_activity(p)
 
         try:
-            yt_text = await loop.run_in_executor(_executor, fetch_yt)
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e)) from e
+            result = await loop.run_in_executor(_executor, work)
         except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e)) from e
+            raise HTTPException(status_code=500, detail=f"{fname}: {e}") from e
 
-    if manual and yt_text and yt_text.strip() == manual.strip():
-        vt = manual
-    elif manual and yt_text:
-        vt = (
-            manual.rstrip()
-            + "\n\n---\nTranscript YouTube (tự động)\n---\n"
-            + yt_text.strip()
-        ).strip()
-    elif yt_text:
-        vt = yt_text
-    else:
-        vt = manual
+        out_chunks.append(f"=== {stt}. {fname} ===\n{(result or '').strip()}")
 
-    if not vt:
-        raise HTTPException(status_code=400, detail="Thiếu transcript/ghi chú video hoặc link YouTube hợp lệ.")
-
-    if not report_file or not report_file.filename:
-        raise HTTPException(status_code=400, detail="Thiếu file báo cáo.")
-    raw = await report_file.read()
-    if not raw:
-        raise HTTPException(status_code=400, detail="File báo cáo rỗng.")
-    if len(raw) > 12_000_000:
-        raise HTTPException(status_code=400, detail="File báo cáo quá lớn (>12MB).")
-    fname = str(report_file.filename or "").strip()
-    params = GroupGradeParams(
-        report_filename=fname,
-        report_bytes=raw,
-        video_transcript=vt,
-        model=m,
-    )
-
-    def work():
-        return grade_group_activity(params)
-
-    try:
-        result = await loop.run_in_executor(_executor, work)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-    return PlainTextResponse(result or "", media_type="text/plain; charset=utf-8")
+    body = "\n\n".join(out_chunks).strip()
+    return PlainTextResponse(body, media_type="text/plain; charset=utf-8")
 
 
 @app.post("/api/reading")

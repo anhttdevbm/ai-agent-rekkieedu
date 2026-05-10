@@ -1949,216 +1949,201 @@
     }
   }
 
+  let grTableCache = { urls: [], txs: [] };
+
+  function snapshotGroupLinkRows() {
+    const tbody = $("#gr-links-tbody");
+    if (!tbody) return { urls: [], txs: [] };
+    const urls = [];
+    const txs = [];
+    tbody.querySelectorAll("tr").forEach((tr) => {
+      const yi = tr.querySelector("input.gr-row-yt");
+      const ti = tr.querySelector("textarea.gr-row-tx");
+      if (yi && ti) {
+        urls.push(yi.value);
+        txs.push(ti.value);
+      }
+    });
+    return { urls, txs };
+  }
+
+  function rebuildGroupLinksTable(fileList) {
+    const tbody = $("#gr-links-tbody");
+    if (!tbody) return;
+    const prev = grTableCache;
+    tbody.replaceChildren();
+    const n = fileList && fileList.length ? fileList.length : 0;
+    if (n === 0) {
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      td.colSpan = 4;
+      td.className = "hint";
+      td.style.padding = "12px";
+      td.textContent =
+        "Chọn một hoặc nhiều file báo cáo — bảng sẽ hiện một dòng link + transcript cho mỗi file.";
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+      grTableCache = { urls: [], txs: [] };
+      return;
+    }
+    const urls = [];
+    const txs = [];
+    for (let i = 0; i < n; i++) {
+      const u = i < prev.urls.length ? prev.urls[i] : "";
+      const x = i < prev.txs.length ? prev.txs[i] : "";
+      urls.push(u);
+      txs.push(x);
+      const tr = document.createElement("tr");
+      const tdN = document.createElement("td");
+      tdN.textContent = String(i + 1);
+      const tdF = document.createElement("td");
+      tdF.textContent = (fileList[i] && fileList[i].name) || "";
+      const tdU = document.createElement("td");
+      const inp = document.createElement("input");
+      inp.type = "text";
+      inp.className = "gr-row-yt";
+      inp.autocomplete = "off";
+      inp.placeholder = "https://… (để trống nếu chỉ điền transcript)";
+      inp.value = u;
+      tdU.appendChild(inp);
+      const tdT = document.createElement("td");
+      const ta = document.createElement("textarea");
+      ta.className = "gr-row-tx";
+      ta.rows = 4;
+      ta.placeholder = "Transcript hoặc ghi chú…";
+      ta.value = x;
+      tdT.appendChild(ta);
+      tr.appendChild(tdN);
+      tr.appendChild(tdF);
+      tr.appendChild(tdU);
+      tr.appendChild(tdT);
+      tbody.appendChild(tr);
+    }
+    grTableCache = { urls, txs };
+  }
+
+  function onGroupFilesPick(ev) {
+    const inp = ev && ev.target ? ev.target : $("#gr-report-files");
+    if (!inp || inp.id !== "gr-report-files") return;
+    grTableCache = snapshotGroupLinkRows();
+    rebuildGroupLinksTable(inp.files);
+  }
+
+  function parseGroupActivityBlocks(text) {
+    const t = (text || "").trim();
+    if (!t) return [];
+    const parts = t.split(/\n\n=== /);
+    const rows = [];
+    for (let i = 0; i < parts.length; i++) {
+      const p = i === 0 ? parts[i] : "=== " + parts[i];
+      const m = p.match(/^===\s*(\d+)\.\s*(.+?)\s*===\s*\r?\n([\s\S]*)$/);
+      if (m) {
+        rows.push({ stt: m[1].trim(), file: m[2].trim(), body: m[3].trim() });
+      } else {
+        rows.push({ stt: String(rows.length + 1), file: "", body: p.trim() });
+      }
+    }
+    return rows;
+  }
+
+  function showGroupSuccessTable(rows) {
+    const wrap = $("#gr-results-wrap");
+    const pre = $("#gr-log");
+    const tbody = $("#gr-results-tbody");
+    if (pre) {
+      pre.textContent = "";
+      pre.classList.remove("error");
+      pre.style.display = "none";
+    }
+    if (!tbody || !wrap) return;
+    tbody.replaceChildren();
+    for (const row of rows) {
+      const tr = document.createElement("tr");
+      const td1 = document.createElement("td");
+      td1.textContent = row.stt || "";
+      const td2 = document.createElement("td");
+      td2.textContent = row.file || "";
+      const td3 = document.createElement("td");
+      td3.className = "gr-result-body";
+      td3.textContent = row.body || "";
+      tr.appendChild(td1);
+      tr.appendChild(td2);
+      tr.appendChild(td3);
+      tbody.appendChild(tr);
+    }
+    wrap.style.display = "";
+  }
+
+  function showGroupErrorOutput(msg) {
+    const wrap = $("#gr-results-wrap");
+    const pre = $("#gr-log");
+    if (wrap) wrap.style.display = "none";
+    if (pre) pre.style.display = "";
+    setLog("#gr-log", msg, true);
+  }
+
   async function postGroup(ev) {
     ev.preventDefault();
     const btn = $("#gr-submit");
     setBusy(btn, true, "Đang chấm…");
     $("#gr-status").textContent = "";
-    setLog("#gr-log", "", false);
+    const pre = $("#gr-log");
+    const wrap = $("#gr-results-wrap");
+    if (pre) {
+      pre.style.display = "";
+      pre.classList.remove("error");
+      pre.textContent = "";
+    }
+    if (wrap) wrap.style.display = "none";
     try {
-      const yt = ($("#gr-yt-url") && $("#gr-yt-url").value ? String($("#gr-yt-url").value) : "").trim();
-      const tx = ($("#gr-transcript") && $("#gr-transcript").value ? String($("#gr-transcript").value) : "").trim();
-      if (!tx && !yt) {
-        setLog("#gr-log", "Thiếu transcript/ghi chú video hoặc link YouTube.", true);
+      const fileInput = $("#gr-report-files");
+      const files = fileInput && fileInput.files ? fileInput.files : null;
+      if (!files || files.length === 0) {
+        showGroupErrorOutput("Chọn ít nhất một file báo cáo.");
         return;
       }
-      const fd = new FormData(ev.target);
+      const { urls: linesYt, txs: linesTx } = snapshotGroupLinkRows();
+      if (linesYt.length !== files.length || linesTx.length !== files.length) {
+        showGroupErrorOutput("Bảng link/transcript không khớp số file — chọn lại file báo cáo.");
+        return;
+      }
+      for (let i = 0; i < files.length; i++) {
+        const y = (linesYt[i] || "").trim();
+        const t = (linesTx[i] || "").trim();
+        if (!y && !t) {
+          showGroupErrorOutput(`Dòng ${i + 1}: cần ít nhất link YouTube hoặc transcript/ghi chú.`);
+          return;
+        }
+      }
+      const fd = new FormData();
+      fd.set("model", ($("#gr-model") && $("#gr-model").value ? String($("#gr-model").value) : "").trim());
+      for (let i = 0; i < files.length; i++) {
+        fd.append("youtube_url_row", (linesYt[i] || "").trim());
+        fd.append("video_transcript_row", linesTx[i] || "");
+      }
+      for (let i = 0; i < files.length; i++) {
+        fd.append("report_files", files[i]);
+      }
       const r = await fetch("/api/group-activity", { method: "POST", body: fd });
       if (!r.ok) {
         const data = await r.json().catch(() => ({}));
-        setLog("#gr-log", formatApiErr(data.detail) || JSON.stringify(data), true);
+        showGroupErrorOutput(formatApiErr(data.detail) || JSON.stringify(data));
         return;
       }
       const txt = await r.text().catch(() => "");
-      setLog("#gr-log", (txt || "").trim(), false);
+      const rows = parseGroupActivityBlocks(txt);
+      if (rows.length) {
+        showGroupSuccessTable(rows);
+      } else {
+        showGroupErrorOutput((txt || "").trim() || "(Phản hồi rỗng)");
+        return;
+      }
       $("#gr-status").textContent = "Xong.";
     } catch (e) {
-      setLog("#gr-log", String(e), true);
+      showGroupErrorOutput(String(e));
     } finally {
       setBusy(btn, false);
     }
-  }
-
-  function _isProbableYoutubeWatchUrl(s) {
-    const t = String(s || "").trim();
-    if (t.length < 12) return false;
-    if (/youtu\.be\/[\w-]{6,}/i.test(t)) return true;
-    if (/youtube\.com\/watch\?[^\s#]*\bv=[\w-]{6,}/i.test(t)) return true;
-    if (/youtube\.com\/(embed|shorts|live)\/[\w-]{6,}/i.test(t)) return true;
-    return false;
-  }
-
-  let _groupYtFetchTimer = null;
-  let _groupYtFetchInFlight = false;
-  let _groupYtLastFetchedUrl = "";
-
-  function _scheduleGroupYoutubeTranscriptFetch() {
-    if (_groupYtFetchTimer) clearTimeout(_groupYtFetchTimer);
-    _groupYtFetchTimer = setTimeout(() => {
-      _groupYtFetchTimer = null;
-      fetchGroupYoutubeTranscriptAuto();
-    }, 550);
-  }
-
-  async function fetchGroupYoutubeTranscriptAuto() {
-    const urlEl = $("#gr-yt-url");
-    const txEl = $("#gr-transcript");
-    const url = urlEl && urlEl.value ? String(urlEl.value).trim() : "";
-    if (!url) {
-      _groupYtLastFetchedUrl = "";
-      return;
-    }
-    if (!_isProbableYoutubeWatchUrl(url)) return;
-    if (url === _groupYtLastFetchedUrl) return;
-    if (_groupYtFetchInFlight) return;
-
-    _groupYtFetchInFlight = true;
-    $("#gr-status").textContent = "Đang lấy transcript…";
-    setLog("#gr-log", "", false);
-    try {
-      const r = await fetch("/api/youtube/transcript", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ youtube_url: url }),
-      });
-      if (!r.ok) {
-        const data = await r.json().catch(() => ({}));
-        setLog("#gr-log", formatApiErr(data.detail) || JSON.stringify(data), true);
-        $("#gr-status").textContent = "";
-        return;
-      }
-      const txt = (await r.text().catch(() => "")) || "";
-      if (txEl) txEl.value = txt.trim();
-      _groupYtLastFetchedUrl = url;
-      $("#gr-status").textContent = "Đã lấy transcript.";
-    } catch (e) {
-      setLog("#gr-log", String(e), true);
-      $("#gr-status").textContent = "";
-    } finally {
-      _groupYtFetchInFlight = false;
-    }
-  }
-
-  async function fetchGroupActivityLarkToday() {
-    const btn = $("#gr-lark-fetch");
-    if (btn) setBusy(btn, true, "Đang tải Lark…");
-    $("#gr-status").textContent = "";
-    setLog("#gr-log", "", false);
-    try {
-      const app_token = ($("#gr-lark-app-token") && $("#gr-lark-app-token").value
-        ? String($("#gr-lark-app-token").value)
-        : ""
-      ).trim();
-      const table_id = ($("#gr-lark-table-id") && $("#gr-lark-table-id").value
-        ? String($("#gr-lark-table-id").value)
-        : ""
-      ).trim();
-      const date_field = ($("#gr-lark-date-field") && $("#gr-lark-date-field").value
-        ? String($("#gr-lark-date-field").value)
-        : "Ngày"
-      ).trim();
-      const video_field = ($("#gr-lark-video-field") && $("#gr-lark-video-field").value
-        ? String($("#gr-lark-video-field").value)
-        : "Record"
-      ).trim();
-      const filter_date = ($("#gr-lark-filter-date") && $("#gr-lark-filter-date").value
-        ? String($("#gr-lark-filter-date").value)
-        : ""
-      ).trim();
-      const session_authorization = ($("#gr-lark-session-bearer") && $("#gr-lark-session-bearer").value
-        ? String($("#gr-lark-session-bearer").value)
-        : ""
-      ).trim();
-      const session_cookie = ($("#gr-lark-session-cookie") && $("#gr-lark-session-cookie").value
-        ? String($("#gr-lark-session-cookie").value)
-        : ""
-      ).trim();
-      const r = await fetch("/api/lark/bitable/today-youtube-links", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          app_token,
-          table_id,
-          date_field,
-          video_field,
-          filter_date,
-          session_authorization,
-          session_cookie,
-        }),
-      });
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        setLog("#gr-log", formatApiErr(data.detail) || JSON.stringify(data), true);
-        return;
-      }
-      const urls = Array.isArray(data.urls) ? data.urls : [];
-      const nrec = data.record_count != null ? data.record_count : 0;
-      if (urls.length === 0) {
-        const dayHint = filter_date ? `ngày ${filter_date}` : "hôm nay (Base)";
-        setLog(
-          "#gr-log",
-          `Không trích được link YouTube (hoặc không có bản ghi ${dayHint}). record_count=${nrec}. Kiểm tra tên cột ngày/link và quyền Lark.`,
-          true
-        );
-        return;
-      }
-      const txEl = $("#gr-transcript");
-      const urlEl = $("#gr-yt-url");
-      let merged = "";
-      for (let i = 0; i < urls.length; i++) {
-        $("#gr-status").textContent = `Đang lấy transcript ${i + 1}/${urls.length}…`;
-        const tr = await fetch("/api/youtube/transcript", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ youtube_url: urls[i] }),
-        });
-        if (!tr.ok) {
-          const err = await tr.json().catch(() => ({}));
-          setLog("#gr-log", formatApiErr(err.detail) || `Lỗi transcript video ${i + 1}`, true);
-          $("#gr-status").textContent = "";
-          return;
-        }
-        const txt = ((await tr.text().catch(() => "")) || "").trim();
-        merged += (merged ? "\n\n" : "") + `---\nVideo ${i + 1} — ${urls[i]}\n---\n\n` + txt;
-      }
-      if (txEl) txEl.value = merged.trim();
-      if (urlEl) urlEl.value = urls[0] || "";
-      _groupYtLastFetchedUrl = urls.length === 1 ? urls[0] : "";
-      const dayDone = filter_date ? `ngày ${filter_date}` : "hôm nay";
-      $("#gr-status").textContent = `Đã lấy ${urls.length} link (${nrec} bản ghi — ${dayDone}) và transcript.`;
-    } catch (e) {
-      setLog("#gr-log", String(e), true);
-      $("#gr-status").textContent = "";
-    } finally {
-      if (btn) setBusy(btn, false);
-    }
-  }
-
-  function setupGroupYoutubeAutoTranscript() {
-    const urlEl = $("#gr-yt-url");
-    if (!urlEl) return;
-    urlEl.addEventListener("input", () => {
-      const url = String(urlEl.value || "").trim();
-      if (!url) {
-        _groupYtLastFetchedUrl = "";
-        return;
-      }
-      _scheduleGroupYoutubeTranscriptFetch();
-    });
-    urlEl.addEventListener("paste", () => {
-      setTimeout(() => {
-        const url = String(urlEl.value || "").trim();
-        if (!url) {
-          _groupYtLastFetchedUrl = "";
-          return;
-        }
-        if (_groupYtFetchTimer) {
-          clearTimeout(_groupYtFetchTimer);
-          _groupYtFetchTimer = null;
-        }
-        fetchGroupYoutubeTranscriptAuto();
-      }, 0);
-    });
   }
 
   function init() {
@@ -2193,9 +2178,12 @@
     }
     const fg = $("#form-group");
     if (fg) fg.addEventListener("submit", postGroup);
-    const larkBtn = $("#gr-lark-fetch");
-    if (larkBtn) larkBtn.addEventListener("click", fetchGroupActivityLarkToday);
-    setupGroupYoutubeAutoTranscript();
+    const gri = $("#gr-report-files");
+    if (gri) {
+      grTableCache = { urls: [], txs: [] };
+      gri.addEventListener("change", onGroupFilesPick);
+      rebuildGroupLinksTable(gri.files);
+    }
     const fb = $("#form-btvn");
     if (fb) fb.addEventListener("submit", postBtvn);
     const bLoad = $("#b-rk-load");

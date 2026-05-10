@@ -10,7 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/static/style.css?v=20260421_3" />
+    <link rel="stylesheet" href="/static/style.css?v=20260510_1" />
   </head>
   <body>
     <div class="wrap">
@@ -816,93 +816,32 @@
       <section class="panel" id="panel-group">
         <h2>Chấm hoạt động nhóm</h2>
         <p class="hint">
-          Upload <strong>báo cáo</strong> và cung cấp <strong>transcript/ghi chú video</strong> (dán tay hoặc lấy tự động từ link YouTube).
-          Hệ thống chỉ đánh giá dựa trên nội dung bạn cung cấp (không bịa nếu thiếu dữ liệu).
+          Upload <strong>một hoặc nhiều báo cáo</strong>. Với mỗi file, điền <strong>một dòng trong bảng</strong>: link YouTube (tuỳ chọn, server tự tải phụ đề) và/hoặc transcript/ghi chú.
+          Mỗi file chấm riêng; kết quả hiển thị theo bảng cùng thứ tự. Không dùng URL <code>timedtext</code> có <code>signature</code>/<code>expire</code>.
         </p>
-        <p class="hint">
-          <strong>Lark Base:</strong> lấy mọi link YouTube của <em>hôm nay</em> (lọc <code>Today</code> trên cột ngày kiểu Ngày). Hai cách:
-          (1) <code>LARK_APP_ID</code> / <code>LARK_APP_SECRET</code> trong <code>.env</code>;
-          (2) <strong>chế độ trình duyệt</strong> — dán token/cookie từ DevTools (không cần add app vào Base; token hết hạn nhanh; chỉ nên dùng máy tin cậy — xem bên dưới).
-        </p>
-        <div class="field" style="display: grid; gap: 10px; max-width: 720px">
-          <label>Lấy link từ Base (mặc định theo bảng Rikkei Education)</label>
-          <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end">
-            <div class="field" style="margin: 0; flex: 1; min-width: 140px">
-              <label for="gr-lark-date-field" style="font-size: 0.9em">Cột ngày (tên đúng trong Base)</label>
-              <input type="text" id="gr-lark-date-field" value="Ngày" autocomplete="off" />
-            </div>
-            <div class="field" style="margin: 0; flex: 1; min-width: 168px">
-              <label for="gr-lark-filter-date" style="font-size: 0.9em">Lọc theo ngày (trống = hôm nay)</label>
-              <input type="date" id="gr-lark-filter-date" />
-            </div>
-            <div class="field" style="margin: 0; flex: 1; min-width: 140px">
-              <label for="gr-lark-video-field" style="font-size: 0.9em">Cột link video</label>
-              <input type="text" id="gr-lark-video-field" value="Record" autocomplete="off" />
-            </div>
-            <button type="button" class="secondary" id="gr-lark-fetch">Lấy link &amp; transcript hôm nay</button>
-          </div>
-          <details style="font-size: 0.9em; color: #64748b">
-            <summary style="cursor: pointer">Tuỳ chọn app_token / table_id</summary>
-            <div class="field" style="margin-top: 8px">
-              <label for="gr-lark-app-token">app_token (đoạn sau <code>/base/</code> trong URL)</label>
-              <input type="text" id="gr-lark-app-token" value="QumebR4fVa8pjHszEetlqpEOgkd" autocomplete="off" />
-            </div>
-            <div class="field">
-              <label for="gr-lark-table-id">table_id (tham số <code>table=</code> trong URL)</label>
-              <input type="text" id="gr-lark-table-id" value="tblDcfxiZ9YVdy8D" autocomplete="off" />
-            </div>
-          </details>
-          <details style="font-size: 0.9em; color: #64748b">
-            <summary style="cursor: pointer">Chế độ trình duyệt (token / cookie từ DevTools)</summary>
-            <p class="hint" style="margin-top: 8px">
-              Mở Base → F12 → <strong>Network</strong> → lọc <code>records/search</code> → chọn đúng request tới
-              <strong><code>open.larksuite.com</code></strong> (không phải chỉ <code>rikkeieducation…</code> hay trang login).
-              Chuột phải request → <strong>Copy → Copy request headers</strong>, hoặc copy riêng <code>Cookie</code> (phải đủ một dòng,
-              không bị cắt giữa chừng). Cookie cần có <code>passport_app_access_token</code> (hoặc dán thêm ô Bearer: JWT đó).
-              Nếu lỗi, mở tab Network → request đó → <strong>Response</strong> / status để xem Lark báo gì (sau cập nhật server sẽ hiện chi tiết trong thông báo lỗi).
-            </p>
-            <div class="field" style="margin-top: 8px">
-              <label for="gr-lark-session-bearer">Authorization (Bearer token)</label>
-              <textarea
-                id="gr-lark-session-bearer"
-                rows="2"
-                autocomplete="off"
-                placeholder="Bearer u-xxxxxxxx… hoặc chỉ dán phần sau Bearer"
-              ></textarea>
-            </div>
-            <div class="field">
-              <label for="gr-lark-session-cookie">Cookie (tuỳ chọn)</label>
-              <textarea
-                id="gr-lark-session-cookie"
-                rows="3"
-                autocomplete="off"
-                placeholder="Dán header Cookie đầy đủ nếu có (hoặc nhiều dòng name=value, sẽ nối bằng ; )"
-              ></textarea>
-            </div>
-          </details>
-        </div>
         <form id="form-group" enctype="multipart/form-data">
           <div class="field">
-            <label for="gr-report-file">File báo cáo (DOCX hoặc XLSX)</label>
-            <input type="file" id="gr-report-file" name="report_file" accept=".docx,.xlsx" required />
-          </div>
-          <div class="field">
-            <label for="gr-yt-url">Link YouTube (tuỳ chọn)</label>
-            <input
-              id="gr-yt-url"
-              name="youtube_url"
-              type="url"
-              inputmode="url"
-              placeholder="https://www.youtube.com/watch?v=..."
-            />
+            <label for="gr-report-files">File báo cáo (DOCX hoặc XLSX) — chọn nhiều file</label>
+            <input type="file" id="gr-report-files" name="report_files" accept=".docx,.xlsx" multiple required />
             <p class="hint" style="margin-top: 8px">
-              Sau khi dán hoặc nhập đủ link, phụ đề sẽ được tải tự động (ưu tiên tiếng Việt, fallback tiếng Anh). Không dùng URL
-              <code>timedtext</code> có <code>signature</code>/<code>expire</code> vì các tham số đó hết hạn rất nhanh.
+              Sau khi chọn file, bảng bên dưới có đúng một dòng cho mỗi file (thứ tự giữ nguyên).
             </p>
           </div>
           <div class="field">
-            <label for="gr-transcript">Transcript / ghi chú video</label>
-            <textarea id="gr-transcript" name="video_transcript" rows="10" placeholder="Dán transcript hoặc ghi chú quan sát..."></textarea>
+            <span class="label-like">Link YouTube &amp; transcript / ghi chú theo từng file</span>
+            <div class="gr-table-scroll">
+              <table class="gr-links-table" aria-label="Link và transcript theo file">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>File báo cáo</th>
+                    <th>Link YouTube</th>
+                    <th>Transcript / ghi chú</th>
+                  </tr>
+                </thead>
+                <tbody id="gr-links-tbody"></tbody>
+              </table>
+            </div>
           </div>
           <div class="field">
             <label for="gr-model">Model OpenRouter</label>
@@ -912,12 +851,27 @@
             <button type="submit" class="primary" id="gr-submit">Chấm hoạt động nhóm</button>
           </div>
           <p class="status" id="gr-status"></p>
+          <div id="gr-results-wrap" class="gr-results-wrap" style="display: none">
+            <span class="label-like">Kết quả chấm</span>
+            <div class="gr-table-scroll">
+              <table class="gr-results-table" aria-label="Kết quả chấm theo file">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>File</th>
+                    <th>Nhận xét</th>
+                  </tr>
+                </thead>
+                <tbody id="gr-results-tbody"></tbody>
+              </table>
+            </div>
+          </div>
           <pre class="log" id="gr-log"></pre>
         </form>
       </section>
 
       <footer>Chạy local · OpenRouter · không lưu dữ liệu trên server sau khi tải file</footer>
     </div>
-    <script src="/static/app.js?v=20260510_04"></script>
+    <script src="/static/app.js?v=20260510_09"></script>
   </body>
 </html>

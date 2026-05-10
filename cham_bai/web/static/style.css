@@ -167,12 +167,73 @@ nav.tabs button:active {
   margin-bottom: 1rem;
 }
 
-.field label {
+.field label,
+.field .label-like {
   display: block;
   font-size: 0.82rem;
   font-weight: 600;
   color: var(--muted);
   margin-bottom: 0.35rem;
+}
+
+.gr-table-scroll {
+  overflow-x: auto;
+  margin-top: 0.35rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface2);
+}
+
+.gr-links-table,
+.gr-results-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.gr-links-table th,
+.gr-links-table td,
+.gr-results-table th,
+.gr-results-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+  text-align: left;
+}
+
+.gr-links-table thead th,
+.gr-results-table thead th {
+  font-weight: 600;
+  color: var(--muted);
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.gr-links-table tbody tr:last-child td,
+.gr-results-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.gr-links-table input.gr-row-yt {
+  min-width: 220px;
+}
+
+.gr-links-table textarea.gr-row-tx {
+  min-height: 4.5rem;
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.gr-results-table td.gr-result-body {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 0.8rem;
+  color: var(--text);
+  max-width: min(52rem, 85vw);
+}
+
+.gr-results-wrap {
+  margin-top: 1rem;
 }
 
 input[type="text"],
