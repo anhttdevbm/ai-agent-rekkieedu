@@ -2061,6 +2061,10 @@
         ? String($("#gr-lark-video-field").value)
         : "Record"
       ).trim();
+      const filter_date = ($("#gr-lark-filter-date") && $("#gr-lark-filter-date").value
+        ? String($("#gr-lark-filter-date").value)
+        : ""
+      ).trim();
       const session_authorization = ($("#gr-lark-session-bearer") && $("#gr-lark-session-bearer").value
         ? String($("#gr-lark-session-bearer").value)
         : ""
@@ -2077,6 +2081,7 @@
           table_id,
           date_field,
           video_field,
+          filter_date,
           session_authorization,
           session_cookie,
         }),
@@ -2089,9 +2094,10 @@
       const urls = Array.isArray(data.urls) ? data.urls : [];
       const nrec = data.record_count != null ? data.record_count : 0;
       if (urls.length === 0) {
+        const dayHint = filter_date ? `ngày ${filter_date}` : "hôm nay (Base)";
         setLog(
           "#gr-log",
-          `Không trích được link YouTube (hoặc không có bản ghi hôm nay). record_count=${nrec}. Kiểm tra tên cột ngày/link và quyền Lark.`,
+          `Không trích được link YouTube (hoặc không có bản ghi ${dayHint}). record_count=${nrec}. Kiểm tra tên cột ngày/link và quyền Lark.`,
           true
         );
         return;
@@ -2118,7 +2124,8 @@
       if (txEl) txEl.value = merged.trim();
       if (urlEl) urlEl.value = urls[0] || "";
       _groupYtLastFetchedUrl = urls.length === 1 ? urls[0] : "";
-      $("#gr-status").textContent = `Đã lấy ${urls.length} link (${nrec} bản ghi hôm nay) và transcript.`;
+      const dayDone = filter_date ? `ngày ${filter_date}` : "hôm nay";
+      $("#gr-status").textContent = `Đã lấy ${urls.length} link (${nrec} bản ghi — ${dayDone}) và transcript.`;
     } catch (e) {
       setLog("#gr-log", String(e), true);
       $("#gr-status").textContent = "";

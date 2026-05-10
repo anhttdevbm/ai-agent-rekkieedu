@@ -831,6 +831,10 @@
               <label for="gr-lark-date-field" style="font-size: 0.9em">Cột ngày (tên đúng trong Base)</label>
               <input type="text" id="gr-lark-date-field" value="Ngày" autocomplete="off" />
             </div>
+            <div class="field" style="margin: 0; flex: 1; min-width: 168px">
+              <label for="gr-lark-filter-date" style="font-size: 0.9em">Lọc theo ngày (trống = hôm nay)</label>
+              <input type="date" id="gr-lark-filter-date" />
+            </div>
             <div class="field" style="margin: 0; flex: 1; min-width: 140px">
               <label for="gr-lark-video-field" style="font-size: 0.9em">Cột link video</label>
               <input type="text" id="gr-lark-video-field" value="Record" autocomplete="off" />
@@ -851,11 +855,11 @@
           <details style="font-size: 0.9em; color: #64748b">
             <summary style="cursor: pointer">Chế độ trình duyệt (token / cookie từ DevTools)</summary>
             <p class="hint" style="margin-top: 8px">
-              Mở Base trên Lark → F12 → tab <strong>Network</strong> → lọc <code>records/search</code> → chọn request tới
-              <code>open.larksuite.com/open-apis/bitable/...</code> → <strong>Copy request headers</strong>. Dán giá trị
-              <code>Authorization</code> (Bearer <code>u-...</code> hoặc tương tự) vào ô đầu; nếu request có
-              <code>Cookie</code>, dán vào ô thứ hai. Server chỉ dùng để gọi Lark một lần, không lưu file (vẫn coi như dữ liệu nhạy cảm).
-              Cách này có thể trái điều khoản Lark và dễ hỏng khi Lark đổi auth — ưu tiên API app nếu sau này có quyền.
+              Mở Base → F12 → <strong>Network</strong> → lọc <code>records/search</code> → chọn đúng request tới
+              <strong><code>open.larksuite.com</code></strong> (không phải chỉ <code>rikkeieducation…</code> hay trang login).
+              Chuột phải request → <strong>Copy → Copy request headers</strong>, hoặc copy riêng <code>Cookie</code> (phải đủ một dòng,
+              không bị cắt giữa chừng). Cookie cần có <code>passport_app_access_token</code> (hoặc dán thêm ô Bearer: JWT đó).
+              Nếu lỗi, mở tab Network → request đó → <strong>Response</strong> / status để xem Lark báo gì (sau cập nhật server sẽ hiện chi tiết trong thông báo lỗi).
             </p>
             <div class="field" style="margin-top: 8px">
               <label for="gr-lark-session-bearer">Authorization (Bearer token)</label>
@@ -914,6 +918,6 @@
 
       <footer>Chạy local · OpenRouter · không lưu dữ liệu trên server sau khi tải file</footer>
     </div>
-    <script src="/static/app.js?v=20260510_02"></script>
+    <script src="/static/app.js?v=20260510_04"></script>
   </body>
 </html>

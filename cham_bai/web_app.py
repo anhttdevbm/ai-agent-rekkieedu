@@ -2215,6 +2215,8 @@ class LarkBitableTodayYoutubeBody(BaseModel):
     table_id: str = Field(default="", max_length=80)
     date_field: str = Field(default="Ngày", max_length=200)
     video_field: str = Field(default="Record", max_length=200)
+    # Để trống = Lark "Today"; có giá trị YYYY-MM-DD = lọc đúng ngày (ExactDate, TZ xem LARK_BITABLE_DATE_TIMEZONE)
+    filter_date: str = Field(default="", max_length=16)
     # Trình duyệt: dán từ DevTools (request tới open.larksuite.com/.../records/search). Không lưu trên server.
     session_authorization: str = Field(default="", max_length=16000)
     session_cookie: str = Field(default="", max_length=120000)
@@ -2236,6 +2238,7 @@ async def api_lark_bitable_today_youtube_links(body: LarkBitableTodayYoutubeBody
 
     sa = (body.session_authorization or "").strip() or None
     sc = (body.session_cookie or "").strip() or None
+    fd = (body.filter_date or "").strip() or None
 
     def work() -> tuple[list[str], int]:
         return fetch_today_youtube_links(
@@ -2245,6 +2248,7 @@ async def api_lark_bitable_today_youtube_links(body: LarkBitableTodayYoutubeBody
             video_field_name=video_field,
             session_authorization=sa,
             session_cookie=sc,
+            filter_date_yyyy_mm_dd=fd,
         )
 
     try:
