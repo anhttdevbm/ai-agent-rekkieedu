@@ -819,6 +819,64 @@
           Upload <strong>báo cáo</strong> và cung cấp <strong>transcript/ghi chú video</strong> (dán tay hoặc lấy tự động từ link YouTube).
           Hệ thống chỉ đánh giá dựa trên nội dung bạn cung cấp (không bịa nếu thiếu dữ liệu).
         </p>
+        <p class="hint">
+          <strong>Lark Base:</strong> lấy mọi link YouTube của <em>hôm nay</em> (lọc <code>Today</code> trên cột ngày kiểu Ngày). Hai cách:
+          (1) <code>LARK_APP_ID</code> / <code>LARK_APP_SECRET</code> trong <code>.env</code>;
+          (2) <strong>chế độ trình duyệt</strong> — dán token/cookie từ DevTools (không cần add app vào Base; token hết hạn nhanh; chỉ nên dùng máy tin cậy — xem bên dưới).
+        </p>
+        <div class="field" style="display: grid; gap: 10px; max-width: 720px">
+          <label>Lấy link từ Base (mặc định theo bảng Rikkei Education)</label>
+          <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end">
+            <div class="field" style="margin: 0; flex: 1; min-width: 140px">
+              <label for="gr-lark-date-field" style="font-size: 0.9em">Cột ngày (tên đúng trong Base)</label>
+              <input type="text" id="gr-lark-date-field" value="Ngày" autocomplete="off" />
+            </div>
+            <div class="field" style="margin: 0; flex: 1; min-width: 140px">
+              <label for="gr-lark-video-field" style="font-size: 0.9em">Cột link video</label>
+              <input type="text" id="gr-lark-video-field" value="Record" autocomplete="off" />
+            </div>
+            <button type="button" class="secondary" id="gr-lark-fetch">Lấy link &amp; transcript hôm nay</button>
+          </div>
+          <details style="font-size: 0.9em; color: #64748b">
+            <summary style="cursor: pointer">Tuỳ chọn app_token / table_id</summary>
+            <div class="field" style="margin-top: 8px">
+              <label for="gr-lark-app-token">app_token (đoạn sau <code>/base/</code> trong URL)</label>
+              <input type="text" id="gr-lark-app-token" value="QumebR4fVa8pjHszEetlqpEOgkd" autocomplete="off" />
+            </div>
+            <div class="field">
+              <label for="gr-lark-table-id">table_id (tham số <code>table=</code> trong URL)</label>
+              <input type="text" id="gr-lark-table-id" value="tblDcfxiZ9YVdy8D" autocomplete="off" />
+            </div>
+          </details>
+          <details style="font-size: 0.9em; color: #64748b">
+            <summary style="cursor: pointer">Chế độ trình duyệt (token / cookie từ DevTools)</summary>
+            <p class="hint" style="margin-top: 8px">
+              Mở Base trên Lark → F12 → tab <strong>Network</strong> → lọc <code>records/search</code> → chọn request tới
+              <code>open.larksuite.com/open-apis/bitable/...</code> → <strong>Copy request headers</strong>. Dán giá trị
+              <code>Authorization</code> (Bearer <code>u-...</code> hoặc tương tự) vào ô đầu; nếu request có
+              <code>Cookie</code>, dán vào ô thứ hai. Server chỉ dùng để gọi Lark một lần, không lưu file (vẫn coi như dữ liệu nhạy cảm).
+              Cách này có thể trái điều khoản Lark và dễ hỏng khi Lark đổi auth — ưu tiên API app nếu sau này có quyền.
+            </p>
+            <div class="field" style="margin-top: 8px">
+              <label for="gr-lark-session-bearer">Authorization (Bearer token)</label>
+              <textarea
+                id="gr-lark-session-bearer"
+                rows="2"
+                autocomplete="off"
+                placeholder="Bearer u-xxxxxxxx… hoặc chỉ dán phần sau Bearer"
+              ></textarea>
+            </div>
+            <div class="field">
+              <label for="gr-lark-session-cookie">Cookie (tuỳ chọn)</label>
+              <textarea
+                id="gr-lark-session-cookie"
+                rows="3"
+                autocomplete="off"
+                placeholder="Dán header Cookie đầy đủ nếu có (hoặc nhiều dòng name=value, sẽ nối bằng ; )"
+              ></textarea>
+            </div>
+          </details>
+        </div>
         <form id="form-group" enctype="multipart/form-data">
           <div class="field">
             <label for="gr-report-file">File báo cáo (DOCX hoặc XLSX)</label>
@@ -856,6 +914,6 @@
 
       <footer>Chạy local · OpenRouter · không lưu dữ liệu trên server sau khi tải file</footer>
     </div>
-    <script src="/static/app.js?v=20260507_01"></script>
+    <script src="/static/app.js?v=20260510_02"></script>
   </body>
 </html>

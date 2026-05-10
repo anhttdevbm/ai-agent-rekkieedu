@@ -2039,6 +2039,94 @@
     }
   }
 
+  async function fetchGroupActivityLarkToday() {
+    const btn = $("#gr-lark-fetch");
+    if (btn) setBusy(btn, true, "Đang tải Lark…");
+    $("#gr-status").textContent = "";
+    setLog("#gr-log", "", false);
+    try {
+      const app_token = ($("#gr-lark-app-token") && $("#gr-lark-app-token").value
+        ? String($("#gr-lark-app-token").value)
+        : ""
+      ).trim();
+      const table_id = ($("#gr-lark-table-id") && $("#gr-lark-table-id").value
+        ? String($("#gr-lark-table-id").value)
+        : ""
+      ).trim();
+      const date_field = ($("#gr-lark-date-field") && $("#gr-lark-date-field").value
+        ? String($("#gr-lark-date-field").value)
+        : "Ngày"
+      ).trim();
+      const video_field = ($("#gr-lark-video-field") && $("#gr-lark-video-field").value
+        ? String($("#gr-lark-video-field").value)
+        : "Record"
+      ).trim();
+      const session_authorization = ($("#gr-lark-session-bearer") && $("#gr-lark-session-bearer").value
+        ? String($("#gr-lark-session-bearer").value)
+        : ""
+      ).trim();
+      const session_cookie = ($("#gr-lark-session-cookie") && $("#gr-lark-session-cookie").value
+        ? String($("#gr-lark-session-cookie").value)
+        : ""
+      ).trim();
+      const r = await fetch("/api/lark/bitable/today-youtube-links", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          app_token,
+          table_id,
+          date_field,
+          video_field,
+          session_authorization,
+          session_cookie,
+        }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setLog("#gr-log", formatApiErr(data.detail) || JSON.stringify(data), true);
+        return;
+      }
+      const urls = Array.isArray(data.urls) ? data.urls : [];
+      const nrec = data.record_count != null ? data.record_count : 0;
+      if (urls.length === 0) {
+        setLog(
+          "#gr-log",
+          `Không trích được link YouTube (hoặc không có bản ghi hôm nay). record_count=${nrec}. Kiểm tra tên cột ngày/link và quyền Lark.`,
+          true
+        );
+        return;
+      }
+      const txEl = $("#gr-transcript");
+      const urlEl = $("#gr-yt-url");
+      let merged = "";
+      for (let i = 0; i < urls.length; i++) {
+        $("#gr-status").textContent = `Đang lấy transcript ${i + 1}/${urls.length}…`;
+        const tr = await fetch("/api/youtube/transcript", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ youtube_url: urls[i] }),
+        });
+        if (!tr.ok) {
+          const err = await tr.json().catch(() => ({}));
+          setLog("#gr-log", formatApiErr(err.detail) || `Lỗi transcript video ${i + 1}`, true);
+          $("#gr-status").textContent = "";
+          return;
+        }
+        const txt = ((await tr.text().catch(() => "")) || "").trim();
+        merged += (merged ? "\n\n" : "") + `---\nVideo ${i + 1} — ${urls[i]}\n---\n\n` + txt;
+      }
+      if (txEl) txEl.value = merged.trim();
+      if (urlEl) urlEl.value = urls[0] || "";
+      _groupYtLastFetchedUrl = urls.length === 1 ? urls[0] : "";
+      $("#gr-status").textContent = `Đã lấy ${urls.length} link (${nrec} bản ghi hôm nay) và transcript.`;
+    } catch (e) {
+      setLog("#gr-log", String(e), true);
+      $("#gr-status").textContent = "";
+    } finally {
+      if (btn) setBusy(btn, false);
+    }
+  }
+
   function setupGroupYoutubeAutoTranscript() {
     const urlEl = $("#gr-yt-url");
     if (!urlEl) return;
@@ -2098,6 +2186,8 @@
     }
     const fg = $("#form-group");
     if (fg) fg.addEventListener("submit", postGroup);
+    const larkBtn = $("#gr-lark-fetch");
+    if (larkBtn) larkBtn.addEventListener("click", fetchGroupActivityLarkToday);
     setupGroupYoutubeAutoTranscript();
     const fb = $("#form-btvn");
     if (fb) fb.addEventListener("submit", postBtvn);

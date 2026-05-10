@@ -22,6 +22,7 @@ from fastapi import BackgroundTasks, Body, FastAPI, File, Form, HTTPException, U
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from openpyxl import Workbook
+from pydantic import BaseModel, Field
 from openpyxl.utils import get_column_letter
 
 from cham_bai import __version__
@@ -70,6 +71,11 @@ from cham_bai.google_sheets import (
     update_session_cells as _gs_update_session_cells,
 )
 from cham_bai.group_activity import GroupGradeParams, grade_group_activity
+from cham_bai.lark_bitable import (
+    DEFAULT_BITABLE_APP_TOKEN,
+    DEFAULT_BITABLE_TABLE_ID,
+    fetch_today_youtube_links,
+)
 from cham_bai.video_transcript import fetch_youtube_transcript_plain
 from cham_bai.hackathon_exam import (
     HackathonExamParams,
@@ -2202,6 +2208,53 @@ async def api_btvn_rikkei_session_status(
         sheet_update = {"ok": False, "error": str(e)[:300]}
 
     return JSONResponse({"ok": True, "session_update": session_update, "sheet_update": sheet_update})
+
+
+class LarkBitableTodayYoutubeBody(BaseModel):
+    app_token: str = Field(default="", max_length=120)
+    table_id: str = Field(default="", max_length=80)
+    date_field: str = Field(default="Ngày", max_length=200)
+    video_field: str = Field(default="Record", max_length=200)
+    # Trình duyệt: dán từ DevTools (request tới open.larksuite.com/.../records/search). Không lưu trên server.
+    session_authorization: str = Field(default="", max_length=16000)
+    session_cookie: str = Field(default="", max_length=120000)
+
+
+@app.post("/api/lark/bitable/today-youtube-links")
+async def api_lark_bitable_today_youtube_links(body: LarkBitableTodayYoutubeBody) -> JSONResponse:
+    """Trả về mọi link YouTube trong các bản ghi có cột ngày = Hôm nay (theo Lark Base)."""
+    app_token = (body.app_token or "").strip() or DEFAULT_BITABLE_APP_TOKEN
+    table_id = (body.table_id or "").strip() or DEFAULT_BITABLE_TABLE_ID
+    date_field = (body.date_field or "").strip()
+    video_field = (body.video_field or "").strip()
+    if not date_field:
+        raise HTTPException(status_code=400, detail="Thiếu date_field (tên cột ngày trong Base, kiểu Ngày).")
+    if not video_field:
+        raise HTTPException(status_code=400, detail="Thiếu video_field (tên cột chứa link video).")
+
+    loop = asyncio.get_event_loop()
+
+    sa = (body.session_authorization or "").strip() or None
+    sc = (body.session_cookie or "").strip() or None
+
+    def work() -> tuple[list[str], int]:
+        return fetch_today_youtube_links(
+            app_token=app_token,
+            table_id=table_id,
+            date_field_name=date_field,
+            video_field_name=video_field,
+            session_authorization=sa,
+            session_cookie=sc,
+        )
+
+    try:
+        urls, nrec = await loop.run_in_executor(_executor, work)
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+    return JSONResponse({"ok": True, "urls": urls, "record_count": nrec})
 
 
 @app.post("/api/youtube/transcript")
