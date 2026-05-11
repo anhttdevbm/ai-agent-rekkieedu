@@ -430,8 +430,9 @@
         return !Number.isFinite(n) || n === 0;
       };
 
-      // Filter: default only ungraded rows; optional include graded
-      let visible = includeGraded ? items.slice() : items.filter(isUngraded);
+      // Filter: default only ungraded rows; optional include graded; then optional cap (g-rk-limit)
+      const filtered = includeGraded ? items.slice() : items.filter(isUngraded);
+      let visible = filtered.slice();
       if (limitN > 0) visible = visible.slice(0, limitN);
 
       const subsLines = [];
@@ -500,10 +501,18 @@
         c.addEventListener("change", rebuild);
       });
 
-      if (statusEl)
-        statusEl.textContent = `Đã tải ${visible.length} dòng${
-          includeGraded ? " (gồm cả bài đã chấm)" : " (chỉ bài chưa chấm)"
-        }.`;
+      if (statusEl) {
+        let msg = `API: ${items.length} bài. Hiển thị ${visible.length} dòng${
+          includeGraded ? " (gồm cả đã chấm)" : " (chưa chấm)"
+        }`;
+        if (!includeGraded && filtered.length < items.length) {
+          msg += ` — ${items.length - filtered.length} bài đã có điểm/nhận xét (ẩn)`;
+        }
+        if (limitN > 0 && filtered.length > visible.length) {
+          msg += `. Giới hạn ${limitN} dòng (còn ${filtered.length - visible.length} dòng; đặt 0 để lấy hết).`;
+        }
+        statusEl.textContent = msg;
+      }
     } catch (e) {
       if (statusEl) statusEl.textContent = String(e);
     } finally {
