@@ -422,7 +422,13 @@
         if (/^<p>\s*&nbsp;\s*<\/p>$/i.test(t)) return true;
         return false;
       };
-      const isUngraded = (x) => x.score == null && isBlankComment(x.comment);
+      // Rikkei thường trả score: 0 + comment rỗng cho bài chưa chấm (không phải null).
+      const isUngraded = (x) => {
+        if (!isBlankComment(x.comment)) return false;
+        if (x.score == null || x.score === "") return true;
+        const n = Number(x.score);
+        return !Number.isFinite(n) || n === 0;
+      };
 
       // Filter: default only ungraded rows; optional include graded
       let visible = includeGraded ? items.slice() : items.filter(isUngraded);
