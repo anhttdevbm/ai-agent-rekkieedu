@@ -221,8 +221,8 @@ _SESSION_QUIZ_STYLE_VI = (
     "- Ưu tiên scenario-based reasoning: bug thực tế, design flaw, runtime behavior, trade-off, cách fix — "
     "thay vì hỏi nhớ ẩn dụ/văn («Debugger được ví như gì?», «ẩn dụ nào được dùng?»).\n"
     "- question_content ngắn, đọc nhanh trên LMS: ưu tiên <= 160 ký tự; tránh đoạn storytelling dài.\n"
-    "- Mỗi concept lõi (breakpoint, step over, circular import, namespace, logging production…) tối đa 1–2 câu "
-    "trong toàn bộ quiz; không paraphrase cùng một ý nhiều lần.\n"
+    "- Mỗi concept lõi (breakpoint, elif, for/while…) có thể xuất hiện nhiều câu nếu **cách hỏi và góc độ khác hẳn**; "
+    "cấm trùng hoặc paraphrase sát nội dung một câu đã có trong quiz.\n"
     "- Được phép 2 câu cùng khung so sánh song song nếu đổi đối tượng kỹ thuật (vd. bản chất `for` vs `while`, "
     "`if` vs `elif`) — miễn là đáp án và góc hỏi khác hẳn.\n"
     "- difficulty phản ánh cognitive load thật: thuật ngữ mới / suy luận nhiều bước → số cao hơn; "
@@ -424,40 +424,6 @@ def _session_quiz_questions_too_similar(
     return True
 
 
-_SESSION_QUIZ_SCENARIO_PHRASES: tuple[str, ...] = (
-    "shopee food",
-    "nested if",
-    "match-case",
-    "match case",
-    "toán tử and",
-    "toán tử or",
-    "toán tử ba ngôi",
-    "ternary",
-    "giờ vàng",
-    "roadmap",
-    "elif",
-    "breakpoint",
-    "step over",
-    "circular import",
-    "namespace",
-)
-
-
-def _session_quiz_scenario_tags(q: str) -> set[str]:
-    t = (q or "").strip().lower()
-    tags: set[str] = set()
-    if not t:
-        return tags
-    for m in re.finditer(r"['\"]([^'\"]{3,48})['\"]", q):
-        s = m.group(1).strip().lower()
-        if len(s) >= 3:
-            tags.add(s)
-    for phrase in _SESSION_QUIZ_SCENARIO_PHRASES:
-        if phrase in t:
-            tags.add(phrase)
-    return tags
-
-
 def _validate_session_quiz_block_question_dedupe(
     items: list[Any],
     *,
@@ -465,11 +431,10 @@ def _validate_session_quiz_block_question_dedupe(
     within_block_ratio: float = 0.97,
     cross_block_ratio: float = 0.975,
     cross_block_exact_only: bool = False,
-    max_per_scenario_tag: int = 3,
 ) -> None:
     """
-    Trùng trong cùng block hoặc gần trùng với câu đã ghép ở block trước → ValueError để retry.
-    cross_block_ratio cao hơn within_block — chỉ bác câu gần như copy; retry sau nới thêm.
+    Trùng trong cùng block hoặc gần trùng nội dung với câu đã ghép ở block trước → ValueError để retry.
+    Cùng chủ đề/khái niệm được phép; chỉ bác khi nội dung giống hệt hoặc paraphrase sát.
     """
     keys_block: list[tuple[int, str, str]] = []
     for i, it in enumerate(items):
@@ -504,31 +469,21 @@ def _validate_session_quiz_block_question_dedupe(
         if len(pk) >= 10:
             prior_pairs.append((pk, q.strip()))
 
-    tag_counts: dict[str, int] = {}
-    for _pk, pq in prior_pairs:
-        for tag in _session_quiz_scenario_tags(pq):
-            tag_counts[tag] = tag_counts.get(tag, 0) + 1
-
-    for i, k, raw_q in keys_block:
+    for i, k, _raw_q in keys_block:
         for j, (pk, pq) in enumerate(prior_pairs):
             if k == pk:
                 snip = re.sub(r"\s+", " ", pq)[:100]
                 raise ValueError(
-                    f"Câu {i + 1} trùng câu đã soạn [#{j + 1}]: «{snip}» — đổi chủ đề/kịch bản khác hẳn."
+                    f"Câu {i + 1} trùng nội dung câu đã soạn [#{j + 1}]: «{snip}» — giữ chủ đề được, "
+                    f"phải đổi cách hỏi/góc độ khác hẳn."
                 )
             if cross_block_exact_only:
                 continue
             if _session_quiz_questions_too_similar(k, pk, ratio=cross_block_ratio):
                 snip = re.sub(r"\s+", " ", pq)[:100]
                 raise ValueError(
-                    f"Câu {i + 1} quá giống câu [#{j + 1}]: «{snip}» — hỏi concept/khía cạnh khác."
-                )
-        for tag in _session_quiz_scenario_tags(raw_q):
-            tag_counts[tag] = tag_counts.get(tag, 0) + 1
-            if tag_counts[tag] > max_per_scenario_tag:
-                raise ValueError(
-                    f"Câu {i + 1} lặp kịch bản «{tag}» quá {max_per_scenario_tag} lần trong quiz — "
-                    f"chuyển sang chủ đề khác trong trích liệu."
+                    f"Câu {i + 1} quá giống câu [#{j + 1}]: «{snip}» — cùng chủ đề được, "
+                    f"nhưng nội dung/cách hỏi phải khác rõ."
                 )
 
 
@@ -741,8 +696,8 @@ def _end_block_messages(
         )
     if start_stt >= 16 and pd:
         user += (
-            "\nBLOCK 2 (STT 16–30): đã có 15 câu block 1 — TUYỆT ĐỐI không copy/rephrase sát bất kỳ câu nào trong danh sách trên. "
-            "Phải chọn 15 concept/chủ đề KHÁC trong trích liệu. "
+            "\nBLOCK 2 (STT 16–30): được hỏi tiếp cùng chủ đề với block 1 (vd. elif, for) nếu cần — "
+            "nhưng TUYỆT ĐỐI không copy/rephrase sát bất kỳ câu nào trong danh sách trên. "
             "Rút ngắn explanations (<= 70 ký tự) để JSON 15 câu không bị cắt.\n"
         )
     fd = (forbidden_questions_digest or "").strip()
@@ -750,9 +705,8 @@ def _end_block_messages(
         user += "\n\nDANH SÁCH CẤM SAO CHÉP (không được trùng verbatim hay paraphrase sát):\n" + fd + "\n"
     if start_stt >= 31 and pd:
         user += (
-            "\nBLOCK CUỐI (STT 31–45): đã có 30 câu trước — CHỈ hỏi chủ đề/concept CHƯA có trong danh sách trên. "
-            "Cấm thêm câu cùng kịch bản (vd. Shopee Food, Nested If) nếu đã hỏi nhiều lần; "
-            "ưu tiên phần trích liệu chưa dùng (cú pháp khác, edge case, so sánh, scenario mới).\n"
+            "\nBLOCK CUỐI (STT 31–45): được tiếp tục cùng chủ đề đã hỏi — mỗi câu phải khác hẳn nội dung/cách hỏi "
+            "so với 30 câu trước; ưu tiên góc mới (edge case, so sánh, scenario khác) khi có trong trích.\n"
         )
     sys = (
         _SESSION_QUIZ_STRICT_SOURCE_VI
@@ -964,8 +918,8 @@ def _warmup_block_messages(
         )
     if part_norm == "current" and pd:
         user += (
-            "\n15 câu BÀI MỚI (part=current): đã có 30 câu bài cũ — chỉ hỏi concept/chủ đề session hiện tại "
-            "CHƯA xuất hiện trong danh sách; cấm lặp cùng kịch bản quá 3 lần trong toàn quiz.\n"
+            "\n15 câu BÀI MỚI (part=current): được hỏi cùng chủ đề session hiện tại nhiều lần — "
+            "mỗi câu phải khác hẳn nội dung so với danh sách trên, không copy/paraphrase sát.\n"
         )
     sys = (
         _SESSION_QUIZ_STRICT_SOURCE_VI
@@ -1570,14 +1524,12 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
                     cross_ratio = min(0.99, 0.96 + attempt * 0.005)
                     within_ratio = min(0.99, 0.97 + attempt * 0.003)
                     cross_exact = attempt >= _SESSION_BLOCK_PARSE_ATTEMPTS - 2
-                    max_tag = 4 if attempt < 2 else 3
                     _validate_session_quiz_block_question_dedupe(
                         arr_block,
                         prior_items=all_items,
                         within_block_ratio=within_ratio,
                         cross_block_ratio=cross_ratio,
                         cross_block_exact_only=cross_exact,
-                        max_per_scenario_tag=max_tag,
                     )
                     _validate_session_quiz_block_wording(arr_block)
                     break
