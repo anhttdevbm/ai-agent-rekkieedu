@@ -109,13 +109,37 @@ class _QuizJobRecord:
 
 
 _QUIZ_JOB_ID_RE = re.compile(r"^[0-9a-f]{32}$")
+_quiz_jobs_dir_cached: Path | None = None
 
 
 def _quiz_jobs_dir() -> Path:
+    global _quiz_jobs_dir_cached
+    if _quiz_jobs_dir_cached is not None:
+        return _quiz_jobs_dir_cached
+
     raw = (os.getenv("QUIZ_JOBS_DIR") or "").strip()
-    base = Path(raw) if raw else Path(tempfile.gettempdir()) / "agent_edu_quiz_jobs"
-    base.mkdir(parents=True, exist_ok=True)
-    return base
+    candidates: list[Path] = []
+    if raw:
+        candidates.append(Path(raw))
+    candidates.append(Path(tempfile.gettempdir()) / "agent_edu_quiz_jobs")
+    try:
+        candidates.append(Path.home() / "quiz-jobs")
+    except RuntimeError:
+        pass
+
+    last_err: OSError | None = None
+    for base in candidates:
+        try:
+            base.mkdir(parents=True, exist_ok=True)
+            probe = base / ".write_probe"
+            probe.write_text("1", encoding="utf-8")
+            probe.unlink(missing_ok=True)
+            _quiz_jobs_dir_cached = base
+            return base
+        except OSError as e:
+            last_err = e
+            continue
+    raise OSError(f"Không ghi được thư mục job quiz: {last_err}")
 
 
 def _quiz_job_validate_id(job_id: str) -> str:
@@ -236,8 +260,11 @@ def _quiz_job_patch(job_id: str, **fields) -> _QuizJobRecord | None:
 
 
 def _quiz_job_prune_old(*, max_age_s: float = 3600.0) -> None:
+    try:
+        root = _quiz_jobs_dir()
+    except OSError:
+        return
     now = time.time()
-    root = _quiz_jobs_dir()
     for path in root.glob("*.json"):
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
@@ -669,14 +696,21 @@ async def api_quiz(
 
     _quiz_job_prune_old()
     job_id = secrets.token_hex(16)
-    _quiz_job_write(
-        job_id,
-        _QuizJobRecord(
-            status="pending",
-            message="Đã nhận yêu cầu, đang xếp hàng…",
-            cleanup_paths=list(cleanup_paths),
-        ),
-    )
+    try:
+        _quiz_job_write(
+            job_id,
+            _QuizJobRecord(
+                status="pending",
+                message="Đã nhận yêu cầu, đang xếp hàng…",
+                cleanup_paths=list(cleanup_paths),
+            ),
+        )
+    except OSError as e:
+        _cleanup_quiz_temp(tmp_tpl, tmp_docx, out_dir)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Không ghi được trạng thái job quiz (quyền thư mục QUIZ_JOBS_DIR): {e}",
+        ) from e
     asyncio.create_task(_quiz_job_run(job_id, params, cleanup_paths))
     return JSONResponse({"ok": True, "job_id": job_id}, status_code=202)
 

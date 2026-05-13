@@ -59,7 +59,8 @@ RUN python -m pip install --no-cache-dir --no-index --find-links=/wheels agent-e
     && rm -rf /wheels
 
 RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin appuser \
-    && chown -R appuser:appuser /app
+    && mkdir -p /home/appuser/quiz-jobs \
+    && chown -R appuser:appuser /app /home/appuser
 
 EXPOSE 8765
 USER appuser

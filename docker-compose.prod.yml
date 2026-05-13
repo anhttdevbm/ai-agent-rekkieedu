@@ -28,8 +28,8 @@ services:
     volumes:
       # Google Sheets Service Account (DO NOT commit the json key)
       - ./secrets/google-service-account.json:/run/secrets/google-service-account.json:ro
-      # Quiz async jobs — bắt buộc khi UVICORN_WORKERS>1 (mọi worker đọc cùng thư mục)
-      - agent_edu_quiz_jobs:/var/lib/agent-edu/quiz-jobs
+      # Quiz async jobs — thư mục thuộc appuser (xem Dockerfile.prod)
+      - agent_edu_quiz_jobs:/home/appuser/quiz-jobs
     environment:
       # Bắt buộc khi chạy thật — đặt trong .env (không commit)
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?missing_OPENROUTER_API_KEY_in_env}
@@ -38,7 +38,7 @@ services:
       OPENROUTER_APP_TITLE: ${OPENROUTER_APP_TITLE:-Agent Edu}
       # Google Sheets: service account json mounted via volumes above
       GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/google-service-account.json
-      QUIZ_JOBS_DIR: /var/lib/agent-edu/quiz-jobs
+      QUIZ_JOBS_DIR: /home/appuser/quiz-jobs
     command:
       - uvicorn
       - cham_bai.web_app:app
