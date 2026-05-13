@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import random
 import re
+from difflib import SequenceMatcher
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -196,6 +197,108 @@ _SESSION_QUIZ_MUST_FOUR_OPTS_VI = (
     "Câu coding: vẫn bắt buộc 4 phương án (vd. đoạn đúng + 3 đoạn sai với lỗi khác nhau)."
 )
 
+# Quiz session đầu/cuối giờ: chỉ dùng trích tài liệu (DOCX / Google Docs), không bịa kiến thức ngoài bài.
+_SESSION_QUIZ_STRICT_SOURCE_VI = (
+    "NGUỒN KIẾN THỨC (BẮT BUỘC — KHẮT KHE):\n"
+    "- Mọi câu hỏi, mọi đáp án đúng/sai, mọi giải thích CHỈ được dựa trên văn bản trong khối «Nội dung bài giảng (trích từ tài liệu cung cấp)» "
+    "mà user đưa kèm lần gọi này.\n"
+    "- CẤM dùng kiến thức phổ thông, giáo trình khác, chuẩn ngành «suy ra được» nhưng không nằm trong trích liệu.\n"
+    "- CẤM câu hỏi về chủ đề/thuật ngữ/cú pháp không xuất hiện hoặc không được định nghĩa/giải thích rõ trong trích liệu "
+    "(sinh viên có thể chưa học).\n"
+    "- Tên môn học / tên session (nếu có) CHỈ để đồng bộ thuật ngữ và chọn đoạn liên quan trong trích liệu; "
+    "KHÔNG được thêm sự kiện, số liệu, API, lệnh SQL/Python… không có trong trích.\n"
+    "- Nếu trích liệu không đủ để hỏi sâu: hỏi mức nhớ–hiểu–vận dụng nông trên đúng câu chữ/định nghĩa/ví dụ có trong trích; "
+    "có thể hỏi «trong tài liệu nêu…», «theo đoạn trích…».\n"
+    "- Code trong câu hỏi: chỉ được dùng đoạn code hoặc mẫu lệnh đã có trong trích liệu (có thể rút gọn nhưng không đổi ý); "
+    "cấm đưa đoạn code hoàn toàn mới không xuất phát từ trích.\n"
+)
+
+
+def _session_quiz_question_key_for_dedupe(q: str) -> str:
+    """Chuẩn hoá nhẹ để so trùng câu hỏi (không cần chính xác tuyệt đối)."""
+    t = (q or "").strip().lower()
+    t = re.sub(r"\s+", " ", t)
+    t = re.sub(r'[?!.:;,"\'`()\[\]{}«»…–—]+', "", t)
+    return t.strip()[:520]
+
+
+def _session_quiz_prior_digest_for_prompt(prior_items: list[Any], *, max_items: int = 28, head: int = 130) -> str:
+    """Tóm tắt câu đã sinh (block trước) để model không lặp — chỉ dùng trong prompt."""
+    if not prior_items:
+        return ""
+    slice_items = prior_items[-max_items:]
+    base = len(prior_items) - len(slice_items)
+    lines: list[str] = []
+    for j, it in enumerate(slice_items):
+        if not isinstance(it, dict):
+            continue
+        raw = it.get("question_content")
+        if not isinstance(raw, str) or not raw.strip():
+            continue
+        snip = re.sub(r"\s+", " ", raw.strip())[:head]
+        lines.append(f"  [{base + j + 1}] {snip}")
+    if not lines:
+        return ""
+    return "\n".join(lines)
+
+
+def _session_quiz_questions_too_similar(a: str, b: str, *, min_len: int = 36, ratio: float = 0.91) -> bool:
+    if a == b:
+        return True
+    if len(a) < min_len or len(b) < min_len:
+        return False
+    return SequenceMatcher(None, a, b).ratio() >= ratio
+
+
+def _validate_session_quiz_block_question_dedupe(items: list[Any], *, prior_items: list[Any]) -> None:
+    """
+    Trùng trong cùng block hoặc gần trùng với câu đã ghép ở block trước → ValueError để retry.
+    """
+    keys_block: list[tuple[int, str]] = []
+    for i, it in enumerate(items):
+        if not isinstance(it, dict):
+            continue
+        q = it.get("question_content")
+        if not isinstance(q, str) or not q.strip():
+            continue
+        k = _session_quiz_question_key_for_dedupe(q)
+        if len(k) < 10:
+            continue
+        for j, k2 in keys_block:
+            if k == k2:
+                raise ValueError(
+                    f"Câu {i + 1} và câu {j + 1} trong cùng block trùng (hoặc gần như) nội dung — "
+                    f"mỗi câu phải khác hẳn về cách hỏi/chỗ nhấn."
+                )
+            if _session_quiz_questions_too_similar(k, k2):
+                raise ValueError(
+                    f"Câu {i + 1} và câu {j + 1} trong cùng block quá giống nhau — không được lặp lại."
+                )
+        keys_block.append((i, k))
+
+    prior_keys: list[str] = []
+    for it in prior_items:
+        if not isinstance(it, dict):
+            continue
+        q = it.get("question_content")
+        if not isinstance(q, str) or not q.strip():
+            continue
+        pk = _session_quiz_question_key_for_dedupe(q)
+        if len(pk) >= 10:
+            prior_keys.append(pk)
+
+    for i, k in keys_block:
+        for pk in prior_keys:
+            if k == pk:
+                raise ValueError(
+                    "Có câu trùng (hoặc gần như) với câu đã soạn ở block trước — "
+                    "phải đổi chủ đề/cách hỏi, không copy lại."
+                )
+            if _session_quiz_questions_too_similar(k, pk):
+                raise ValueError(
+                    "Có câu quá giống câu đã soạn ở block trước — hãy hỏi phần khác trong tài liệu."
+                )
+
 
 QUIZ_KIND_SESSION = "session"
 QUIZ_KIND_LESSON = "lesson"
@@ -222,13 +325,14 @@ def _quiz_kind_bullet(kind: str) -> str:
         )
     if kind == QUIZ_KIND_SESSION_WARMUP:
         return (
-            "- Loại: QUIZZ SESSION ĐẦU GIỜ — kiểm tra nhanh trước khi vào bài; "
-            "ưu tiên câu hỏi ngắn, sát \"session hiện tại\", có 1–2 câu nối kiến thức từ \"session trước\".\n"
+            "- Loại: QUIZZ SESSION ĐẦU GIỜ — kiểm tra nhanh; câu hỏi ngắn, CHỈ từ trích tài liệu được cung cấp; "
+            "30 câu đầu bám phần trích gắn session trước (nếu có), 15 câu sau bám phần trích session hiện tại — "
+            "không dùng kiến thức ngoài trích.\n"
         )
     if kind == QUIZ_KIND_SESSION_END:
         return (
-            "- Loại: QUIZZ SESSION CUỐI GIỜ — tổng kết/đánh giá nhanh theo session hiện tại; "
-            "ưu tiên câu hỏi sát nội dung vừa học.\n"
+            "- Loại: QUIZZ SESSION CUỐI GIỜ — tổng kết nhanh; CHỈ kiến thức có trong trích tài liệu session hiện tại, "
+            "không mở rộng sang chủ đề chưa có trong trích.\n"
         )
     return (
         "- Loại: QUIZ THEO SESSION — quiz đầu giờ sát nội dung session, "
@@ -243,6 +347,17 @@ def _subject_bullet(subject: str) -> str:
     return (
         f"- Môn học / lĩnh vực: «{s}» — toàn bộ câu hỏi, ví dụ, code và thuật ngữ phải **nhất quán** với môn này "
         f"(ngôn ngữ/công nghệ đúng domain, độ khó phù hợp đại học).\n"
+    )
+
+
+def _subject_bullet_session_quiz(subject: str) -> str:
+    """Quiz session đầu/cuối giờ: tránh gợi ý model bổ sung kiến thức môn ngoài trích tài liệu."""
+    s = (subject or "").strip()
+    if not s:
+        return "- Môn học: (trống) — vẫn CHỈ hỏi theo trích tài liệu kèm theo, cấm bịa kiến thức.\n"
+    return (
+        f"- Môn học / lĩnh vực: «{s}» — chỉ để đồng bộ thuật ngữ/cách diễn đạt; "
+        f"CẤM thêm kiến thức môn học không xuất hiện trong khối trích tài liệu dưới đây.\n"
     )
 
 
@@ -289,10 +404,12 @@ Tên Mức độ trên file Excel do chương trình điền đúng 5 mức: «T
 
 SYSTEM_QUIZ_SESSION_WARMUP = (
     "Bạn là giảng viên đại học. Soạn quiz đầu giờ (kiểm tra bài cũ + chuẩn bị bài mới) — nội dung tiếng Việt.\n\n"
+    + _SESSION_QUIZ_STRICT_SOURCE_VI
+    + "\n\n"
     "Chỉ trả về một mảng JSON hợp lệ. Không markdown, không ```, không chữ ngoài mảng.\n\n"
     "Yêu cầu đầu ra:\n"
     "- Đúng 45 phần tử.\n"
-    "- 30 câu đầu: nội dung sát session trước (BÀI CŨ); 15 câu sau: sát session hiện tại (BÀI MỚI).\n"
+    "- 30 câu đầu: nội dung chỉ từ trích liệu gắn session trước (BÀI CŨ); 15 câu sau: chỉ từ trích liệu session hiện tại (BÀI MỚI).\n"
     "- Mỗi phần tử là object với ĐÚNG các khóa ASCII: part, question_content, answers (4 string), explanations (4 string), isCorrect (1..4), difficulty (số nguyên).\n"
     "- \"part\": \"prev\" cho 30 câu đầu, \"current\" cho 15 câu sau.\n"
     "- \"difficulty\": CHỈ được dùng các số: 4, 5, 6, 7, 8, 9.\n"
@@ -301,15 +418,17 @@ SYSTEM_QUIZ_SESSION_WARMUP = (
     "Ràng buộc:\n"
     "- Giải thích phải đủ rõ vì sao đúng/sai (ngắn gọn, không rỗng).\n"
     "- Nếu có code trong câu hỏi: identifier chỉ tiếng Anh (snake_case), logic khớp đáp án.\n"
-    "- Mục tiêu: kiểm tra bài cũ + sinh viên đã chuẩn bị bài mới, đúng phân bổ từng vị trí."
+    "- Mục tiêu: kiểm tra bài cũ + chuẩn bị bài mới, đúng phân bổ từng vị trí; mọi nội dung bám sát trích liệu từng phần."
 )
 
 SYSTEM_QUIZ_SESSION_END = (
     "Bạn là giảng viên đại học. Soạn quiz cuối giờ (tổng kết/đánh giá nhanh) — nội dung tiếng Việt.\n\n"
+    + _SESSION_QUIZ_STRICT_SOURCE_VI
+    + "\n\n"
     "Chỉ trả về một mảng JSON hợp lệ. Không markdown, không ```, không chữ ngoài mảng.\n\n"
     "Yêu cầu đầu ra:\n"
     "- Đúng 45 phần tử.\n"
-    "- TẤT CẢ câu hỏi đều bám sát session hiện tại (BÀI MỚI).\n"
+    "- TẤT CẢ câu hỏi đều chỉ từ trích liệu session hiện tại (BÀI MỚI), không kiến thức ngoài trích.\n"
     "- Mỗi phần tử là object với ĐÚNG các khóa ASCII: part, question_content, answers (4 string), explanations (4 string), isCorrect (1..4), difficulty (số nguyên).\n"
     "- \"part\": luôn là \"current\".\n"
     "- \"difficulty\": CHỈ được dùng các số: 6, 10, 11.\n"
@@ -322,7 +441,7 @@ SYSTEM_QUIZ_SESSION_END = (
     "  for i in range(3):\\n"
     "      print(i)\\n"
     "  (không được mất khoảng trắng đầu dòng như 'print(i)' nằm sát lề).\n"
-    "- Mục tiêu: bám sát session hiện tại, không lẫn session trước."
+    "- Mục tiêu: bám sát trích liệu session hiện tại, không lẫn session trước, không mở rộng ngoài bài."
 )
 
 
@@ -358,23 +477,34 @@ def _end_block_messages(
     start_stt: int,
     n: int,
     docx_excerpt: str,
+    prior_questions_digest: str = "",
 ) -> list[ChatMessage]:
     end_stt = start_stt + n - 1
     user = (
         "Thông tin:\n"
-        f"{_subject_bullet(subject)}"
+        f"{_subject_bullet_session_quiz(subject)}"
         f"- Session hiện tại: {session_current}\n\n"
         f"Nhiệm vụ: soạn đúng {n} câu, STT {start_stt}–{end_stt} (KHÔNG ghi STT vào JSON), "
         "tất cả đều thuộc session hiện tại.\n"
         "Yêu cầu: mọi object phải có part='current'.\n"
     )
     if docx_excerpt.strip():
-        user += f"\nNội dung bài giảng (trích từ tài liệu cung cấp):\n---\n{docx_excerpt}\n---\n"
+        user += f"\nNội dung bài giảng (trích từ tài liệu cung cấp — NGUỒN DUY NHẤT cho câu hỏi):\n---\n{docx_excerpt}\n---\n"
         user += (
-            "\nRàng buộc nội dung: chỉ tạo câu hỏi dựa trên thông tin có trong tài liệu. "
-            "Nếu tài liệu không có thì KHÔNG được tự bịa thêm ngoài chương trình.\n"
+            "\nRàng buộc nội dung (khắt khe): TỪNG câu và TỪNG đáp án phải trả lời được chỉ bằng thông tin trong khối trích trên. "
+            "CẤM hỏi về khái niệm/thuật ngữ/cú pháp/API không xuất hiện hoặc không được giải thích rõ trong trích. "
+            "CẤM dùng kiến thức phổ thông hoặc giáo trình ngoài trích.\n"
+        )
+    pd = (prior_questions_digest or "").strip()
+    if pd:
+        user += (
+            "\n\nCÁC CÂU ĐÃ SOẠN Ở CÁC BLOCK TRƯỚC (cấm lặp lại hoặc chỉ sửa vài từ — phải hỏi khác hẳn, có thể hỏi mục khác trong cùng trích):\n"
+            + pd
+            + "\n"
         )
     sys = (
+        _SESSION_QUIZ_STRICT_SOURCE_VI
+        + "\n\n"
         "Chỉ output DUY NHẤT một mảng JSON hợp lệ gồm đúng "
         f"{n} object. Không markdown, không ```, không chữ ngoài mảng.\n"
         "Mỗi object có đúng các khóa ASCII: part, question_content, answers, explanations, isCorrect, difficulty.\n"
@@ -388,34 +518,62 @@ def _end_block_messages(
         "Nếu có code: đặt code ở CUỐI question_content theo đúng cấu trúc:\n"
         "Code:\\n<dòng 1>\\n<dòng 2>... (giữ thụt lề chuẩn bằng 4 dấu cách, không dùng markdown fence). "
         "Chỉ question_content được phép có xuống dòng; answers/explanations phải 1 dòng.\n"
+        f"TRÙng lặp: {n} câu trong mảng phải có \"question_content\" khác nhau rõ rệt (cấm copy hay paraphrase sát).\n"
         "Output phải bắt đầu bằng [ và kết thúc bằng ]."
     )
     return [ChatMessage(role="system", content=sys), ChatMessage(role="user", content=user)]
 
 
-def _end_block_retry_messages(*, bad_raw: str, n: int, validate_hint: str = "") -> list[ChatMessage]:
+def _end_block_retry_messages(
+    *,
+    bad_raw: str,
+    n: int,
+    validate_hint: str = "",
+    docx_excerpt: str = "",
+    prior_questions_digest: str = "",
+) -> list[ChatMessage]:
     tail = bad_raw[-9000:] if len(bad_raw) > 9000 else bad_raw
     hint = validate_hint.strip()[:1200]
     hint_block = f"\n---\nChương trình báo lỗi kiểm tra/parse (sửa theo đây): {hint}\n" if hint else ""
+    ex = (docx_excerpt or "").strip()
+    doc_block = ""
+    if ex:
+        doc_block = (
+            "\n\nNGUỒN DUY NHẤT — chỉ được hỏi trong trích sau (nhắc lại cho lần sửa):\n---\n"
+            + ex[:6500]
+            + "\n---\n"
+        )
+    pd = (prior_questions_digest or "").strip()
+    prior_block = ""
+    if pd:
+        prior_block = (
+            "\n\nCÁC CÂU ĐÃ SOẠN Ở BLOCK TRƯỚC (cấm trùng / gần trùng):\n" + pd + "\n"
+        )
     return [
         ChatMessage(
             role="system",
             content=(
+                _SESSION_QUIZ_STRICT_SOURCE_VI
+                + "\n\n"
                 "Chỉ output DUY NHẤT một mảng JSON hợp lệ gồm đúng "
                 f"{n} object. Không markdown, không ```, không chữ ngoài mảng. "
                 "Mỗi object có đúng các khóa ASCII: part, question_content, answers, explanations, isCorrect, difficulty. "
                 + _SESSION_QUIZ_MUST_FOUR_OPTS_VI
                 + " answers và explanations mỗi mảng ĐÚNG 4 string; isCorrect 1..4; difficulty 6/10/11; part 'current'. "
                 "Câu hỏi/đáp án/giải thích bằng tiếng Việt (trừ thuật ngữ/code). "
+                f"{n} question_content trong mảng phải khác nhau rõ rệt. "
                 "Output phải bắt đầu bằng [ và kết thúc bằng ]."
             ),
         ),
         ChatMessage(
             role="user",
             content=(
-                "Output trước bị thiếu/cụt hoặc sai định dạng. "
+                doc_block
+                + prior_block
+                + "Output trước bị thiếu/cụt hoặc sai định dạng. "
                 "Hãy output LẠI TOÀN BỘ mảng (đừng cố nối tiếp). "
-                f"Mỗi phần tử: \"answers\" và \"explanations\" mỗi cái ĐÚNG 4 chuỗi (cấm 2 hoặc 3).\n"
+                f"Mỗi phần tử: \"answers\" và \"explanations\" mỗi cái ĐÚNG 4 chuỗi (cấm 2 hoặc 3). "
+                "CHỈ dùng kiến thức trong khối trích tài liệu (nếu có ở trên).\n"
                 f"{hint_block}\n"
                 f"Output trước (có thể bị cắt):\n{tail}"
             ),
@@ -511,6 +669,7 @@ def _warmup_block_messages(
     start_stt: int,
     n: int,
     docx_excerpt: str,
+    prior_questions_digest: str = "",
 ) -> list[ChatMessage]:
     part_norm = (part or "").strip().lower()
     if part_norm not in ("prev", "current"):
@@ -521,19 +680,29 @@ def _warmup_block_messages(
     )
     user = (
         "Thông tin:\n"
-        f"{_subject_bullet(subject)}"
+        f"{_subject_bullet_session_quiz(subject)}"
         f"- Session trước: {session_prev}\n"
         f"- Session hiện tại: {session_current}\n\n"
         f"Nhiệm vụ: soạn đúng {n} câu, STT {start_stt}–{end_stt} (KHÔNG ghi STT vào JSON), thuộc {focus}.\n"
         f"Yêu cầu: mọi object phải có part='{part_norm}'.\n"
     )
     if docx_excerpt.strip():
-        user += f"\nNội dung bài giảng (trích từ tài liệu cung cấp):\n---\n{docx_excerpt}\n---\n"
+        user += f"\nNội dung bài giảng (trích từ tài liệu cung cấp — NGUỒN DUY NHẤT cho câu hỏi):\n---\n{docx_excerpt}\n---\n"
         user += (
-            "\nRàng buộc nội dung: chỉ tạo câu hỏi dựa trên thông tin có trong tài liệu. "
-            "Nếu tài liệu không có thì KHÔNG được tự bịa thêm ngoài chương trình.\n"
+            "\nRàng buộc nội dung (khắt khe): TỪNG câu và TỪNG đáp án phải trả lời được chỉ bằng thông tin trong khối trích trên. "
+            "CẤM hỏi về khái niệm/thuật ngữ/cú pháp không xuất hiện hoặc không được giải thích rõ trong trích. "
+            "CẤM dùng kiến thức phổ thông hoặc giáo trình ngoài trích.\n"
+        )
+    pd = (prior_questions_digest or "").strip()
+    if pd:
+        user += (
+            "\n\nCÁC CÂU ĐÃ SOẠN Ở CÁC BLOCK TRƯỚC (cấm lặp lại hoặc chỉ sửa vài từ — phải hỏi khác hẳn):\n"
+            + pd
+            + "\n"
         )
     sys = (
+        _SESSION_QUIZ_STRICT_SOURCE_VI
+        + "\n\n"
         "Chỉ output DUY NHẤT một mảng JSON hợp lệ gồm đúng "
         f"{n} object. Không markdown, không ```, không chữ ngoài mảng.\n"
         "Mỗi object có đúng các khóa ASCII: part, question_content, answers, explanations, isCorrect, difficulty.\n"
@@ -550,13 +719,20 @@ def _warmup_block_messages(
         "Nếu có code: đặt code ở CUỐI question_content theo đúng cấu trúc:\n"
         "Code:\\n<dòng 1>\\n<dòng 2>... (giữ thụt lề chuẩn, không dùng markdown fence). "
         "Chỉ question_content được phép có xuống dòng; answers/explanations phải 1 dòng.\n"
+        f"TRÙng lặp: {n} câu trong mảng phải có \"question_content\" khác nhau rõ rệt (cấm copy hay paraphrase sát).\n"
         "Output phải bắt đầu bằng [ và kết thúc bằng ]."
     )
     return [ChatMessage(role="system", content=sys), ChatMessage(role="user", content=user)]
 
 
 def _warmup_block_retry_messages(
-    *, bad_raw: str, n: int, part: str, validate_hint: str = ""
+    *,
+    bad_raw: str,
+    n: int,
+    part: str,
+    validate_hint: str = "",
+    docx_excerpt: str = "",
+    prior_questions_digest: str = "",
 ) -> list[ChatMessage]:
     tail = bad_raw[-9000:] if len(bad_raw) > 9000 else bad_raw
     part_norm = (part or "").strip().lower()
@@ -564,30 +740,47 @@ def _warmup_block_retry_messages(
         part_norm = "prev"
     hint = validate_hint.strip()[:1200]
     hint_block = f"\n---\nChương trình báo lỗi kiểm tra/parse (sửa theo đây): {hint}\n" if hint else ""
+    ex = (docx_excerpt or "").strip()
+    doc_block = ""
+    if ex:
+        doc_block = (
+            "\n\nNGUỒN DUY NHẤT — chỉ được hỏi trong trích sau (nhắc lại cho lần sửa):\n---\n"
+            + ex[:6500]
+            + "\n---\n"
+        )
+    pd = (prior_questions_digest or "").strip()
+    prior_block = ""
+    if pd:
+        prior_block = "\n\nCÁC CÂU ĐÃ SOẠN Ở BLOCK TRƯỚC (cấm trùng / gần trùng):\n" + pd + "\n"
     return [
         ChatMessage(
             role="system",
             content=(
+                _SESSION_QUIZ_STRICT_SOURCE_VI
+                + "\n\n"
                 "Chỉ output DUY NHẤT một mảng JSON hợp lệ gồm đúng "
                 f"{n} object. Không markdown, không ```, không chữ ngoài mảng. "
                 "Mỗi object có đúng các khóa ASCII: part, question_content, answers, explanations, isCorrect, difficulty. "
                 + _SESSION_QUIZ_MUST_FOUR_OPTS_VI
                 + " answers và explanations mỗi mảng ĐÚNG 4 string; isCorrect 1..4; difficulty chỉ 4/5/6/7/8/9. "
-                "Mẫu: \"answers\":[\"Đúng\",\"Sai A\",\"Sai B\",\"Sai C\"],\"explanations\":[\"vì đúng\",\"vì sai 1\",\"vì sai 2\",\"vì sai 3\"]. "
                 "Viết RẤT NGẮN: question_content <= 180 ký tự; mỗi explanation <= 90 ký tự. "
                 "Toàn bộ câu hỏi/đáp án/giải thích tiếng Việt (trừ code). "
                 "Nếu có code: đặt ở cuối question_content theo dạng 'Code:\\n...' (không markdown fence). "
                 "Chỉ question_content được phép có xuống dòng; answers/explanations phải 1 dòng. "
                 f"Mọi object phải có part='{part_norm}'. "
+                f"{n} câu: mỗi \"question_content\" phải khác nhau rõ rệt (không trùng ý/cách hỏi). "
                 "Output phải bắt đầu bằng [ và kết thúc bằng ]."
             ),
         ),
         ChatMessage(
             role="user",
             content=(
-                "Output trước bị thiếu/cụt hoặc sai định dạng. "
+                doc_block
+                + prior_block
+                + "Output trước bị thiếu/cụt hoặc sai định dạng. "
                 "Hãy output LẠI TOÀN BỘ mảng (đừng cố nối tiếp). "
-                f"Phải đúng {n} phần tử. Mỗi phần tử: \"answers\" và \"explanations\" mỗi cái ĐÚNG 4 chuỗi (cấm 2 hoặc 3).\n"
+                f"Phải đúng {n} phần tử. Mỗi phần tử: \"answers\" và \"explanations\" mỗi cái ĐÚNG 4 chuỗi (cấm 2 hoặc 3). "
+                "CHỈ dùng kiến thức trong khối trích tài liệu (nếu có ở trên).\n"
                 f"{hint_block}\n"
                 f"Output trước (có thể bị cắt):\n{tail}"
             ),
@@ -968,6 +1161,14 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
         curr_s = (params.session_current or "").strip()
         prev_excerpt = (lecture_prev or lecture_text)[:9000] if (lecture_prev or lecture_text).strip() else ""
         curr_excerpt = (lecture_curr or lecture_text)[:9000] if (lecture_curr or lecture_text).strip() else ""
+        if qkind == QUIZ_KIND_SESSION_END and not (curr_excerpt or "").strip():
+            curr_excerpt = ((prev_excerpt or lecture_text) or "")[:9000]
+        if not (prev_excerpt or "").strip() and not (curr_excerpt or "").strip():
+            return (
+                False,
+                "Thiếu nội dung tài liệu (chưa upload DOCX và chưa có text từ link Google Docs). "
+                "Quiz Session đầu giờ / Cuối giờ chỉ sinh câu hỏi từ trích tài liệu — không dùng kiến thức ngoài file.",
+            )
         m, chat_remap_note = resolve_quiz_llm_model(params.model or None)
         temp0 = max(0.0, min(2.0, float(params.temperature)))
 
@@ -984,6 +1185,14 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
             blocks = [("current", st, qpc) for st in range(1, 46, qpc)]
         all_items: list[Any] = []
         for part, start_stt, n_need in blocks:
+            pe = (prev_excerpt or "").strip()
+            ce = (curr_excerpt or "").strip()
+            lt0 = (lecture_text or "").strip()[:9000]
+            if qkind == QUIZ_KIND_SESSION_WARMUP:
+                block_excerpt = ((pe or ce or lt0) if part == "prev" else (ce or pe or lt0))[:9000]
+            else:
+                block_excerpt = (ce or pe or lt0)[:9000]
+            prior_digest = _session_quiz_prior_digest_for_prompt(all_items)
             last_raw = ""
             arr_block: list[Any] | None = None
             last_call_error: str | None = None
@@ -991,7 +1200,6 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
             for attempt in range(_SESSION_BLOCK_PARSE_ATTEMPTS):
                 if qkind == QUIZ_KIND_SESSION_WARMUP:
                     if attempt == 0:
-                        docx_excerpt = prev_excerpt if part == "prev" else curr_excerpt
                         msgs = _warmup_block_messages(
                             subject=subj,
                             session_prev=prev_s,
@@ -999,25 +1207,35 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
                             part=part,
                             start_stt=start_stt,
                             n=n_need,
-                            docx_excerpt=docx_excerpt,
+                            docx_excerpt=block_excerpt,
+                            prior_questions_digest=prior_digest,
                         )
                     else:
                         msgs = _warmup_block_retry_messages(
-                            bad_raw=last_raw, n=n_need, part=part, validate_hint=last_parse_hint
+                            bad_raw=last_raw,
+                            n=n_need,
+                            part=part,
+                            validate_hint=last_parse_hint,
+                            docx_excerpt=block_excerpt,
+                            prior_questions_digest=prior_digest,
                         )
                 else:
                     if attempt == 0:
-                        docx_excerpt = curr_excerpt
                         msgs = _end_block_messages(
                             subject=subj,
                             session_current=curr_s,
                             start_stt=start_stt,
                             n=n_need,
-                            docx_excerpt=docx_excerpt,
+                            docx_excerpt=block_excerpt,
+                            prior_questions_digest=prior_digest,
                         )
                     else:
                         msgs = _end_block_retry_messages(
-                            bad_raw=last_raw, n=n_need, validate_hint=last_parse_hint
+                            bad_raw=last_raw,
+                            n=n_need,
+                            validate_hint=last_parse_hint,
+                            docx_excerpt=block_excerpt,
+                            prior_questions_digest=prior_digest,
                         )
                 try:
                     mt_out = (
@@ -1046,6 +1264,7 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
                     if len(arr_block) != n_need:
                         raise ValueError(f"Cần {n_need} câu, nhận {len(arr_block)}.")
                     _validate_session_quiz_block_items(arr_block, n_need)
+                    _validate_session_quiz_block_question_dedupe(arr_block, prior_items=all_items)
                     break
                 except Exception as e:
                     last_parse_hint = str(e)[:1200]
