@@ -499,7 +499,7 @@ def _run_grade_sync(
     _cs = _cs_raw if _cs_raw in ("default", "detailed", "hackathon_per_question") else "hackathon_per_question"
     params = GradeJobParams(
         assignment_ref=assignment_ref,
-        submission_ref=subs_lines[0],
+        submission_ref=subs_lines[0] if subs_lines else "",
         out_path=None,
         model=model.strip(),
         no_template=no_template,
@@ -615,7 +615,10 @@ async def api_grade(
             comment_style=comment_style or "hackathon_per_question",
         )
 
-    ok, log, results = await loop.run_in_executor(_executor, work)
+    try:
+        ok, log, results = await loop.run_in_executor(_executor, work)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi chấm bài: {e}") from e
 
     return JSONResponse({"ok": ok, "log": log, "results": results})
 
