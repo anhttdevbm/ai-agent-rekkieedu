@@ -99,9 +99,24 @@ MODEL_OPTIONS: tuple[str, ...] = (
     "qwen/qwen3-embedding-8b",
 )
 
+# Model ảnh OpenRouter (modalities image+text). Preview slug cũ có thể 404 — dùng bản GA.
+DEFAULT_IMAGE_MODEL = "google/gemini-2.5-flash-image"
+
+IMAGE_MODEL_ALIASES: dict[str, str] = {
+    "google/gemini-2.5-flash-image-preview": "google/gemini-2.5-flash-image",
+    "gemini-2.5-flash-image-preview": "google/gemini-2.5-flash-image",
+}
+
 IMAGE_MODEL_OPTIONS: tuple[str, ...] = (
-    "black-forest-labs/flux.2-pro",
-    "black-forest-labs/flux.2-flex",
-    "google/gemini-2.5-flash-image-preview",
     "google/gemini-2.5-flash-image",
+    "google/gemini-3.1-flash-image-preview",
+    "black-forest-labs/flux.2-flex",
+    "black-forest-labs/flux.2-pro",
 )
+
+
+def resolve_image_model(name: str | None) -> str:
+    raw = (name or "").strip()
+    if not raw:
+        return DEFAULT_IMAGE_MODEL
+    return IMAGE_MODEL_ALIASES.get(raw, raw)

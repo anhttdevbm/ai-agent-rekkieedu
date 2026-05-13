@@ -414,7 +414,8 @@ def generate_images_from_prompt(
         }
         try:
             data = post_chat_completions(body, timeout_s=timeout_s)
-        except httpx.HTTPStatusError:
+        except (httpx.HTTPStatusError, RuntimeError):
+            # Model không hỗ trợ modalities image (404) hoặc lỗi HTTP khác — thử combo khác / model khác.
             continue
         try:
             choice0 = data["choices"][0]

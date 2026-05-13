@@ -293,6 +293,22 @@ def _session_quiz_question_key_for_dedupe(q: str) -> str:
     return t.strip()[:520]
 
 
+def _session_quiz_forbidden_digest(prior_items: list[Any], *, head: int = 160) -> str:
+    """Danh sách câu đã dùng — nhấn mạnh cho block 2/3 tránh copy verbatim."""
+    if not prior_items:
+        return ""
+    lines: list[str] = []
+    for j, it in enumerate(prior_items):
+        if not isinstance(it, dict):
+            continue
+        raw = it.get("question_content")
+        if not isinstance(raw, str) or not raw.strip():
+            continue
+        snip = re.sub(r"\s+", " ", raw.strip())[:head]
+        lines.append(f"  [CẤM SAO CHÉP #{j + 1}] {snip}")
+    return "\n".join(lines)
+
+
 def _session_quiz_prior_digest_for_prompt(prior_items: list[Any], *, max_items: int = 60, head: int = 130) -> str:
     """Tóm tắt câu đã sinh (block trước) để model không lặp — chỉ dùng trong prompt."""
     if not prior_items:
@@ -698,6 +714,7 @@ def _end_block_messages(
     n: int,
     docx_excerpt: str,
     prior_questions_digest: str = "",
+    forbidden_questions_digest: str = "",
 ) -> list[ChatMessage]:
     end_stt = start_stt + n - 1
     user = (
@@ -722,6 +739,15 @@ def _end_block_messages(
             + pd
             + "\n"
         )
+    if start_stt >= 16 and pd:
+        user += (
+            "\nBLOCK 2 (STT 16–30): đã có 15 câu block 1 — TUYỆT ĐỐI không copy/rephrase sát bất kỳ câu nào trong danh sách trên. "
+            "Phải chọn 15 concept/chủ đề KHÁC trong trích liệu. "
+            "Rút ngắn explanations (<= 70 ký tự) để JSON 15 câu không bị cắt.\n"
+        )
+    fd = (forbidden_questions_digest or "").strip()
+    if fd:
+        user += "\n\nDANH SÁCH CẤM SAO CHÉP (không được trùng verbatim hay paraphrase sát):\n" + fd + "\n"
     if start_stt >= 31 and pd:
         user += (
             "\nBLOCK CUỐI (STT 31–45): đã có 30 câu trước — CHỈ hỏi chủ đề/concept CHƯA có trong danh sách trên. "
@@ -759,6 +785,7 @@ def _end_block_retry_messages(
     validate_hint: str = "",
     docx_excerpt: str = "",
     prior_questions_digest: str = "",
+    forbidden_questions_digest: str = "",
 ) -> list[ChatMessage]:
     tail = bad_raw[-9000:] if len(bad_raw) > 9000 else bad_raw
     hint = validate_hint.strip()[:1200]
@@ -777,6 +804,10 @@ def _end_block_retry_messages(
         prior_block = (
             "\n\nCÁC CÂU ĐÃ SOẠN Ở BLOCK TRƯỚC (cấm trùng / gần trùng):\n" + pd + "\n"
         )
+    fd = (forbidden_questions_digest or "").strip()
+    forbidden_block = ""
+    if fd:
+        forbidden_block = "\n\nDANH SÁCH CẤM SAO CHÉP (không được trùng verbatim):\n" + fd + "\n"
     return [
         ChatMessage(
             role="system",
@@ -800,6 +831,7 @@ def _end_block_retry_messages(
             content=(
                 doc_block
                 + prior_block
+                + forbidden_block
                 + "Output trước bị thiếu/cụt hoặc sai định dạng. "
                 "Hãy output LẠI TOÀN BỘ mảng (đừng cố nối tiếp). "
                 f"Mỗi phần tử: \"answers\" và \"explanations\" mỗi cái ĐÚNG 4 chuỗi (cấm 2 hoặc 3). "
@@ -1443,11 +1475,26 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
             else:
                 block_excerpt = (ce or pe or lt0)[:9000]
             prior_digest = _session_quiz_prior_digest_for_prompt(all_items)
+            forbidden_digest = _session_quiz_forbidden_digest(all_items) if all_items else ""
             last_raw = ""
             arr_block: list[Any] | None = None
             last_call_error: str | None = None
             last_parse_hint = ""
             for attempt in range(_SESSION_BLOCK_PARSE_ATTEMPTS):
+                if cb:
+                    try:
+                        if attempt == 0:
+                            cb(
+                                f"Block {bi}/{n_blocks}: đang gọi AI (câu {start_stt}–{start_stt + n_need - 1})…"
+                            )
+                        else:
+                            hint = (last_parse_hint or last_call_error or "").strip()[:80]
+                            cb(
+                                f"Block {bi}/{n_blocks}: thử lại {attempt + 1}/{_SESSION_BLOCK_PARSE_ATTEMPTS}"
+                                + (f" — {hint}" if hint else "…")
+                            )
+                    except Exception:
+                        pass
                 if qkind == QUIZ_KIND_SESSION_WARMUP:
                     if attempt == 0:
                         msgs = _warmup_block_messages(
@@ -1478,6 +1525,7 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
                             n=n_need,
                             docx_excerpt=block_excerpt,
                             prior_questions_digest=prior_digest,
+                            forbidden_questions_digest=forbidden_digest,
                         )
                     else:
                         msgs = _end_block_retry_messages(
@@ -1486,6 +1534,7 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
                             validate_hint=last_parse_hint,
                             docx_excerpt=block_excerpt,
                             prior_questions_digest=prior_digest,
+                            forbidden_questions_digest=forbidden_digest,
                         )
                 try:
                     mt_out = (
@@ -1496,7 +1545,11 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
                     raw, data = complete_chat(
                         msgs,
                         model=m,
-                        temperature=(min(temp0, 0.35) if attempt == 0 else min(temp0, 0.12)),
+                        temperature=(
+                            min(temp0, 0.35)
+                            if attempt == 0
+                            else min(0.58, temp0 + 0.05 * attempt)
+                        ),
                         max_tokens=mt_out,
                         timeout_s=420.0,
                     )

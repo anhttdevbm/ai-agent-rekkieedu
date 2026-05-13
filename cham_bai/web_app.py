@@ -34,7 +34,9 @@ from cham_bai.model_options import (
     DEFAULT_BTVN_MODEL,
     DEFAULT_QUIZ_SESSION_WARMUP_END_CHAT_MODEL,
     DEFAULT_QUIZ_SESSION_WARMUP_END_MODEL,
+    DEFAULT_IMAGE_MODEL,
     IMAGE_MODEL_OPTIONS,
+    resolve_image_model,
     MODEL_OPTIONS,
     QUIZ_KIND_OPTIONS,
 )
@@ -437,7 +439,7 @@ async def api_meta() -> JSONResponse:
             "default_quiz_session_warmup_end_model": DEFAULT_QUIZ_SESSION_WARMUP_END_MODEL,
             "default_quiz_session_warmup_end_chat_model": DEFAULT_QUIZ_SESSION_WARMUP_END_CHAT_MODEL,
             "default_btvn_model": os.getenv("OPENROUTER_BTVN_MODEL", DEFAULT_BTVN_MODEL),
-            "default_image_model": IMAGE_MODEL_OPTIONS[0],
+            "default_image_model": DEFAULT_IMAGE_MODEL,
             "default_learning_goals": DEFAULT_LEARNING_GOALS,
         }
     )
@@ -2721,7 +2723,7 @@ async def api_reading(
         learning_goals=(learning_goals or "").strip(),
         references_hint=(references_hint or "").strip(),
         text_model=(text_model or os.getenv("OPENROUTER_MODEL", "anthropic/claude-sonnet-4.6")).strip(),
-        image_model=(image_model or IMAGE_MODEL_OPTIONS[0]).strip(),
+        image_model=resolve_image_model(image_model or None),
         generate_illustrations=_parse_bool_form(generate_illustrations),
         output_docx=out_docx,
         output_xlsx=out_xlsx,

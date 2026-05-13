@@ -19,23 +19,27 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Inches, Pt, RGBColor
 
+from cham_bai.model_options import DEFAULT_IMAGE_MODEL, resolve_image_model
 from cham_bai.openrouter import ChatMessage, complete_chat, generate_images_from_prompt
 from cham_bai.settings import model as resolve_model
 from cham_bai.video_transcript import fetch_youtube_transcript_plain
 
 # Thứ tự ưu tiên khi model ảnh người chọn không trả về `message.images`.
 READING_IMAGE_MODEL_FALLBACKS: tuple[str, ...] = (
-    "black-forest-labs/flux.2-pro",
-    "google/gemini-2.5-flash-image-preview",
     "google/gemini-2.5-flash-image",
+    "google/gemini-3.1-flash-image-preview",
     "black-forest-labs/flux.2-flex",
+    "black-forest-labs/flux.2-pro",
 )
 
 
 def _reading_first_image_blob(prompt: str, image_model_primary: str) -> bytes | None:
     """Một ảnh đầu tiên từ prompt; thử lần lượt primary + fallback models."""
     for m_try in _reading_image_models_to_try(image_model_primary):
-        blobs = generate_images_from_prompt(prompt, model=m_try)
+        try:
+            blobs = generate_images_from_prompt(prompt, model=m_try)
+        except Exception:
+            continue
         if blobs:
             return blobs[0]
     return None
@@ -44,11 +48,13 @@ def _reading_first_image_blob(prompt: str, image_model_primary: str) -> bytes | 
 def _reading_image_models_to_try(primary: str) -> list[str]:
     seen: set[str] = set()
     out: list[str] = []
-    for m in ((primary or "").strip(),) + READING_IMAGE_MODEL_FALLBACKS:
-        if not m or m in seen:
+    primary_resolved = resolve_image_model(primary)
+    for m in (primary_resolved,) + READING_IMAGE_MODEL_FALLBACKS:
+        m2 = resolve_image_model(m)
+        if not m2 or m2 in seen:
             continue
-        seen.add(m)
-        out.append(m)
+        seen.add(m2)
+        out.append(m2)
     return out
 
 
@@ -1285,7 +1291,7 @@ Link gốc (đưa vào mục VIII nếu thích): {video_url}
     images: list[bytes] = []
     section_map: dict[str, bytes] = {}
     if params.generate_illustrations:
-        primary_image_model = (params.image_model or "").strip() or "black-forest-labs/flux.2-pro"
+        primary_image_model = resolve_image_model(params.image_model or None)
         if on_progress:
             on_progress("Bước 2/3: Đang tạo prompt minh họa…")
         try:
@@ -1312,12 +1318,9 @@ Link gốc (đưa vào mục VIII nếu thích): {video_url}
             image_job_3 = pool.submit(
                 _reading_first_image_blob, illustration_prompt_3, primary_image_model
             )
-            try:
-                illustration_image_1 = image_job_1.result()
-                illustration_image_2 = image_job_2.result()
-                illustration_image_3 = image_job_3.result()
-            except Exception as e:
-                return False, f"Lỗi tạo ảnh minh họa: {e}"
+            illustration_image_1 = image_job_1.result()
+            illustration_image_2 = image_job_2.result()
+            illustration_image_3 = image_job_3.result()
             for key, blob in zip(
                 ("I", "II", "III"),
                 (illustration_image_1, illustration_image_2, illustration_image_3),
@@ -1330,6 +1333,10 @@ Link gốc (đưa vào mục VIII nếu thích): {video_url}
                 for b in (illustration_image_1, illustration_image_2, illustration_image_3)
                 if b
             ]
+        if on_progress and not images:
+            on_progress(
+                "Không tạo được ảnh (model ảnh OpenRouter không khả dụng) — vẫn xuất DOCX+Excel không ảnh."
+            )
 
     doc = markdown_to_docx(
         markdown_for_docx,
