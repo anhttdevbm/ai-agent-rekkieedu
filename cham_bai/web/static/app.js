@@ -520,6 +520,41 @@
     }
   }
 
+  async function fetchQuizJobStatus(jobId, { retries = 8 } = {}) {
+    const url = `/api/quiz/jobs/${encodeURIComponent(jobId)}`;
+    let lastDetail = "";
+    for (let attempt = 0; attempt <= retries; attempt += 1) {
+      const sr = await fetch(url, { cache: "no-store" });
+      const st = await sr.json().catch(() => ({}));
+      if (sr.ok) return st;
+      lastDetail = formatApiErr(st.detail) || `HTTP ${sr.status}`;
+      // 404 thường do request rơi worker khác (trước khi deploy job store trên disk) — thử lại.
+      if (sr.status === 404 && attempt < retries) {
+        await new Promise((resolve) => setTimeout(resolve, 400 + attempt * 300));
+        continue;
+      }
+      throw new Error(lastDetail || "Không đọc được trạng thái job quiz.");
+    }
+    throw new Error(lastDetail || "Không đọc được trạng thái job quiz.");
+  }
+
+  async function fetchQuizJobDownload(jobId, { retries = 6 } = {}) {
+    const url = `/api/quiz/jobs/${encodeURIComponent(jobId)}/download`;
+    let lastDetail = "";
+    for (let attempt = 0; attempt <= retries; attempt += 1) {
+      const dr = await fetch(url, { cache: "no-store" });
+      if (dr.ok) return dr;
+      const err = await dr.json().catch(() => ({}));
+      lastDetail = formatApiErr(err.detail) || `HTTP ${dr.status}`;
+      if ((dr.status === 404 || dr.status === 409) && attempt < retries) {
+        await new Promise((resolve) => setTimeout(resolve, 400 + attempt * 300));
+        continue;
+      }
+      throw new Error(lastDetail || "Lỗi tải file quiz.");
+    }
+    throw new Error(lastDetail || "Lỗi tải file quiz.");
+  }
+
   async function postQuiz(ev) {
     ev.preventDefault();
     const btn = $("#q-submit");
@@ -539,6 +574,7 @@
         alert("Phản hồi thiếu job_id.");
         return;
       }
+      if (statusEl) statusEl.textContent = "Đã nhận yêu cầu, đang chờ AI soạn quiz…";
 
       const pollMs = 2000;
       const maxWaitMs = 45 * 60 * 1000;
@@ -546,13 +582,7 @@
       let lastMsg = "";
 
       while (Date.now() - t0 < maxWaitMs) {
-        await new Promise((resolve) => setTimeout(resolve, pollMs));
-        const sr = await fetch(`/api/quiz/jobs/${encodeURIComponent(jobId)}`);
-        const st = await sr.json().catch(() => ({}));
-        if (!sr.ok) {
-          alert(formatApiErr(st.detail) || "Không đọc được trạng thái job quiz.");
-          return;
-        }
+        const st = await fetchQuizJobStatus(jobId);
         const status = String(st.status || "");
         const msg = String(st.message || "").trim();
         if (msg && msg !== lastMsg) {
@@ -560,12 +590,7 @@
           if (statusEl) statusEl.textContent = msg;
         }
         if (status === "done") {
-          const dr = await fetch(`/api/quiz/jobs/${encodeURIComponent(jobId)}/download`);
-          if (!dr.ok) {
-            const err = await dr.json().catch(() => ({}));
-            alert(formatApiErr(err.detail) || "Lỗi tải file quiz.");
-            return;
-          }
+          const dr = await fetchQuizJobDownload(jobId);
           const blob = await dr.blob();
           const cd = dr.headers.get("Content-Disposition") || "";
           let name = (st.filename || "quiz.xlsx").trim() || "quiz.xlsx";
@@ -583,6 +608,7 @@
           alert(msg || "Lỗi tạo quiz.");
           return;
         }
+        await new Promise((resolve) => setTimeout(resolve, pollMs));
       }
       alert("Hết thời gian chờ (quiz vẫn có thể đang chạy trên server). Thử lại sau.");
     } catch (e) {
