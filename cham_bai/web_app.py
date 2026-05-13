@@ -14,7 +14,6 @@ import base64
 import shutil
 import secrets
 import tempfile
-import threading
 import time
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
@@ -109,18 +108,153 @@ class _QuizJobRecord:
     created_at: float = field(default_factory=time.time)
 
 
-_quiz_jobs: dict[str, _QuizJobRecord] = {}
-_quiz_jobs_lock = threading.Lock()
+_QUIZ_JOB_ID_RE = re.compile(r"^[0-9a-f]{32}$")
+
+
+def _quiz_jobs_dir() -> Path:
+    raw = (os.getenv("QUIZ_JOBS_DIR") or "").strip()
+    base = Path(raw) if raw else Path(tempfile.gettempdir()) / "agent_edu_quiz_jobs"
+    base.mkdir(parents=True, exist_ok=True)
+    return base
+
+
+def _quiz_job_validate_id(job_id: str) -> str:
+    jid = (job_id or "").strip().lower()
+    if not _QUIZ_JOB_ID_RE.fullmatch(jid):
+        raise HTTPException(status_code=400, detail="job_id không hợp lệ.")
+    return jid
+
+
+def _quiz_job_json_path(job_id: str) -> Path:
+    return _quiz_jobs_dir() / f"{job_id}.json"
+
+
+def _quiz_job_lock_path(job_id: str) -> Path:
+    return _quiz_jobs_dir() / f"{job_id}.lock"
+
+
+class _QuizJobFileLock:
+    """Khóa file — chia sẻ trạng thái job giữa nhiều Uvicorn worker."""
+
+    def __init__(self, job_id: str) -> None:
+        self._path = _quiz_job_lock_path(job_id)
+
+    def __enter__(self):
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._fh = open(self._path, "a+", encoding="utf-8")
+        if os.name != "nt":
+            import fcntl
+
+            fcntl.flock(self._fh.fileno(), fcntl.LOCK_EX)
+        return self._fh
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        if os.name != "nt":
+            import fcntl
+
+            fcntl.flock(self._fh.fileno(), fcntl.LOCK_UN)
+        self._fh.close()
+
+
+def _quiz_job_to_payload(job_id: str, rec: _QuizJobRecord) -> dict:
+    return {
+        "job_id": job_id,
+        "status": rec.status,
+        "message": rec.message,
+        "output_path": rec.output_path,
+        "download_name": rec.download_name,
+        "cleanup_paths": list(rec.cleanup_paths),
+        "created_at": rec.created_at,
+    }
+
+
+def _quiz_job_from_payload(data: dict) -> tuple[str, _QuizJobRecord]:
+    jid = str(data.get("job_id") or "").strip().lower()
+    rec = _QuizJobRecord(
+        status=str(data.get("status") or ""),
+        message=str(data.get("message") or ""),
+        output_path=str(data.get("output_path") or ""),
+        download_name=str(data.get("download_name") or ""),
+        cleanup_paths=[str(x) for x in (data.get("cleanup_paths") or []) if str(x).strip()],
+        created_at=float(data.get("created_at") or time.time()),
+    )
+    return jid, rec
+
+
+def _quiz_job_read(job_id: str) -> _QuizJobRecord | None:
+    jid = _quiz_job_validate_id(job_id)
+    path = _quiz_job_json_path(jid)
+    if not path.is_file():
+        return None
+    with _QuizJobFileLock(jid):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        _, rec = _quiz_job_from_payload(data)
+        return rec
+
+
+def _quiz_job_write(job_id: str, rec: _QuizJobRecord) -> None:
+    jid = _quiz_job_validate_id(job_id)
+    path = _quiz_job_json_path(jid)
+    payload = _quiz_job_to_payload(jid, rec)
+    tmp = path.with_suffix(".json.tmp")
+    with _QuizJobFileLock(jid):
+        tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, path)
+
+
+def _quiz_job_delete(job_id: str) -> None:
+    jid = _quiz_job_validate_id(job_id)
+    with _QuizJobFileLock(jid):
+        _quiz_job_json_path(jid).unlink(missing_ok=True)
+    try:
+        _quiz_job_lock_path(jid).unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _quiz_job_patch(job_id: str, **fields) -> _QuizJobRecord | None:
+    jid = _quiz_job_validate_id(job_id)
+    path = _quiz_job_json_path(jid)
+    if not path.is_file():
+        return None
+    with _QuizJobFileLock(jid):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        _, rec = _quiz_job_from_payload(data)
+        for key, val in fields.items():
+            setattr(rec, key, val)
+        payload = _quiz_job_to_payload(jid, rec)
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, path)
+        return rec
 
 
 def _quiz_job_prune_old(*, max_age_s: float = 3600.0) -> None:
     now = time.time()
-    with _quiz_jobs_lock:
-        stale = [jid for jid, rec in _quiz_jobs.items() if now - rec.created_at > max_age_s]
-        for jid in stale:
-            rec = _quiz_jobs.pop(jid, None)
-            if rec:
-                _quiz_job_cleanup_paths(rec.cleanup_paths)
+    root = _quiz_jobs_dir()
+    for path in root.glob("*.json"):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            _, rec = _quiz_job_from_payload(data)
+        except (OSError, json.JSONDecodeError):
+            path.unlink(missing_ok=True)
+            continue
+        if now - rec.created_at <= max_age_s:
+            continue
+        jid = path.stem
+        try:
+            _quiz_job_validate_id(jid)
+        except HTTPException:
+            path.unlink(missing_ok=True)
+            continue
+        _quiz_job_delete(jid)
+        _quiz_job_cleanup_paths(rec.cleanup_paths)
 
 
 def _quiz_job_cleanup_paths(paths: list[str]) -> None:
@@ -146,29 +280,31 @@ def _quiz_job_cleanup_paths(paths: list[str]) -> None:
 
 
 async def _quiz_job_run(job_id: str, params: QuizGenParams, cleanup_paths: list[str]) -> None:
-    with _quiz_jobs_lock:
-        rec = _quiz_jobs.get(job_id)
-        if rec:
-            rec.status = "running"
-            rec.message = "Đang gọi AI soạn quiz (có thể vài phút)…"
+    _quiz_job_patch(
+        job_id,
+        status="running",
+        message="Đang gọi AI soạn quiz (có thể vài phút)…",
+    )
     loop = asyncio.get_event_loop()
     try:
         ok, msg = await loop.run_in_executor(_executor, run_quiz_generation, params)
     except Exception as e:
         ok, msg = False, str(e)
-    with _quiz_jobs_lock:
-        rec = _quiz_jobs.get(job_id)
-        if not rec:
-            return
-        if ok:
-            rec.status = "done"
-            rec.output_path = str(params.output_xlsx)
-            rec.download_name = params.output_xlsx.name
-            rec.message = "Xong."
-        else:
-            rec.status = "error"
-            rec.message = (msg or "Lỗi tạo quiz.").strip()
-            _quiz_job_cleanup_paths(cleanup_paths)
+    if ok:
+        _quiz_job_patch(
+            job_id,
+            status="done",
+            output_path=str(params.output_xlsx),
+            download_name=params.output_xlsx.name,
+            message="Xong.",
+        )
+    else:
+        _quiz_job_patch(
+            job_id,
+            status="error",
+            message=(msg or "Lỗi tạo quiz.").strip(),
+        )
+        _quiz_job_cleanup_paths(cleanup_paths)
 
 
 def _parse_bool_form(s: str | None) -> bool:
@@ -533,12 +669,14 @@ async def api_quiz(
 
     _quiz_job_prune_old()
     job_id = secrets.token_hex(16)
-    with _quiz_jobs_lock:
-        _quiz_jobs[job_id] = _QuizJobRecord(
+    _quiz_job_write(
+        job_id,
+        _QuizJobRecord(
             status="pending",
             message="Đã nhận yêu cầu, đang xếp hàng…",
             cleanup_paths=list(cleanup_paths),
-        )
+        ),
+    )
     asyncio.create_task(_quiz_job_run(job_id, params, cleanup_paths))
     return JSONResponse({"ok": True, "job_id": job_id}, status_code=202)
 
@@ -546,34 +684,40 @@ async def api_quiz(
 @app.get("/api/quiz/jobs/{job_id}")
 async def api_quiz_job_status(job_id: str) -> JSONResponse:
     jid = (job_id or "").strip()
-    with _quiz_jobs_lock:
-        rec = _quiz_jobs.get(jid)
-        if not rec:
-            raise HTTPException(status_code=404, detail="Không tìm thấy job quiz (hết hạn hoặc đã tải xong).")
-        return JSONResponse(
-            {
-                "ok": True,
-                "job_id": jid,
-                "status": rec.status,
-                "message": rec.message,
-                "filename": rec.download_name or None,
-            }
-        )
+    try:
+        _quiz_job_validate_id(jid)
+    except HTTPException:
+        raise
+    rec = _quiz_job_read(jid)
+    if not rec:
+        raise HTTPException(status_code=404, detail="Không tìm thấy job quiz (hết hạn hoặc đã tải xong).")
+    return JSONResponse(
+        {
+            "ok": True,
+            "job_id": jid,
+            "status": rec.status,
+            "message": rec.message,
+            "filename": rec.download_name or None,
+        }
+    )
 
 
 @app.get("/api/quiz/jobs/{job_id}/download")
 async def api_quiz_job_download(job_id: str, background_tasks: BackgroundTasks) -> FileResponse:
     jid = (job_id or "").strip()
-    with _quiz_jobs_lock:
-        rec = _quiz_jobs.get(jid)
-        if not rec:
-            raise HTTPException(status_code=404, detail="Không tìm thấy job quiz.")
-        if rec.status != "done":
-            raise HTTPException(status_code=409, detail=f"Job chưa xong (trạng thái: {rec.status}).")
-        out_p = (rec.output_path or "").strip()
-        fname = (rec.download_name or Path(out_p).name or "quiz.xlsx").strip()
-        cleanup_paths = list(rec.cleanup_paths)
-        _quiz_jobs.pop(jid, None)
+    try:
+        _quiz_job_validate_id(jid)
+    except HTTPException:
+        raise
+    rec = _quiz_job_read(jid)
+    if not rec:
+        raise HTTPException(status_code=404, detail="Không tìm thấy job quiz.")
+    if rec.status != "done":
+        raise HTTPException(status_code=409, detail=f"Job chưa xong (trạng thái: {rec.status}).")
+    out_p = (rec.output_path or "").strip()
+    fname = (rec.download_name or Path(out_p).name or "quiz.xlsx").strip()
+    cleanup_paths = list(rec.cleanup_paths)
+    _quiz_job_delete(jid)
     if not out_p or not Path(out_p).is_file():
         _quiz_job_cleanup_paths(cleanup_paths)
         raise HTTPException(status_code=410, detail="File quiz không còn trên server.")
