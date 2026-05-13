@@ -18,7 +18,7 @@ QUIZ_KIND_OPTIONS: tuple[tuple[str, str], ...] = (
 # Vision–language, free; phù hợp Chấm BTVN (đề có ảnh + đọc repo).
 DEFAULT_BTVN_MODEL = "nvidia/nemotron-nano-12b-v2-vl:free"
 
-# Model chat (OpenRouter /v1/chat/completions) khi sinh Excel quiz (JSON 45 câu = nhiều sub-block 5 câu + tài liệu).
+# Model chat (OpenRouter /v1/chat/completions) khi sinh Excel quiz (JSON 45 câu = 3 sub-block × 15 câu + tài liệu).
 # Gemma 4 26B A4B (IT): ctx ~262k, bám cấu trúc tốt, hợp pipeline session quiz.
 DEFAULT_QUIZ_SESSION_WARMUP_END_CHAT_MODEL = "google/gemma-4-26b-a4b-it"
 

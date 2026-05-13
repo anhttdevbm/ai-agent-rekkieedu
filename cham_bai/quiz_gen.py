@@ -182,11 +182,11 @@ def _finish_reason(data: dict[str, Any]) -> str | None:
         return None
 
 
-# Mỗi lần gọi sinh N object JSON (warmup/cuối giờ). max_tokens=8192 hay bị cắt giữa mảng.
-_SESSION_QUIZ_BLOCK_OUT_TOKENS_FIRST = 24576
-_SESSION_QUIZ_BLOCK_OUT_TOKENS_RETRY = 32768
-# 5 câu/lần gọi → JSON ngắn, ít bị cụt và model ít nhầm 3 đáp án; 9 lần gọi cho đủ 45 câu.
-_SESSION_QUIZ_ITEMS_PER_CALL = 5
+# Mỗi lần gọi sinh N object JSON (warmup/cuối giờ). 45 câu = 3 lần gọi × 15 câu/block.
+_SESSION_QUIZ_BLOCK_OUT_TOKENS_FIRST = 32768
+_SESSION_QUIZ_BLOCK_OUT_TOKENS_RETRY = 49152
+# 15 câu/block → đúng 3 block cho 45 câu (cuối giờ); đầu giờ: 2 block BÀI CŨ + 1 block BÀI MỚI.
+_SESSION_QUIZ_ITEMS_PER_CALL = 15
 _SESSION_BLOCK_PARSE_ATTEMPTS = 7
 
 # Model hay trả đúng 2 phương án (nhị phân) — Excel cần đúng 4 đáp án/câu.
@@ -790,7 +790,7 @@ def _warmup_block_retry_messages(
 
 def _validate_session_quiz_block_items(items: list[Any], n_need: int) -> None:
     """
-    Kiểm tra ngay sau khi parse từng sub-block (thường 5 câu): model hay trả 3 đáp án thay vì 4 hoặc JSON cụt.
+    Kiểm tra ngay sau khi parse từng sub-block (thường 15 câu): model hay trả 3 đáp án thay vì 4 hoặc JSON cụt.
     Nếu sai → ném ValueError để vòng lặp retry với prompt sửa.
     """
     if len(items) != n_need:
@@ -1172,7 +1172,7 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
         m, chat_remap_note = resolve_quiz_llm_model(params.model or None)
         temp0 = max(0.0, min(2.0, float(params.temperature)))
 
-        # Chia 45 câu thành nhiều lần gọi (mặc định 5 câu/lần) để JSON không cụt và đủ 4 đáp án/câu.
+        # Chia 45 câu thành 3 lần gọi (15 câu/lần): ít round-trip; tăng max_tokens nếu JSON bị cắt.
         qpc = _SESSION_QUIZ_ITEMS_PER_CALL
         blocks: list[tuple[str, int, int]]
         if qkind == QUIZ_KIND_SESSION_WARMUP:
