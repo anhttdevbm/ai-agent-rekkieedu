@@ -523,27 +523,68 @@
   async function postQuiz(ev) {
     ev.preventDefault();
     const btn = $("#q-submit");
+    const statusEl = $("#q-status");
     setBusy(btn, true, "Đang tạo…");
-    $("#q-status").textContent = "";
+    if (statusEl) statusEl.textContent = "";
     try {
       const fd = new FormData(ev.target);
       const r = await fetch("/api/quiz", { method: "POST", body: fd });
+      const data = await r.json().catch(() => ({}));
       if (!r.ok) {
-        const err = await r.json().catch(() => ({}));
-        alert(formatApiErr(err.detail) || "Lỗi tạo quiz");
+        alert(formatApiErr(data.detail) || "Lỗi tạo quiz");
         return;
       }
-      const blob = await r.blob();
-      const cd = r.headers.get("Content-Disposition") || "";
-      let name = "quiz.xlsx";
-      const m = /filename\*?=(?:UTF-8'')?([^;\n]+)/i.exec(cd);
-      if (m) name = decodeURIComponent(m[1].replace(/['"]/g, "").trim());
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = name;
-      a.click();
-      URL.revokeObjectURL(a.href);
-      $("#q-status").textContent = "Đã tải file Excel.";
+      const jobId = (data && data.job_id) || "";
+      if (!jobId) {
+        alert("Phản hồi thiếu job_id.");
+        return;
+      }
+
+      const pollMs = 2000;
+      const maxWaitMs = 45 * 60 * 1000;
+      const t0 = Date.now();
+      let lastMsg = "";
+
+      while (Date.now() - t0 < maxWaitMs) {
+        await new Promise((resolve) => setTimeout(resolve, pollMs));
+        const sr = await fetch(`/api/quiz/jobs/${encodeURIComponent(jobId)}`);
+        const st = await sr.json().catch(() => ({}));
+        if (!sr.ok) {
+          alert(formatApiErr(st.detail) || "Không đọc được trạng thái job quiz.");
+          return;
+        }
+        const status = String(st.status || "");
+        const msg = String(st.message || "").trim();
+        if (msg && msg !== lastMsg) {
+          lastMsg = msg;
+          if (statusEl) statusEl.textContent = msg;
+        }
+        if (status === "done") {
+          const dr = await fetch(`/api/quiz/jobs/${encodeURIComponent(jobId)}/download`);
+          if (!dr.ok) {
+            const err = await dr.json().catch(() => ({}));
+            alert(formatApiErr(err.detail) || "Lỗi tải file quiz.");
+            return;
+          }
+          const blob = await dr.blob();
+          const cd = dr.headers.get("Content-Disposition") || "";
+          let name = (st.filename || "quiz.xlsx").trim() || "quiz.xlsx";
+          const m = /filename\*?=(?:UTF-8'')?([^;\n]+)/i.exec(cd);
+          if (m) name = decodeURIComponent(m[1].replace(/['"]/g, "").trim());
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = name;
+          a.click();
+          URL.revokeObjectURL(a.href);
+          if (statusEl) statusEl.textContent = "Đã tải file Excel.";
+          return;
+        }
+        if (status === "error") {
+          alert(msg || "Lỗi tạo quiz.");
+          return;
+        }
+      }
+      alert("Hết thời gian chờ (quiz vẫn có thể đang chạy trên server). Thử lại sau.");
     } catch (e) {
       alert(String(e));
     } finally {

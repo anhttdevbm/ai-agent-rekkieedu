@@ -12,9 +12,13 @@ import html as _html
 import hashlib
 import base64
 import shutil
+import secrets
 import tempfile
+import threading
+import time
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import httpx
@@ -93,6 +97,78 @@ from cham_bai.workflow import (
 )
 
 _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="web")
+
+
+@dataclass
+class _QuizJobRecord:
+    status: str  # pending | running | done | error
+    message: str = ""
+    output_path: str = ""
+    download_name: str = ""
+    cleanup_paths: list[str] = field(default_factory=list)
+    created_at: float = field(default_factory=time.time)
+
+
+_quiz_jobs: dict[str, _QuizJobRecord] = {}
+_quiz_jobs_lock = threading.Lock()
+
+
+def _quiz_job_prune_old(*, max_age_s: float = 3600.0) -> None:
+    now = time.time()
+    with _quiz_jobs_lock:
+        stale = [jid for jid, rec in _quiz_jobs.items() if now - rec.created_at > max_age_s]
+        for jid in stale:
+            rec = _quiz_jobs.pop(jid, None)
+            if rec:
+                _quiz_job_cleanup_paths(rec.cleanup_paths)
+
+
+def _quiz_job_cleanup_paths(paths: list[str]) -> None:
+    seen_dirs: set[str] = set()
+    for raw in paths:
+        p = (raw or "").strip()
+        if not p:
+            continue
+        path = Path(p)
+        if path.is_dir():
+            if p not in seen_dirs:
+                seen_dirs.add(p)
+                shutil.rmtree(p, ignore_errors=True)
+            continue
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        parent = str(path.parent)
+        if parent and parent not in seen_dirs and "/quiz_out_" in parent.replace("\\", "/"):
+            seen_dirs.add(parent)
+            shutil.rmtree(parent, ignore_errors=True)
+
+
+async def _quiz_job_run(job_id: str, params: QuizGenParams, cleanup_paths: list[str]) -> None:
+    with _quiz_jobs_lock:
+        rec = _quiz_jobs.get(job_id)
+        if rec:
+            rec.status = "running"
+            rec.message = "Đang gọi AI soạn quiz (có thể vài phút)…"
+    loop = asyncio.get_event_loop()
+    try:
+        ok, msg = await loop.run_in_executor(_executor, run_quiz_generation, params)
+    except Exception as e:
+        ok, msg = False, str(e)
+    with _quiz_jobs_lock:
+        rec = _quiz_jobs.get(job_id)
+        if not rec:
+            return
+        if ok:
+            rec.status = "done"
+            rec.output_path = str(params.output_xlsx)
+            rec.download_name = params.output_xlsx.name
+            rec.message = "Xong."
+        else:
+            rec.status = "error"
+            rec.message = (msg or "Lỗi tạo quiz.").strip()
+            _quiz_job_cleanup_paths(cleanup_paths)
 
 
 def _parse_bool_form(s: str | None) -> bool:
@@ -315,7 +391,6 @@ async def api_grade(
 
 @app.post("/api/quiz")
 async def api_quiz(
-    background_tasks: BackgroundTasks,
     quiz_kind_label: str = Form(...),
     subject: str = Form(""),
     lesson: str = Form(""),
@@ -329,7 +404,8 @@ async def api_quiz(
     model: str = Form(""),
     template_file: UploadFile | None = File(None),
     docx_file: UploadFile | None = File(None),
-) -> FileResponse:
+) -> JSONResponse:
+    """Job nền — tránh 504 khi sinh quiz dài. Poll GET /api/quiz/jobs/{id} rồi GET .../download."""
     kind_map = dict(QUIZ_KIND_OPTIONS)
     qkind = normalize_quiz_kind(kind_map.get(quiz_kind_label.strip(), QUIZ_KIND_SESSION))
 
@@ -398,16 +474,7 @@ async def api_quiz(
     tmp_docx = await _save_upload_optional(docx_file, ".docx")
     docx_path = Path(tmp_docx) if tmp_docx else None
     if docx_path and not docx_path.is_file():
-        if tmp_tpl:
-            try:
-                os.unlink(tmp_tpl)
-            except OSError:
-                pass
-        if tmp_docx:
-            try:
-                os.unlink(tmp_docx)
-            except OSError:
-                pass
+        _cleanup_quiz_temp(tmp_tpl, tmp_docx, None)
         raise HTTPException(status_code=400, detail="File DOCX không hợp lệ.")
 
     out_dir = tempfile.mkdtemp(prefix="quiz_out_")
@@ -458,38 +525,63 @@ async def api_quiz(
         quiz_kind=qkind,
     )
 
-    loop = asyncio.get_event_loop()
-
-    def gen():
-        return run_quiz_generation(params)
-
-    try:
-        ok, msg = await loop.run_in_executor(_executor, gen)
-    except Exception as e:
-        _cleanup_quiz_temp(tmp_tpl, tmp_docx, out_dir)
-        raise HTTPException(status_code=500, detail=str(e)) from e
-
+    cleanup_paths: list[str] = [out_dir]
     if tmp_tpl:
-        try:
-            os.unlink(tmp_tpl)
-        except OSError:
-            pass
+        cleanup_paths.append(tmp_tpl)
     if tmp_docx:
-        try:
-            os.unlink(tmp_docx)
-        except OSError:
-            pass
+        cleanup_paths.append(tmp_docx)
 
-    if not ok:
-        shutil.rmtree(out_dir, ignore_errors=True)
-        raise HTTPException(status_code=500, detail=msg)
+    _quiz_job_prune_old()
+    job_id = secrets.token_hex(16)
+    with _quiz_jobs_lock:
+        _quiz_jobs[job_id] = _QuizJobRecord(
+            status="pending",
+            message="Đã nhận yêu cầu, đang xếp hàng…",
+            cleanup_paths=list(cleanup_paths),
+        )
+    asyncio.create_task(_quiz_job_run(job_id, params, cleanup_paths))
+    return JSONResponse({"ok": True, "job_id": job_id}, status_code=202)
 
-    safe_name = out_path.name
-    background_tasks.add_task(shutil.rmtree, out_dir, True)
 
+@app.get("/api/quiz/jobs/{job_id}")
+async def api_quiz_job_status(job_id: str) -> JSONResponse:
+    jid = (job_id or "").strip()
+    with _quiz_jobs_lock:
+        rec = _quiz_jobs.get(jid)
+        if not rec:
+            raise HTTPException(status_code=404, detail="Không tìm thấy job quiz (hết hạn hoặc đã tải xong).")
+        return JSONResponse(
+            {
+                "ok": True,
+                "job_id": jid,
+                "status": rec.status,
+                "message": rec.message,
+                "filename": rec.download_name or None,
+            }
+        )
+
+
+@app.get("/api/quiz/jobs/{job_id}/download")
+async def api_quiz_job_download(job_id: str, background_tasks: BackgroundTasks) -> FileResponse:
+    jid = (job_id or "").strip()
+    with _quiz_jobs_lock:
+        rec = _quiz_jobs.get(jid)
+        if not rec:
+            raise HTTPException(status_code=404, detail="Không tìm thấy job quiz.")
+        if rec.status != "done":
+            raise HTTPException(status_code=409, detail=f"Job chưa xong (trạng thái: {rec.status}).")
+        out_p = (rec.output_path or "").strip()
+        fname = (rec.download_name or Path(out_p).name or "quiz.xlsx").strip()
+        cleanup_paths = list(rec.cleanup_paths)
+        _quiz_jobs.pop(jid, None)
+    if not out_p or not Path(out_p).is_file():
+        _quiz_job_cleanup_paths(cleanup_paths)
+        raise HTTPException(status_code=410, detail="File quiz không còn trên server.")
+
+    background_tasks.add_task(_quiz_job_cleanup_paths, cleanup_paths)
     return FileResponse(
-        path=str(out_path),
-        filename=safe_name,
+        path=out_p,
+        filename=fname,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
