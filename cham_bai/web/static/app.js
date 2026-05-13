@@ -520,7 +520,9 @@
     }
   }
 
-  async function fetchQuizJobStatus(jobId, { retries = 8 } = {}) {
+  let _quizPollToken = 0;
+
+  async function fetchQuizJobStatus(jobId, { retries = 3 } = {}) {
     const url = `/api/quiz/jobs/${encodeURIComponent(jobId)}`;
     let lastDetail = "";
     for (let attempt = 0; attempt <= retries; attempt += 1) {
@@ -559,6 +561,7 @@
     ev.preventDefault();
     const btn = $("#q-submit");
     const statusEl = $("#q-status");
+    const pollToken = ++_quizPollToken;
     setBusy(btn, true, "Đang tạo…");
     if (statusEl) statusEl.textContent = "";
     try {
@@ -576,18 +579,26 @@
       }
       if (statusEl) statusEl.textContent = "Đã nhận yêu cầu, đang chờ AI soạn quiz…";
 
-      const pollMs = 2000;
       const maxWaitMs = 45 * 60 * 1000;
       const t0 = Date.now();
       let lastMsg = "";
+      let pollMs = 4000;
+      let pollCount = 0;
 
       while (Date.now() - t0 < maxWaitMs) {
+        if (pollToken !== _quizPollToken) return;
         const st = await fetchQuizJobStatus(jobId);
+        if (pollToken !== _quizPollToken) return;
+        pollCount += 1;
         const status = String(st.status || "");
         const msg = String(st.message || "").trim();
-        if (msg && msg !== lastMsg) {
-          lastMsg = msg;
-          if (statusEl) statusEl.textContent = msg;
+        const elapsedMin = Math.floor((Date.now() - t0) / 60000);
+        const statusLine = msg
+          ? `${msg} (${elapsedMin} phút, lần kiểm tra ${pollCount})`
+          : `Đang chạy… (${elapsedMin} phút, lần kiểm tra ${pollCount})`;
+        if (statusLine !== lastMsg) {
+          lastMsg = statusLine;
+          if (statusEl) statusEl.textContent = statusLine;
         }
         if (status === "done") {
           const dr = await fetchQuizJobDownload(jobId);
@@ -608,13 +619,15 @@
           alert(msg || "Lỗi tạo quiz.");
           return;
         }
+        // Backoff: 4s → 6s → … → tối đa 20s (ít request hơn khi sinh quiz 15–30 phút)
+        pollMs = Math.min(20000, 4000 + Math.floor(pollCount / 4) * 2000);
         await new Promise((resolve) => setTimeout(resolve, pollMs));
       }
       alert("Hết thời gian chờ (quiz vẫn có thể đang chạy trên server). Thử lại sau.");
     } catch (e) {
       alert(String(e));
     } finally {
-      setBusy(btn, false);
+      if (pollToken === _quizPollToken) setBusy(btn, false);
     }
   }
 
@@ -1782,31 +1795,112 @@
     }
   }
 
+  async function fetchReadingJobStatus(jobId, { retries = 3 } = {}) {
+    const url = `/api/reading/jobs/${encodeURIComponent(jobId)}`;
+    let lastDetail = "";
+    for (let attempt = 0; attempt <= retries; attempt += 1) {
+      const sr = await fetch(url, { cache: "no-store" });
+      const st = await sr.json().catch(() => ({}));
+      if (sr.ok) return st;
+      lastDetail = formatApiErr(st.detail) || `HTTP ${sr.status}`;
+      if (sr.status === 404 && attempt < retries) {
+        await new Promise((resolve) => setTimeout(resolve, 400 + attempt * 300));
+        continue;
+      }
+      throw new Error(lastDetail || "Không đọc được trạng thái job bài đọc.");
+    }
+    throw new Error(lastDetail || "Không đọc được trạng thái job bài đọc.");
+  }
+
+  async function fetchReadingJobDownload(jobId, { retries = 6 } = {}) {
+    const url = `/api/reading/jobs/${encodeURIComponent(jobId)}/download`;
+    let lastDetail = "";
+    for (let attempt = 0; attempt <= retries; attempt += 1) {
+      const dr = await fetch(url, { cache: "no-store" });
+      if (dr.ok) return dr;
+      const err = await dr.json().catch(() => ({}));
+      lastDetail = formatApiErr(err.detail) || `HTTP ${dr.status}`;
+      if ((dr.status === 404 || dr.status === 409) && attempt < retries) {
+        await new Promise((resolve) => setTimeout(resolve, 400 + attempt * 300));
+        continue;
+      }
+      throw new Error(lastDetail || "Lỗi tải file bài đọc.");
+    }
+    throw new Error(lastDetail || "Lỗi tải file bài đọc.");
+  }
+
+  let _readingPollToken = 0;
+
   async function postReading(ev) {
     ev.preventDefault();
     const btn = $("#r-submit");
+    const statusEl = $("#r-status");
+    const pollToken = ++_readingPollToken;
     setBusy(btn, true, "Đang tạo bài đọc…");
-    $("#r-status").textContent = "";
+    if (statusEl) statusEl.textContent = "";
     try {
       const fd = new FormData(ev.target);
       fd.set("generate_illustrations", $("#r-img").checked ? "true" : "false");
       const r = await fetch("/api/reading", { method: "POST", body: fd });
+      const data = await r.json().catch(() => ({}));
       if (!r.ok) {
-        const err = await r.json().catch(() => ({}));
-        alert(formatApiErr(err.detail) || "Lỗi tạo bài đọc");
+        alert(formatApiErr(data.detail) || "Lỗi tạo bài đọc");
         return;
       }
-      const blob = await r.blob();
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = "bai-doc.zip";
-      a.click();
-      URL.revokeObjectURL(a.href);
-      $("#r-status").textContent = "Đã tải ZIP (DOCX + Excel).";
+      const jobId = (data && data.job_id) || "";
+      if (!jobId) {
+        alert("Phản hồi thiếu job_id.");
+        return;
+      }
+      if (statusEl) statusEl.textContent = "Đã nhận yêu cầu, đang soạn bài đọc…";
+
+      const maxWaitMs = 45 * 60 * 1000;
+      const t0 = Date.now();
+      let lastMsg = "";
+      let pollCount = 0;
+
+      while (Date.now() - t0 < maxWaitMs) {
+        if (pollToken !== _readingPollToken) return;
+        const st = await fetchReadingJobStatus(jobId);
+        if (pollToken !== _readingPollToken) return;
+        pollCount += 1;
+        const status = String(st.status || "");
+        const msg = String(st.message || "").trim();
+        const elapsedMin = Math.floor((Date.now() - t0) / 60000);
+        const statusLine = msg
+          ? `${msg} (${elapsedMin} phút)`
+          : `Đang chạy… (${elapsedMin} phút)`;
+        if (statusLine !== lastMsg) {
+          lastMsg = statusLine;
+          if (statusEl) statusEl.textContent = statusLine;
+        }
+        if (status === "done") {
+          const dr = await fetchReadingJobDownload(jobId);
+          const blob = await dr.blob();
+          let name = (st.filename || "bai-doc.zip").trim() || "bai-doc.zip";
+          const cd = dr.headers.get("Content-Disposition") || "";
+          const m = /filename\*?=(?:UTF-8'')?([^;\n]+)/i.exec(cd);
+          if (m) name = decodeURIComponent(m[1].replace(/['"]/g, "").trim());
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = name;
+          a.click();
+          URL.revokeObjectURL(a.href);
+          if (statusEl) statusEl.textContent = "Đã tải ZIP (DOCX + Excel).";
+          return;
+        }
+        if (status === "error") {
+          alert(msg || "Lỗi tạo bài đọc.");
+          return;
+        }
+        const pollMs = Math.min(20000, 4000 + Math.floor(pollCount / 4) * 2000);
+        await new Promise((resolve) => setTimeout(resolve, pollMs));
+      }
+      alert("Hết thời gian chờ (bài đọc vẫn có thể đang chạy trên server). Thử lại sau.");
     } catch (e) {
       alert(String(e));
     } finally {
-      setBusy(btn, false);
+      if (pollToken === _readingPollToken) setBusy(btn, false);
     }
   }
 

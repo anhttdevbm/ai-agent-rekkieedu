@@ -1262,16 +1262,19 @@ Link gốc (đưa vào mục VIII nếu thích): {video_url}
             "Bước 1/3: Đang gọi model soạn bài (DOCX ~4–5 trang, rút gọn; thường 2–10 phút)…"
         )
 
-    md, _ = complete_chat(
-        [
-            ChatMessage(role="system", content=SYSTEM_READING),
-            ChatMessage(role="user", content=user),
-        ],
-        model=text_model,
-        temperature=0.38,
-        max_tokens=20000,
-        timeout_s=540.0,
-    )
+    try:
+        md, _ = complete_chat(
+            [
+                ChatMessage(role="system", content=SYSTEM_READING),
+                ChatMessage(role="user", content=user),
+            ],
+            model=text_model,
+            temperature=0.38,
+            max_tokens=20000,
+            timeout_s=540.0,
+        )
+    except Exception as e:
+        return False, f"Lỗi gọi model soạn bài: {e}"
 
     if not md or len(md) < 400:
         return False, "Model trả nội dung quá ngắn hoặc rỗng."
@@ -1309,9 +1312,12 @@ Link gốc (đưa vào mục VIII nếu thích): {video_url}
             image_job_3 = pool.submit(
                 _reading_first_image_blob, illustration_prompt_3, primary_image_model
             )
-            illustration_image_1 = image_job_1.result()
-            illustration_image_2 = image_job_2.result()
-            illustration_image_3 = image_job_3.result()
+            try:
+                illustration_image_1 = image_job_1.result()
+                illustration_image_2 = image_job_2.result()
+                illustration_image_3 = image_job_3.result()
+            except Exception as e:
+                return False, f"Lỗi tạo ảnh minh họa: {e}"
             for key, blob in zip(
                 ("I", "II", "III"),
                 (illustration_image_1, illustration_image_2, illustration_image_3),

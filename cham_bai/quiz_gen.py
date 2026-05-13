@@ -4,10 +4,10 @@ import json
 import random
 import re
 from difflib import SequenceMatcher
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from docx import Document
 
@@ -187,7 +187,7 @@ _SESSION_QUIZ_BLOCK_OUT_TOKENS_FIRST = 32768
 _SESSION_QUIZ_BLOCK_OUT_TOKENS_RETRY = 49152
 # 15 câu/block → đúng 3 block cho 45 câu (cuối giờ); đầu giờ: 2 block BÀI CŨ + 1 block BÀI MỚI.
 _SESSION_QUIZ_ITEMS_PER_CALL = 15
-_SESSION_BLOCK_PARSE_ATTEMPTS = 7
+_SESSION_BLOCK_PARSE_ATTEMPTS = 9
 
 # Model hay trả đúng 2 phương án (nhị phân) — Excel cần đúng 4 đáp án/câu.
 _SESSION_QUIZ_MUST_FOUR_OPTS_VI = (
@@ -223,6 +223,8 @@ _SESSION_QUIZ_STYLE_VI = (
     "- question_content ngắn, đọc nhanh trên LMS: ưu tiên <= 160 ký tự; tránh đoạn storytelling dài.\n"
     "- Mỗi concept lõi (breakpoint, step over, circular import, namespace, logging production…) tối đa 1–2 câu "
     "trong toàn bộ quiz; không paraphrase cùng một ý nhiều lần.\n"
+    "- Được phép 2 câu cùng khung so sánh song song nếu đổi đối tượng kỹ thuật (vd. bản chất `for` vs `while`, "
+    "`if` vs `elif`) — miễn là đáp án và góc hỏi khác hẳn.\n"
     "- difficulty phản ánh cognitive load thật: thuật ngữ mới / suy luận nhiều bước → số cao hơn; "
     "định nghĩa đơn giản → số thấp hơn; không gán difficulty ngẫu nhiên.\n"
     "- Nếu trích liệu có đủ: ưu tiên phân bổ câu về package structure, relative import (`from .utils import …`), "
@@ -234,7 +236,8 @@ _SESSION_QUIZ_STYLE_VI = (
 _SESSION_QUIZ_BANNED_WORDING_RES: tuple[re.Pattern[str], ...] = (
     re.compile(r"\btheo\s+tài\s+liệu\b", re.I),
     re.compile(r"\btrong\s+tài\s+liệu\b", re.I),
-    re.compile(r"\btài\s+liệu\s+(gọi|nêu|đề\s+cập|mô\s+tả|cho\s+biết|ghi|dùng)\b", re.I),
+    re.compile(r"\btài\s+liệu\s+(gọi|nêu|đề\s+cập|mô\s+tả|cho\s+biết|ghi|dùng|khuyên)\b", re.I),
+    re.compile(r"\bđược\s+nêu\s+trong\s+tài\s+liệu\b", re.I),
     re.compile(r"\btheo\s+đoạn\s+trích\b", re.I),
     re.compile(r"\btheo\s+(slide|bài\s+giảng)\b", re.I),
     re.compile(r"\b(như|theo)\s+tài\s+liệu\s+(đã\s+)?(nêu|trình\s+bày)\b", re.I),
@@ -290,11 +293,11 @@ def _session_quiz_question_key_for_dedupe(q: str) -> str:
     return t.strip()[:520]
 
 
-def _session_quiz_prior_digest_for_prompt(prior_items: list[Any], *, max_items: int = 28, head: int = 130) -> str:
+def _session_quiz_prior_digest_for_prompt(prior_items: list[Any], *, max_items: int = 60, head: int = 130) -> str:
     """Tóm tắt câu đã sinh (block trước) để model không lặp — chỉ dùng trong prompt."""
     if not prior_items:
         return ""
-    slice_items = prior_items[-max_items:]
+    slice_items = prior_items[-max_items:] if max_items > 0 else prior_items
     base = len(prior_items) - len(slice_items)
     lines: list[str] = []
     for j, it in enumerate(slice_items):
@@ -310,19 +313,149 @@ def _session_quiz_prior_digest_for_prompt(prior_items: list[Any], *, max_items: 
     return "\n".join(lines)
 
 
-def _session_quiz_questions_too_similar(a: str, b: str, *, min_len: int = 36, ratio: float = 0.91) -> bool:
+_SESSION_QUIZ_DEDUPE_STOPWORDS: frozenset[str] = frozenset(
+    {
+        "theo",
+        "bảng",
+        "so",
+        "sánh",
+        "được",
+        "gọi",
+        "là",
+        "gì",
+        "của",
+        "vòng",
+        "lặp",
+        "trong",
+        "nào",
+        "dưới",
+        "đây",
+        "không",
+        "có",
+        "và",
+        "hay",
+        "hoặc",
+        "khi",
+        "thì",
+        "một",
+        "các",
+        "cho",
+        "với",
+        "từ",
+        "đến",
+        "nếu",
+        "này",
+        "đó",
+        "điều",
+        "bản",
+        "chất",
+        "liệt",
+        "kê",
+        "ví",
+        "dụ",
+        "phù",
+        "hợp",
+        "dùng",
+        "nào",
+        "sao",
+        "vì",
+        "câu",
+        "hỏi",
+        "đáp",
+        "án",
+        "đúng",
+        "sai",
+    }
+)
+
+
+def _session_quiz_meaningful_tokens(key: str) -> set[str]:
+    t = (key or "").strip().lower()
+    if not t:
+        return set()
+    parts = set(re.findall(r"[a-z0-9_]+", t))
+    parts |= set(re.findall(r"[^\W\d_]+", t, flags=re.UNICODE))
+    return {p for p in parts if len(p) >= 2 and p not in _SESSION_QUIZ_DEDUPE_STOPWORDS}
+
+
+def _session_quiz_has_distinct_focus(a: str, b: str) -> bool:
+    """Hai câu cùng khung nhưng hỏi đối tượng khác (for vs while, if vs elif…) — không coi là trùng."""
+    ta = _session_quiz_meaningful_tokens(a)
+    tb = _session_quiz_meaningful_tokens(b)
+    if not ta or not tb:
+        return False
+    diff = (ta - tb) | (tb - ta)
+    return len(diff) >= 1
+
+
+def _session_quiz_questions_too_similar(
+    a: str,
+    b: str,
+    *,
+    min_len: int = 36,
+    ratio: float = 0.91,
+) -> bool:
     if a == b:
         return True
     if len(a) < min_len or len(b) < min_len:
         return False
-    return SequenceMatcher(None, a, b).ratio() >= ratio
+    r = SequenceMatcher(None, a, b).ratio()
+    if r < ratio:
+        return False
+    # Cùng mẫu câu nhưng khác thuật ngữ trọng tâm (vd. for / while) — cho phép.
+    if _session_quiz_has_distinct_focus(a, b) and r < 0.985:
+        return False
+    return True
 
 
-def _validate_session_quiz_block_question_dedupe(items: list[Any], *, prior_items: list[Any]) -> None:
+_SESSION_QUIZ_SCENARIO_PHRASES: tuple[str, ...] = (
+    "shopee food",
+    "nested if",
+    "match-case",
+    "match case",
+    "toán tử and",
+    "toán tử or",
+    "toán tử ba ngôi",
+    "ternary",
+    "giờ vàng",
+    "roadmap",
+    "elif",
+    "breakpoint",
+    "step over",
+    "circular import",
+    "namespace",
+)
+
+
+def _session_quiz_scenario_tags(q: str) -> set[str]:
+    t = (q or "").strip().lower()
+    tags: set[str] = set()
+    if not t:
+        return tags
+    for m in re.finditer(r"['\"]([^'\"]{3,48})['\"]", q):
+        s = m.group(1).strip().lower()
+        if len(s) >= 3:
+            tags.add(s)
+    for phrase in _SESSION_QUIZ_SCENARIO_PHRASES:
+        if phrase in t:
+            tags.add(phrase)
+    return tags
+
+
+def _validate_session_quiz_block_question_dedupe(
+    items: list[Any],
+    *,
+    prior_items: list[Any],
+    within_block_ratio: float = 0.97,
+    cross_block_ratio: float = 0.975,
+    cross_block_exact_only: bool = False,
+    max_per_scenario_tag: int = 3,
+) -> None:
     """
     Trùng trong cùng block hoặc gần trùng với câu đã ghép ở block trước → ValueError để retry.
+    cross_block_ratio cao hơn within_block — chỉ bác câu gần như copy; retry sau nới thêm.
     """
-    keys_block: list[tuple[int, str]] = []
+    keys_block: list[tuple[int, str, str]] = []
     for i, it in enumerate(items):
         if not isinstance(it, dict):
             continue
@@ -332,19 +465,19 @@ def _validate_session_quiz_block_question_dedupe(items: list[Any], *, prior_item
         k = _session_quiz_question_key_for_dedupe(q)
         if len(k) < 10:
             continue
-        for j, k2 in keys_block:
+        for j, k2, _ in keys_block:
             if k == k2:
                 raise ValueError(
                     f"Câu {i + 1} và câu {j + 1} trong cùng block trùng (hoặc gần như) nội dung — "
                     f"mỗi câu phải khác hẳn về cách hỏi/chỗ nhấn."
                 )
-            if _session_quiz_questions_too_similar(k, k2):
+            if _session_quiz_questions_too_similar(k, k2, ratio=within_block_ratio):
                 raise ValueError(
                     f"Câu {i + 1} và câu {j + 1} trong cùng block quá giống nhau — không được lặp lại."
                 )
-        keys_block.append((i, k))
+        keys_block.append((i, k, q.strip()))
 
-    prior_keys: list[str] = []
+    prior_pairs: list[tuple[str, str]] = []
     for it in prior_items:
         if not isinstance(it, dict):
             continue
@@ -353,18 +486,33 @@ def _validate_session_quiz_block_question_dedupe(items: list[Any], *, prior_item
             continue
         pk = _session_quiz_question_key_for_dedupe(q)
         if len(pk) >= 10:
-            prior_keys.append(pk)
+            prior_pairs.append((pk, q.strip()))
 
-    for i, k in keys_block:
-        for pk in prior_keys:
+    tag_counts: dict[str, int] = {}
+    for _pk, pq in prior_pairs:
+        for tag in _session_quiz_scenario_tags(pq):
+            tag_counts[tag] = tag_counts.get(tag, 0) + 1
+
+    for i, k, raw_q in keys_block:
+        for j, (pk, pq) in enumerate(prior_pairs):
             if k == pk:
+                snip = re.sub(r"\s+", " ", pq)[:100]
                 raise ValueError(
-                    "Có câu trùng (hoặc gần như) với câu đã soạn ở block trước — "
-                    "phải đổi chủ đề/cách hỏi, không copy lại."
+                    f"Câu {i + 1} trùng câu đã soạn [#{j + 1}]: «{snip}» — đổi chủ đề/kịch bản khác hẳn."
                 )
-            if _session_quiz_questions_too_similar(k, pk):
+            if cross_block_exact_only:
+                continue
+            if _session_quiz_questions_too_similar(k, pk, ratio=cross_block_ratio):
+                snip = re.sub(r"\s+", " ", pq)[:100]
                 raise ValueError(
-                    "Có câu quá giống câu đã soạn ở block trước — hãy hỏi concept/khía cạnh khác."
+                    f"Câu {i + 1} quá giống câu [#{j + 1}]: «{snip}» — hỏi concept/khía cạnh khác."
+                )
+        for tag in _session_quiz_scenario_tags(raw_q):
+            tag_counts[tag] = tag_counts.get(tag, 0) + 1
+            if tag_counts[tag] > max_per_scenario_tag:
+                raise ValueError(
+                    f"Câu {i + 1} lặp kịch bản «{tag}» quá {max_per_scenario_tag} lần trong quiz — "
+                    f"chuyển sang chủ đề khác trong trích liệu."
                 )
 
 
@@ -570,9 +718,15 @@ def _end_block_messages(
     pd = (prior_questions_digest or "").strip()
     if pd:
         user += (
-            "\n\nCÁC CÂU ĐÃ SOẠN Ở CÁC BLOCK TRƯỚC (cấm lặp lại hoặc chỉ sửa vài từ — phải hỏi khác hẳn, có thể hỏi mục khác trong cùng trích):\n"
+            "\n\nCÁC CÂU ĐÃ SOẠN Ở CÁC BLOCK TRƯỚC (cấm lặp lại hoặc chỉ sửa vài từ — phải hỏi khác hẳn):\n"
             + pd
             + "\n"
+        )
+    if start_stt >= 31 and pd:
+        user += (
+            "\nBLOCK CUỐI (STT 31–45): đã có 30 câu trước — CHỈ hỏi chủ đề/concept CHƯA có trong danh sách trên. "
+            "Cấm thêm câu cùng kịch bản (vd. Shopee Food, Nested If) nếu đã hỏi nhiều lần; "
+            "ưu tiên phần trích liệu chưa dùng (cú pháp khác, edge case, so sánh, scenario mới).\n"
         )
     sys = (
         _SESSION_QUIZ_STRICT_SOURCE_VI
@@ -775,6 +929,11 @@ def _warmup_block_messages(
             "\n\nCÁC CÂU ĐÃ SOẠN Ở CÁC BLOCK TRƯỚC (cấm lặp lại hoặc chỉ sửa vài từ — phải hỏi khác hẳn):\n"
             + pd
             + "\n"
+        )
+    if part_norm == "current" and pd:
+        user += (
+            "\n15 câu BÀI MỚI (part=current): đã có 30 câu bài cũ — chỉ hỏi concept/chủ đề session hiện tại "
+            "CHƯA xuất hiện trong danh sách; cấm lặp cùng kịch bản quá 3 lần trong toàn quiz.\n"
         )
     sys = (
         _SESSION_QUIZ_STRICT_SOURCE_VI
@@ -1080,6 +1239,7 @@ class QuizGenParams:
     temperature: float = 0.35
     max_tokens: int = 8192
     quiz_kind: str = QUIZ_KIND_SESSION
+    progress_callback: Callable[[str], None] | None = field(default=None, repr=False, compare=False)
 
 
 def _random_correct_slots_five() -> list[int]:
@@ -1264,7 +1424,17 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
         else:
             blocks = [("current", st, qpc) for st in range(1, 46, qpc)]
         all_items: list[Any] = []
-        for part, start_stt, n_need in blocks:
+        n_blocks = len(blocks)
+        for bi, (part, start_stt, n_need) in enumerate(blocks, 1):
+            cb = params.progress_callback
+            if cb:
+                try:
+                    cb(
+                        f"Đang soạn block {bi}/{n_blocks} "
+                        f"(câu {start_stt}–{start_stt + n_need - 1}, có thể vài phút)…"
+                    )
+                except Exception:
+                    pass
             pe = (prev_excerpt or "").strip()
             ce = (curr_excerpt or "").strip()
             lt0 = (lecture_text or "").strip()[:9000]
@@ -1344,7 +1514,18 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
                     if len(arr_block) != n_need:
                         raise ValueError(f"Cần {n_need} câu, nhận {len(arr_block)}.")
                     _validate_session_quiz_block_items(arr_block, n_need)
-                    _validate_session_quiz_block_question_dedupe(arr_block, prior_items=all_items)
+                    cross_ratio = min(0.99, 0.96 + attempt * 0.005)
+                    within_ratio = min(0.99, 0.97 + attempt * 0.003)
+                    cross_exact = attempt >= _SESSION_BLOCK_PARSE_ATTEMPTS - 2
+                    max_tag = 4 if attempt < 2 else 3
+                    _validate_session_quiz_block_question_dedupe(
+                        arr_block,
+                        prior_items=all_items,
+                        within_block_ratio=within_ratio,
+                        cross_block_ratio=cross_ratio,
+                        cross_block_exact_only=cross_exact,
+                        max_per_scenario_tag=max_tag,
+                    )
                     _validate_session_quiz_block_wording(arr_block)
                     break
                 except Exception as e:

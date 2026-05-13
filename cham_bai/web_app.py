@@ -149,19 +149,21 @@ def _quiz_job_validate_id(job_id: str) -> str:
     return jid
 
 
-def _quiz_job_json_path(job_id: str) -> Path:
-    return _quiz_jobs_dir() / f"{job_id}.json"
+def _quiz_job_json_path(job_id: str, *, kind: str = "") -> Path:
+    stem = f"{kind}-{job_id}" if kind else job_id
+    return _quiz_jobs_dir() / f"{stem}.json"
 
 
-def _quiz_job_lock_path(job_id: str) -> Path:
-    return _quiz_jobs_dir() / f"{job_id}.lock"
+def _quiz_job_lock_path(job_id: str, *, kind: str = "") -> Path:
+    stem = f"{kind}-{job_id}" if kind else job_id
+    return _quiz_jobs_dir() / f"{stem}.lock"
 
 
 class _QuizJobFileLock:
     """Khóa file — chia sẻ trạng thái job giữa nhiều Uvicorn worker."""
 
-    def __init__(self, job_id: str) -> None:
-        self._path = _quiz_job_lock_path(job_id)
+    def __init__(self, job_id: str, *, kind: str = "") -> None:
+        self._path = _quiz_job_lock_path(job_id, kind=kind)
 
     def __enter__(self):
         self._path.parent.mkdir(parents=True, exist_ok=True)
@@ -205,12 +207,12 @@ def _quiz_job_from_payload(data: dict) -> tuple[str, _QuizJobRecord]:
     return jid, rec
 
 
-def _quiz_job_read(job_id: str) -> _QuizJobRecord | None:
+def _quiz_job_read(job_id: str, *, kind: str = "") -> _QuizJobRecord | None:
     jid = _quiz_job_validate_id(job_id)
-    path = _quiz_job_json_path(jid)
+    path = _quiz_job_json_path(jid, kind=kind)
     if not path.is_file():
         return None
-    with _QuizJobFileLock(jid):
+    with _QuizJobFileLock(jid, kind=kind):
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
@@ -219,32 +221,32 @@ def _quiz_job_read(job_id: str) -> _QuizJobRecord | None:
         return rec
 
 
-def _quiz_job_write(job_id: str, rec: _QuizJobRecord) -> None:
+def _quiz_job_write(job_id: str, rec: _QuizJobRecord, *, kind: str = "") -> None:
     jid = _quiz_job_validate_id(job_id)
-    path = _quiz_job_json_path(jid)
+    path = _quiz_job_json_path(jid, kind=kind)
     payload = _quiz_job_to_payload(jid, rec)
     tmp = path.with_suffix(".json.tmp")
-    with _QuizJobFileLock(jid):
+    with _QuizJobFileLock(jid, kind=kind):
         tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
         os.replace(tmp, path)
 
 
-def _quiz_job_delete(job_id: str) -> None:
+def _quiz_job_delete(job_id: str, *, kind: str = "") -> None:
     jid = _quiz_job_validate_id(job_id)
-    with _QuizJobFileLock(jid):
-        _quiz_job_json_path(jid).unlink(missing_ok=True)
+    with _QuizJobFileLock(jid, kind=kind):
+        _quiz_job_json_path(jid, kind=kind).unlink(missing_ok=True)
     try:
-        _quiz_job_lock_path(jid).unlink(missing_ok=True)
+        _quiz_job_lock_path(jid, kind=kind).unlink(missing_ok=True)
     except OSError:
         pass
 
 
-def _quiz_job_patch(job_id: str, **fields) -> _QuizJobRecord | None:
+def _quiz_job_patch(job_id: str, *, kind: str = "", **fields) -> _QuizJobRecord | None:
     jid = _quiz_job_validate_id(job_id)
-    path = _quiz_job_json_path(jid)
+    path = _quiz_job_json_path(jid, kind=kind)
     if not path.is_file():
         return None
-    with _QuizJobFileLock(jid):
+    with _QuizJobFileLock(jid, kind=kind):
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
@@ -257,6 +259,14 @@ def _quiz_job_patch(job_id: str, **fields) -> _QuizJobRecord | None:
         tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
         os.replace(tmp, path)
         return rec
+
+
+def _quiz_job_stem_to_id(stem: str) -> tuple[str, str]:
+    """Trả (job_id, kind) từ tên file không đuôi .json."""
+    s = (stem or "").strip()
+    if s.startswith("reading-"):
+        return s[8:], "reading"
+    return s, ""
 
 
 def _quiz_job_prune_old(*, max_age_s: float = 3600.0) -> None:
@@ -274,13 +284,13 @@ def _quiz_job_prune_old(*, max_age_s: float = 3600.0) -> None:
             continue
         if now - rec.created_at <= max_age_s:
             continue
-        jid = path.stem
         try:
+            jid, kind = _quiz_job_stem_to_id(path.stem)
             _quiz_job_validate_id(jid)
         except HTTPException:
             path.unlink(missing_ok=True)
             continue
-        _quiz_job_delete(jid)
+        _quiz_job_delete(jid, kind=kind)
         _quiz_job_cleanup_paths(rec.cleanup_paths)
 
 
@@ -301,12 +311,18 @@ def _quiz_job_cleanup_paths(paths: list[str]) -> None:
         except OSError:
             pass
         parent = str(path.parent)
-        if parent and parent not in seen_dirs and "/quiz_out_" in parent.replace("\\", "/"):
+        if parent and parent not in seen_dirs and (
+            "/quiz_out_" in parent.replace("\\", "/") or "/reading_" in parent.replace("\\", "/")
+        ):
             seen_dirs.add(parent)
             shutil.rmtree(parent, ignore_errors=True)
 
 
 async def _quiz_job_run(job_id: str, params: QuizGenParams, cleanup_paths: list[str]) -> None:
+    def _on_progress(msg: str) -> None:
+        _quiz_job_patch(job_id, status="running", message=(msg or "").strip())
+
+    params.progress_callback = _on_progress
     _quiz_job_patch(
         job_id,
         status="running",
@@ -330,6 +346,56 @@ async def _quiz_job_run(job_id: str, params: QuizGenParams, cleanup_paths: list[
             job_id,
             status="error",
             message=(msg or "Lỗi tạo quiz.").strip(),
+        )
+        _quiz_job_cleanup_paths(cleanup_paths)
+
+
+async def _reading_job_run(job_id: str, params: ReadingDocParams, cleanup_paths: list[str]) -> None:
+    def _on_progress(msg: str) -> None:
+        _quiz_job_patch(job_id, kind="reading", status="running", message=(msg or "").strip())
+
+    _quiz_job_patch(
+        job_id,
+        kind="reading",
+        status="running",
+        message="Đang soạn bài đọc (có thể 5–20 phút)…",
+    )
+    loop = asyncio.get_event_loop()
+
+    def gen():
+        return run_reading_generation(params, on_progress=_on_progress)
+
+    try:
+        ok, msg = await loop.run_in_executor(_executor, gen)
+    except Exception as e:
+        ok, msg = False, str(e)
+    zip_path = Path(params.output_docx.parent) / f"{params.output_docx.stem}.zip"
+    if ok:
+        zip_name = sanitize_reading_filename_part(
+            reading_output_stem(params.subject, params.session_stt, params.lesson_stt)
+        ) + ".zip"
+        zip_path = Path(params.output_docx.parent) / zip_name
+        try:
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                zf.write(params.output_docx, arcname=params.output_docx.name)
+                zf.write(params.output_xlsx, arcname=params.output_xlsx.name)
+        except Exception as e:
+            ok, msg = False, f"Không đóng gói ZIP: {e}"
+    if ok:
+        _quiz_job_patch(
+            job_id,
+            kind="reading",
+            status="done",
+            output_path=str(zip_path),
+            download_name=zip_path.name,
+            message="Xong.",
+        )
+    else:
+        _quiz_job_patch(
+            job_id,
+            kind="reading",
+            status="error",
+            message=(msg or "Lỗi tạo bài đọc.").strip(),
         )
         _quiz_job_cleanup_paths(cleanup_paths)
 
@@ -2607,7 +2673,6 @@ async def api_group_activity(
 
 @app.post("/api/reading")
 async def api_reading(
-    background_tasks: BackgroundTasks,
     subject: str = Form(...),
     session: str = Form(...),
     lesson: str = Form(...),
@@ -2621,7 +2686,8 @@ async def api_reading(
     text_model: str = Form(""),
     image_model: str = Form(""),
     generate_illustrations: str = Form("true"),
-) -> FileResponse:
+) -> JSONResponse:
+    """Job nền — tránh 504 khi soạn bài đọc + ảnh. Poll GET /api/reading/jobs/{id} rồi GET .../download."""
     subject = subject.strip()
     session = session.strip()
     lesson = lesson.strip()
@@ -2661,38 +2727,65 @@ async def api_reading(
         output_xlsx=out_xlsx,
     )
 
-    loop = asyncio.get_event_loop()
-
-    def gen():
-        return run_reading_generation(params)
-
-    ok, msg = await loop.run_in_executor(_executor, gen)
-    if not ok:
+    cleanup_paths: list[str] = [work_dir]
+    _quiz_job_prune_old()
+    job_id = secrets.token_hex(16)
+    try:
+        _quiz_job_write(
+            job_id,
+            _QuizJobRecord(
+                status="pending",
+                message="Đã nhận yêu cầu, đang xếp hàng…",
+                cleanup_paths=list(cleanup_paths),
+            ),
+            kind="reading",
+        )
+    except OSError as e:
         shutil.rmtree(work_dir, ignore_errors=True)
-        raise HTTPException(status_code=500, detail=msg)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Không ghi được trạng thái job bài đọc (quyền thư mục): {e}",
+        ) from e
+    asyncio.create_task(_reading_job_run(job_id, params, cleanup_paths))
+    return JSONResponse({"ok": True, "job_id": job_id}, status_code=202)
 
-    zip_fd, zip_path = tempfile.mkstemp(suffix=".zip")
-    os.close(zip_fd)
-    zip_p = Path(zip_path)
-    with zipfile.ZipFile(zip_p, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.write(out_docx, arcname=out_docx.name)
-        zf.write(out_xlsx, arcname=out_xlsx.name)
 
-    def cleanup():
-        try:
-            zip_p.unlink(missing_ok=True)
-        except OSError:
-            pass
-        shutil.rmtree(work_dir, ignore_errors=True)
-
-    background_tasks.add_task(cleanup)
-
-    zip_name = sanitize_reading_filename_part(stem) + ".zip"
-    return FileResponse(
-        path=str(zip_p),
-        filename=zip_name,
-        media_type="application/zip",
+@app.get("/api/reading/jobs/{job_id}")
+async def api_reading_job_status(job_id: str) -> JSONResponse:
+    jid = (job_id or "").strip()
+    _quiz_job_validate_id(jid)
+    rec = _quiz_job_read(jid, kind="reading")
+    if not rec:
+        raise HTTPException(status_code=404, detail="Không tìm thấy job bài đọc (hết hạn hoặc đã tải xong).")
+    return JSONResponse(
+        {
+            "ok": True,
+            "job_id": jid,
+            "status": rec.status,
+            "message": rec.message,
+            "filename": rec.download_name or None,
+        }
     )
+
+
+@app.get("/api/reading/jobs/{job_id}/download")
+async def api_reading_job_download(job_id: str, background_tasks: BackgroundTasks) -> FileResponse:
+    jid = (job_id or "").strip()
+    _quiz_job_validate_id(jid)
+    rec = _quiz_job_read(jid, kind="reading")
+    if not rec:
+        raise HTTPException(status_code=404, detail="Không tìm thấy job bài đọc.")
+    if rec.status != "done":
+        raise HTTPException(status_code=409, detail=f"Job chưa xong (trạng thái: {rec.status}).")
+    out_p = (rec.output_path or "").strip()
+    fname = (rec.download_name or Path(out_p).name or "bai-doc.zip").strip()
+    cleanup_paths = list(rec.cleanup_paths)
+    _quiz_job_delete(jid, kind="reading")
+    if not out_p or not Path(out_p).is_file():
+        _quiz_job_cleanup_paths(cleanup_paths)
+        raise HTTPException(status_code=410, detail="File ZIP không còn trên server.")
+    background_tasks.add_task(_quiz_job_cleanup_paths, cleanup_paths)
+    return FileResponse(path=out_p, filename=fname, media_type="application/zip")
 
 
 @app.post("/api/hackathon")
