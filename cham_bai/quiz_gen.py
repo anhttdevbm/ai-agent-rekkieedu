@@ -207,11 +207,79 @@ _SESSION_QUIZ_STRICT_SOURCE_VI = (
     "(sinh viên có thể chưa học).\n"
     "- Tên môn học / tên session (nếu có) CHỈ để đồng bộ thuật ngữ và chọn đoạn liên quan trong trích liệu; "
     "KHÔNG được thêm sự kiện, số liệu, API, lệnh SQL/Python… không có trong trích.\n"
-    "- Nếu trích liệu không đủ để hỏi sâu: hỏi mức nhớ–hiểu–vận dụng nông trên đúng câu chữ/định nghĩa/ví dụ có trong trích; "
-    "có thể hỏi «trong tài liệu nêu…», «theo đoạn trích…».\n"
+    "- Nếu trích liệu không đủ để hỏi sâu: hỏi mức nhớ–hiểu–vận dụng nông trên đúng định nghĩa/ví dụ có trong trích; "
+    "hỏi trực tiếp kỹ thuật/hành vi/runtime, KHÔNG nhắc meta «theo tài liệu», «trong slide», «tài liệu gọi là…».\n"
     "- Code trong câu hỏi: chỉ được dùng đoạn code hoặc mẫu lệnh đã có trong trích liệu (có thể rút gọn nhưng không đổi ý); "
     "cấm đưa đoạn code hoàn toàn mới không xuất phát từ trích.\n"
 )
+
+# Phong cách câu hỏi session quiz (đầu giờ / cuối giờ).
+_SESSION_QUIZ_STYLE_VI = (
+    "PHONG CÁCH CÂU HỎI (BẮT BUỘC):\n"
+    "- CẤM mở đầu hoặc nhắc meta kiểu: «Theo tài liệu», «Trong tài liệu», «Tài liệu gọi là», «Tài liệu nêu», "
+    "«Theo đoạn trích», «Theo slide/bài giảng» — hỏi thẳng concept/kịch bản/kỹ thuật như đề thi thực chiến.\n"
+    "- Ưu tiên scenario-based reasoning: bug thực tế, design flaw, runtime behavior, trade-off, cách fix — "
+    "thay vì hỏi nhớ ẩn dụ/văn («Debugger được ví như gì?», «ẩn dụ nào được dùng?»).\n"
+    "- question_content ngắn, đọc nhanh trên LMS: ưu tiên <= 160 ký tự; tránh đoạn storytelling dài.\n"
+    "- Mỗi concept lõi (breakpoint, step over, circular import, namespace, logging production…) tối đa 1–2 câu "
+    "trong toàn bộ quiz; không paraphrase cùng một ý nhiều lần.\n"
+    "- difficulty phản ánh cognitive load thật: thuật ngữ mới / suy luận nhiều bước → số cao hơn; "
+    "định nghĩa đơn giản → số thấp hơn; không gán difficulty ngẫu nhiên.\n"
+    "- Nếu trích liệu có đủ: ưu tiên phân bổ câu về package structure, relative import (`from .utils import …`), "
+    "import alias (`import numpy as np`), `if __name__ == \"__main__\"`, đọc traceback/stack trace — "
+    "chỉ khi các chủ đề này có trong trích.\n"
+    "- explanations: đúng kỹ thuật, ngắn (<= 90 ký tự), giải thích vì sao đúng/sai — không lặp lại nguyên văn câu hỏi.\n"
+)
+
+_SESSION_QUIZ_BANNED_WORDING_RES: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\btheo\s+tài\s+liệu\b", re.I),
+    re.compile(r"\btrong\s+tài\s+liệu\b", re.I),
+    re.compile(r"\btài\s+liệu\s+(gọi|nêu|đề\s+cập|mô\s+tả|cho\s+biết|ghi|dùng)\b", re.I),
+    re.compile(r"\btheo\s+đoạn\s+trích\b", re.I),
+    re.compile(r"\btheo\s+(slide|bài\s+giảng)\b", re.I),
+    re.compile(r"\b(như|theo)\s+tài\s+liệu\s+(đã\s+)?(nêu|trình\s+bày)\b", re.I),
+    re.compile(r"\bảnh\s+dụng\s+nào\s+(được\s+)?(dùng|sử\s+dụng)\b", re.I),
+    re.compile(r"\bdebugger\s+được\s+ví\s+(như|tự)\s+gì\b", re.I),
+)
+
+
+def _session_quiz_text_has_banned_wording(text: str) -> str | None:
+    t = (text or "").strip()
+    if not t:
+        return None
+    for pat in _SESSION_QUIZ_BANNED_WORDING_RES:
+        m = pat.search(t)
+        if m:
+            return m.group(0)
+    return None
+
+
+def _validate_session_quiz_block_wording(items: list[Any]) -> None:
+    """Từ chối câu hỏi meta «theo tài liệu» / nhớ ẩn dụ máy móc — buộc model retry."""
+    for i, it in enumerate(items):
+        if not isinstance(it, dict):
+            continue
+        q = it.get("question_content")
+        if isinstance(q, str):
+            hit = _session_quiz_text_has_banned_wording(q)
+            if hit:
+                raise ValueError(
+                    f"Câu {i + 1}: question_content chứa cụm meta máy móc «{hit}» — "
+                    "hỏi trực tiếp kỹ thuật/kịch bản, không nhắc «tài liệu/slide/trích»."
+                )
+        for field in ("answers", "explanations"):
+            arr = it.get(field)
+            if not isinstance(arr, list):
+                continue
+            for j, s in enumerate(arr):
+                if not isinstance(s, str):
+                    continue
+                hit = _session_quiz_text_has_banned_wording(s)
+                if hit:
+                    raise ValueError(
+                        f"Câu {i + 1}: {field}[{j + 1}] chứa «{hit}» — "
+                        "giải thích/đáp án phải tự nhiên, không meta «theo tài liệu»."
+                    )
 
 
 def _session_quiz_question_key_for_dedupe(q: str) -> str:
@@ -296,7 +364,7 @@ def _validate_session_quiz_block_question_dedupe(items: list[Any], *, prior_item
                 )
             if _session_quiz_questions_too_similar(k, pk):
                 raise ValueError(
-                    "Có câu quá giống câu đã soạn ở block trước — hãy hỏi phần khác trong tài liệu."
+                    "Có câu quá giống câu đã soạn ở block trước — hãy hỏi concept/khía cạnh khác."
                 )
 
 
@@ -406,6 +474,8 @@ SYSTEM_QUIZ_SESSION_WARMUP = (
     "Bạn là giảng viên đại học. Soạn quiz đầu giờ (kiểm tra bài cũ + chuẩn bị bài mới) — nội dung tiếng Việt.\n\n"
     + _SESSION_QUIZ_STRICT_SOURCE_VI
     + "\n\n"
+    + _SESSION_QUIZ_STYLE_VI
+    + "\n\n"
     "Chỉ trả về một mảng JSON hợp lệ. Không markdown, không ```, không chữ ngoài mảng.\n\n"
     "Yêu cầu đầu ra:\n"
     "- Đúng 45 phần tử.\n"
@@ -424,6 +494,8 @@ SYSTEM_QUIZ_SESSION_WARMUP = (
 SYSTEM_QUIZ_SESSION_END = (
     "Bạn là giảng viên đại học. Soạn quiz cuối giờ (tổng kết/đánh giá nhanh) — nội dung tiếng Việt.\n\n"
     + _SESSION_QUIZ_STRICT_SOURCE_VI
+    + "\n\n"
+    + _SESSION_QUIZ_STYLE_VI
     + "\n\n"
     "Chỉ trả về một mảng JSON hợp lệ. Không markdown, không ```, không chữ ngoài mảng.\n\n"
     "Yêu cầu đầu ra:\n"
@@ -505,6 +577,8 @@ def _end_block_messages(
     sys = (
         _SESSION_QUIZ_STRICT_SOURCE_VI
         + "\n\n"
+        + _SESSION_QUIZ_STYLE_VI
+        + "\n\n"
         "Chỉ output DUY NHẤT một mảng JSON hợp lệ gồm đúng "
         f"{n} object. Không markdown, không ```, không chữ ngoài mảng.\n"
         "Mỗi object có đúng các khóa ASCII: part, question_content, answers, explanations, isCorrect, difficulty.\n"
@@ -513,7 +587,7 @@ def _end_block_messages(
         "QUAN TRỌNG — \"answers\" và \"explanations\" mỗi mảng ĐÚNG 4 string; cấm 2 hoặc 3 phần tử. "
         "Mẫu: \"answers\":[\"Đúng\",\"Sai A\",\"Sai B\",\"Sai C\"], \"explanations\":[\"vì đúng\",\"vì sai 1\",\"vì sai 2\",\"vì sai 3\"]. "
         "isCorrect 1..4. difficulty chỉ 6/10/11; part luôn 'current'.\n"
-        "Để tránh bị cắt output: viết RẤT NGẮN — question_content <= 180 ký tự; mỗi explanation <= 90 ký tự.\n"
+        "Để tránh bị cắt output: viết RẤT NGẮN — question_content <= 160 ký tự; mỗi explanation <= 90 ký tự.\n"
         "Ngôn ngữ: tiếng Việt cho câu hỏi, đáp án và giải thích (trừ thuật ngữ/code).\n"
         "Nếu có code: đặt code ở CUỐI question_content theo đúng cấu trúc:\n"
         "Code:\\n<dòng 1>\\n<dòng 2>... (giữ thụt lề chuẩn bằng 4 dấu cách, không dùng markdown fence). "
@@ -554,6 +628,8 @@ def _end_block_retry_messages(
             role="system",
             content=(
                 _SESSION_QUIZ_STRICT_SOURCE_VI
+                + "\n\n"
+                + _SESSION_QUIZ_STYLE_VI
                 + "\n\n"
                 "Chỉ output DUY NHẤT một mảng JSON hợp lệ gồm đúng "
                 f"{n} object. Không markdown, không ```, không chữ ngoài mảng. "
@@ -703,6 +779,8 @@ def _warmup_block_messages(
     sys = (
         _SESSION_QUIZ_STRICT_SOURCE_VI
         + "\n\n"
+        + _SESSION_QUIZ_STYLE_VI
+        + "\n\n"
         "Chỉ output DUY NHẤT một mảng JSON hợp lệ gồm đúng "
         f"{n} object. Không markdown, không ```, không chữ ngoài mảng.\n"
         "Mỗi object có đúng các khóa ASCII: part, question_content, answers, explanations, isCorrect, difficulty.\n"
@@ -712,7 +790,7 @@ def _warmup_block_messages(
         "Mẫu một object: {\"part\":\"prev\",\"question_content\":\"...?\",\"answers\":[\"Đúng\",\"Sai A\",\"Sai B\",\"Sai C\"],"
         "\"explanations\":[\"vì đúng\",\"vì sai 1\",\"vì sai 2\",\"vì sai 3\"],\"isCorrect\":1,\"difficulty\":7}\n"
         "difficulty chỉ được là 4/5/6/7/8/9.\n"
-        "Để tránh bị cắt output: viết RẤT NGẮN — question_content <= 180 ký tự; "
+        "Để tránh bị cắt output: viết RẤT NGẮN — question_content <= 160 ký tự; "
         "mỗi explanation <= 90 ký tự.\n"
         "Ngôn ngữ: toàn bộ câu hỏi, đáp án và giải thích bằng tiếng Việt (trừ thuật ngữ/identifier trong code bắt buộc).\n"
         "Không dùng ví dụ kiến thức phổ thông tiếng Anh có sẵn (kiểu địa lý/wikipedia nước ngoài) trừ khi đúng chủ đề trong tài liệu.\n"
@@ -758,12 +836,14 @@ def _warmup_block_retry_messages(
             content=(
                 _SESSION_QUIZ_STRICT_SOURCE_VI
                 + "\n\n"
+                + _SESSION_QUIZ_STYLE_VI
+                + "\n\n"
                 "Chỉ output DUY NHẤT một mảng JSON hợp lệ gồm đúng "
                 f"{n} object. Không markdown, không ```, không chữ ngoài mảng. "
                 "Mỗi object có đúng các khóa ASCII: part, question_content, answers, explanations, isCorrect, difficulty. "
                 + _SESSION_QUIZ_MUST_FOUR_OPTS_VI
                 + " answers và explanations mỗi mảng ĐÚNG 4 string; isCorrect 1..4; difficulty chỉ 4/5/6/7/8/9. "
-                "Viết RẤT NGẮN: question_content <= 180 ký tự; mỗi explanation <= 90 ký tự. "
+                "Viết RẤT NGẮN: question_content <= 160 ký tự; mỗi explanation <= 90 ký tự. "
                 "Toàn bộ câu hỏi/đáp án/giải thích tiếng Việt (trừ code). "
                 "Nếu có code: đặt ở cuối question_content theo dạng 'Code:\\n...' (không markdown fence). "
                 "Chỉ question_content được phép có xuống dòng; answers/explanations phải 1 dòng. "
@@ -1265,6 +1345,7 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
                         raise ValueError(f"Cần {n_need} câu, nhận {len(arr_block)}.")
                     _validate_session_quiz_block_items(arr_block, n_need)
                     _validate_session_quiz_block_question_dedupe(arr_block, prior_items=all_items)
+                    _validate_session_quiz_block_wording(arr_block)
                     break
                 except Exception as e:
                     last_parse_hint = str(e)[:1200]
