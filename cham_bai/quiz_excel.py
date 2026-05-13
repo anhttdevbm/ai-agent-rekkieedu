@@ -29,6 +29,33 @@ QUIZ_FIXED_LEVELS: list[tuple[int, str, str]] = [
 ]
 
 
+def set_excel_cell_value(cell: Any, val: Any) -> None:
+    """
+    Ghi ô Excel an toàn: chuỗi bắt đầu bằng = + - @ bị Excel hiểu là công thức (vd. `==` → trống).
+    """
+    if val is None:
+        cell.value = None
+        return
+    if isinstance(val, bool):
+        cell.value = val
+        return
+    if isinstance(val, int):
+        cell.value = val
+        return
+    if isinstance(val, float):
+        cell.value = val
+        return
+    s = str(val)
+    cell.value = s
+    if not s:
+        return
+    ch0 = s[0]
+    if ch0 in ("=", "+", "-", "@", "\t", "\r"):
+        if ch0 == "-" and len(s) > 1 and s[1].isdigit():
+            return
+        cell.quotePrefix = True
+
+
 def _norm_key(s: str) -> str:
     s = unicodedata.normalize("NFC", (s or "").strip().lower())
     s = re.sub(r"\s+", " ", s)
@@ -398,18 +425,20 @@ def fill_template_session_warmup_quiz(
     start_row = 2
     for i, r in enumerate(rows):
         rr = start_row + i
-        ws.cell(rr, 1).value = r.get("question_content", "")
-        ws.cell(rr, 2).value = r.get("answer_1", "")
-        ws.cell(rr, 3).value = r.get("explanation_answer_1", "")
-        ws.cell(rr, 4).value = r.get("answer_2", "")
-        ws.cell(rr, 5).value = r.get("explanation_answer_2", "")
-        ws.cell(rr, 6).value = r.get("answer_3", "")
-        ws.cell(rr, 7).value = r.get("explanation_answer_3", "")
-        ws.cell(rr, 8).value = r.get("answer_4", "")
-        ws.cell(rr, 9).value = r.get("explanation_answer_4", "")
-        ws.cell(rr, 10).value = r.get("isCorrect", "")
-        ws.cell(rr, 11).value = r.get("difficulty", "")
-        ws.cell(rr, 12).value = r.get("category", "") or ("BÀI CŨ" if i < 30 else "BÀI MỚI")
+        set_excel_cell_value(ws.cell(rr, 1), r.get("question_content", ""))
+        set_excel_cell_value(ws.cell(rr, 2), r.get("answer_1", ""))
+        set_excel_cell_value(ws.cell(rr, 3), r.get("explanation_answer_1", ""))
+        set_excel_cell_value(ws.cell(rr, 4), r.get("answer_2", ""))
+        set_excel_cell_value(ws.cell(rr, 5), r.get("explanation_answer_2", ""))
+        set_excel_cell_value(ws.cell(rr, 6), r.get("answer_3", ""))
+        set_excel_cell_value(ws.cell(rr, 7), r.get("explanation_answer_3", ""))
+        set_excel_cell_value(ws.cell(rr, 8), r.get("answer_4", ""))
+        set_excel_cell_value(ws.cell(rr, 9), r.get("explanation_answer_4", ""))
+        set_excel_cell_value(ws.cell(rr, 10), r.get("isCorrect", ""))
+        set_excel_cell_value(ws.cell(rr, 11), r.get("difficulty", ""))
+        set_excel_cell_value(
+            ws.cell(rr, 12), r.get("category", "") or ("BÀI CŨ" if i < 30 else "BÀI MỚI")
+        )
     wb.save(output_xlsx)
 
 
@@ -532,7 +561,7 @@ def fill_template_from_rows(
         for h in headers:
             val = pick(row_data, h)
             if val is not None:
-                ws.cell(r, col_index[h]).value = val
+                set_excel_cell_value(ws.cell(r, col_index[h]), val)
 
     wb.save(out)
 
@@ -591,7 +620,7 @@ def fill_template_vertical_quiz(
                 end_column=c_end,
             )
             top = ws.cell(r0, c_start)
-            top.value = val
+            set_excel_cell_value(top, val)
             top.alignment = vcenter
             top.font = Font(name=_QUIZ_FONT_NAME, size=_QUIZ_FONT_SIZE, bold=False)
 
@@ -601,12 +630,12 @@ def fill_template_vertical_quiz(
             text, kq, expl = blk.choices[j]
             prefix = f"{labels[j]}. " if not str(text).lstrip().startswith(f"{labels[j]}.") else ""
             c_ans_cell = ws.cell(r, c_ans)
-            c_ans_cell.value = f"{prefix}{text}".strip()
+            set_excel_cell_value(c_ans_cell, f"{prefix}{text}".strip())
             c_ans_cell.alignment = Alignment(wrap_text=True)
             c_ans_cell.font = Font(name=_QUIZ_FONT_NAME, size=_QUIZ_FONT_SIZE, bold=False)
             _apply_ket_qua_cell(ws.cell(r, c_res), kq)
             c_exp_cell = ws.cell(r, c_exp)
-            c_exp_cell.value = clean_quiz_explanation(expl)
+            set_excel_cell_value(c_exp_cell, clean_quiz_explanation(expl))
             c_exp_cell.alignment = Alignment(wrap_text=True)
             c_exp_cell.font = Font(name=_QUIZ_FONT_NAME, size=_QUIZ_FONT_SIZE, bold=False)
 

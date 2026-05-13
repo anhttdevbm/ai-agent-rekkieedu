@@ -20,6 +20,7 @@ from docx.oxml.ns import qn
 from docx.shared import Cm, Inches, Pt, RGBColor
 
 from cham_bai.model_options import DEFAULT_IMAGE_MODEL, resolve_image_model
+from cham_bai.quiz_excel import set_excel_cell_value
 from cham_bai.openrouter import ChatMessage, complete_chat, generate_images_from_prompt
 from cham_bai.settings import model as resolve_model
 from cham_bai.video_transcript import fetch_youtube_transcript_plain
@@ -325,15 +326,17 @@ def write_reading_vii_excel(path: Path, section_vii_markdown: str, *, sheet_titl
         for i, (q_raw, a_raw) in enumerate(rows, start=1):
             q = strip_markdown_for_excel_cell(q_raw)
             a = strip_markdown_for_excel_cell(a_raw)
-            cell_q = ws.cell(row=1 + i, column=1, value=q)
-            cell_a = ws.cell(row=1 + i, column=2, value=a)
+            cell_q = ws.cell(row=1 + i, column=1)
+            cell_a = ws.cell(row=1 + i, column=2)
+            set_excel_cell_value(cell_q, q)
+            set_excel_cell_value(cell_a, a)
             cell_q.alignment = Alignment(wrap_text=True, vertical="top")
             cell_a.alignment = Alignment(wrap_text=True, vertical="top")
     else:
         ws.merge_cells("A2:B2")
         c = ws["A2"]
         raw = (section_vii_markdown[:50000] if section_vii_markdown else "") or "(Rỗng)"
-        c.value = strip_markdown_for_excel_cell(raw) if raw != "(Rỗng)" else raw
+        set_excel_cell_value(c, strip_markdown_for_excel_cell(raw) if raw != "(Rỗng)" else raw)
         c.alignment = Alignment(wrap_text=True, vertical="top")
     ws.column_dimensions["A"].width = 55
     ws.column_dimensions["B"].width = 72
