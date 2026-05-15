@@ -219,7 +219,10 @@ _SESSION_QUIZ_MUST_FOUR_OPTS_VI = (
     "CẤM câu hỏi chỉ 2 lựa chọn (Đúng/Sai, hoặc mảng answers chỉ 2 phần tử). "
     "Luôn là TRẮC NGHIỆM 4 PHƯƠNG ÁN (A–D): \"answers\" ĐÚNG 4 chuỗi khác nhau; một đúng, ba sai có nhiễu hợp lý; "
     "\"explanations\" ĐÚNG 4 chuỗi giải thích lần lượt cho 4 phương án. isCorrect là 1..4. "
-    "Câu coding: vẫn bắt buộc 4 phương án (vd. đoạn đúng + 3 đoạn sai với lỗi khác nhau)."
+    "Câu coding: vẫn bắt buộc 4 phương án (vd. đoạn đúng + 3 đoạn sai với lỗi khác nhau). "
+    "CẤM hai đáp án chỉ khác dấu nháy quanh cùng chuỗi (vd. đúng: Chào… vs sai: \"Chào…\"). "
+    "Đáp án sai phải là lỗi/hành vi khác hẳn (SyntaxError, in cả lệnh print, giá trị khác, None…). "
+    "CẤM lặp nhiều câu «đoạn print() đơn in ra gì» — tối đa 1 câu kiểu đó trong cả quiz."
 )
 
 # Quiz session đầu/cuối giờ: chỉ dùng trích tài liệu (DOCX / Google Docs), không bịa kiến thức ngoài bài.
@@ -257,6 +260,7 @@ _SESSION_QUIZ_STYLE_VI = (
     "import alias (`import numpy as np`), `if __name__ == \"__main__\"`, đọc traceback/stack trace — "
     "chỉ khi các chủ đề này có trong trích.\n"
     "- explanations: đúng kỹ thuật, ngắn (<= 90 ký tự), giải thích vì sao đúng/sai — không lặp lại nguyên văn câu hỏi.\n"
+    "- Câu «code in ra gì»: 4 đáp án phải khác rõ khi đọc trên LMS — không dùng cặp chỉ khác có/không dấu nháy.\n"
 )
 
 _SESSION_QUIZ_BANNED_WORDING_RES: tuple[re.Pattern[str], ...] = (
@@ -407,6 +411,85 @@ def _session_quiz_excerpt_for_block(
     step = max(1, (n - max_chars) // (n_blocks - 1))
     start = min((bi - 1) * step, max(0, n - max_chars))
     return base[start : start + max_chars]
+
+
+def _normalize_mc_answer_text(s: str) -> str:
+    """Chuẩn hóa đáp án để phát hiện trùng «chỉ khác dấu nháy» hoặc thêm print()."""
+    t = (s or "").strip().lower()
+    t = re.sub(r"^print\s*\(\s*", "", t)
+    t = re.sub(r"\s*\)\s*$", "", t)
+    if len(t) >= 2 and t[0] in "\"'" and t[-1] == t[0]:
+        t = t[1:-1].strip()
+    t = re.sub(r"\s+", " ", t)
+    return t
+
+
+_PRINT_OUTPUT_QUESTION_RE = re.compile(
+    r"(in\s+ra\s+gì|kết\s+quả\s+(?:in|đầu\s+ra)|đoạn\s+code\s+sau\s+in|output)",
+    re.I,
+)
+
+
+def _is_trivial_print_output_question(q: str) -> bool:
+    t = (q or "").strip()
+    if not t or "print" not in t.lower():
+        return False
+    if not _PRINT_OUTPUT_QUESTION_RE.search(t):
+        return False
+    prints = re.findall(r"print\s*\([^)]{0,200}\)", t, flags=re.I)
+    return len(prints) == 1 and "input(" not in t.lower()
+
+
+def _validate_session_quiz_block_answer_distinctness(items: list[Any]) -> None:
+    """4 đáp án phải khác hẳn — không chỉ khác dấu nháy / bọc print()."""
+    for i, it in enumerate(items):
+        if not isinstance(it, dict):
+            continue
+        answers = it.get("answers")
+        if not isinstance(answers, list) or len(answers) != 4:
+            continue
+        norms = [_normalize_mc_answer_text(str(a)) for a in answers]
+        for j in range(4):
+            if not norms[j]:
+                continue
+            for k in range(j + 1, 4):
+                if not norms[k]:
+                    continue
+                if norms[j] == norms[k]:
+                    raise ValueError(
+                        f"Câu {i + 1}: đáp án {j + 1} và {k + 1} trùng nội dung hiển thị "
+                        f"(chỉ khác dấu nháy hoặc bọc print) — cần 4 phương án khác hẳn."
+                    )
+                if SequenceMatcher(None, norms[j], norms[k]).ratio() >= 0.9:
+                    raise ValueError(
+                        f"Câu {i + 1}: đáp án {j + 1} và {k + 1} quá giống — "
+                        "đáp án sai phải là lỗi, giá trị khác, hoặc hành vi khác, không paraphrase sát."
+                    )
+
+
+def _validate_session_quiz_block_no_redundant_print_questions(
+    items: list[Any],
+    prior_items: list[Any],
+) -> None:
+    """Tránh 2+ câu «print() đơn in ra gì» — dễ trùng A/C như nhau."""
+    prior_n = sum(
+        1
+        for it in prior_items
+        if isinstance(it, dict) and _is_trivial_print_output_question(str(it.get("question_content") or ""))
+    )
+    seen_in_block = 0
+    for i, it in enumerate(items):
+        if not isinstance(it, dict):
+            continue
+        q = str(it.get("question_content") or "")
+        if not _is_trivial_print_output_question(q):
+            continue
+        if prior_n + seen_in_block >= 1:
+            raise ValueError(
+                f"Câu {i + 1}: đã có câu «print() in ra gì» trong quiz — không lặp mẫu này; "
+                "hỏi input(), ép kiểu, so sánh kiểu dữ liệu…"
+            )
+        seen_in_block += 1
 
 
 def _session_quiz_full_corpus(
@@ -1680,6 +1763,8 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
                     )
                     _validate_session_quiz_block_wording(arr_block)
                     _validate_session_quiz_block_topics_in_corpus(arr_block, validation_corpus)
+                    _validate_session_quiz_block_answer_distinctness(arr_block)
+                    _validate_session_quiz_block_no_redundant_print_questions(arr_block, all_items)
                     break
                 except Exception as e:
                     last_parse_hint = str(e)[:1200]
