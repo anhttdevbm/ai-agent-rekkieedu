@@ -188,6 +188,31 @@ _SESSION_QUIZ_BLOCK_OUT_TOKENS_RETRY = 49152
 # 15 câu/block → đúng 3 block cho 45 câu (cuối giờ); đầu giờ: 2 block BÀI CŨ + 1 block BÀI MỚI.
 _SESSION_QUIZ_ITEMS_PER_CALL = 15
 _SESSION_BLOCK_PARSE_ATTEMPTS = 9
+# Trích gửi model mỗi block (đủ nhiều bài đọc; tránh chỉ lấy ~9k ký tự đầu → lệch chủ đề).
+_SESSION_QUIZ_EXCERPT_MAX_CHARS = 32_000
+_SESSION_QUIZ_DOC_HEADER_RE = re.compile(
+    r"(?m)^=== (?:SESSION TRƯỚC|SESSION HIỆN TẠI|BÀI GIẢNG) DOC \d+ ===\s*\n",
+)
+
+# Chủ đề thường bị model bịa khi mới học Python cơ bản — chỉ cho phép nếu có trong toàn bộ corpus.
+_SESSION_QUIZ_GATED_TOPICS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("vòng lặp `for`", (r"\bfor\b", r"for\s*\(", r"vòng\s+lặp\s+for", r"vong\s+lap\s+for")),
+    ("vòng lặp `while`", (r"\bwhile\b", r"while\s*\(", r"vòng\s+lặp\s+while")),
+    (
+        "kiểu `list` / danh sách",
+        (r"\blist\b", r"list\s*\(", r"list\s*\[", r"danh\s+sách\s*\(list", r"kiểu\s+list"),
+    ),
+    ("kiểu `tuple`", (r"\btuple\b", r"tuple\s*\(", r"kiểu\s+tuple")),
+    (
+        "kiểu `dict` / từ điển",
+        (r"\bdict\b", r"dict\s*\{", r"\{\s*['\"]", r"từ\s+điển\s*\(dict", r"kiểu\s+dict"),
+    ),
+    ("hàm `range()`", (r"\brange\s*\(",)),
+    ("biên dịch / `set`", (r"\bset\s*\(", r"\bset\b(?=\s*[\[{])")),
+    ("comprehension / lambda", (r"\blambda\b", r"\[.*\s+for\s+.*\s+in\s+", r"\{.*\s+for\s+.*\s+in\s+")),
+    ("class / OOP", (r"\bclass\s+\w+", r"hướng\s+đối\s+tượng", r"\bself\b")),
+    ("try / except", (r"\btry\s*:", r"\bexcept\b", r"ngoại\s+lệ")),
+)
 
 # Model hay trả đúng 2 phương án (nhị phân) — Excel cần đúng 4 đáp án/câu.
 _SESSION_QUIZ_MUST_FOUR_OPTS_VI = (
@@ -223,8 +248,9 @@ _SESSION_QUIZ_STYLE_VI = (
     "- question_content ngắn, đọc nhanh trên LMS: ưu tiên <= 160 ký tự; tránh đoạn storytelling dài.\n"
     "- Mỗi concept lõi (breakpoint, elif, for/while…) có thể xuất hiện nhiều câu nếu **cách hỏi và góc độ khác hẳn**; "
     "cấm trùng hoặc paraphrase sát nội dung một câu đã có trong quiz.\n"
-    "- Được phép 2 câu cùng khung so sánh song song nếu đổi đối tượng kỹ thuật (vd. bản chất `for` vs `while`, "
-    "`if` vs `elif`) — miễn là đáp án và góc hỏi khác hẳn.\n"
+    "- Được phép 2 câu cùng khung so sánh song song nếu đổi đối tượng kỹ thuật **đã có trong trích liệu** "
+    "(vd. `int` vs `float`, `input()` vs `print()`) — miễn là đáp án và góc hỏi khác hẳn.\n"
+    "- CẤM hỏi vòng lặp, list, tuple, dict nâng cao, OOP, exception… nếu trích liệu chưa dạy.\n"
     "- difficulty phản ánh cognitive load thật: thuật ngữ mới / suy luận nhiều bước → số cao hơn; "
     "định nghĩa đơn giản → số thấp hơn; không gán difficulty ngẫu nhiên.\n"
     "- Nếu trích liệu có đủ: ưu tiên phân bổ câu về package structure, relative import (`from .utils import …`), "
@@ -283,6 +309,122 @@ def _validate_session_quiz_block_wording(items: list[Any]) -> None:
                         f"Câu {i + 1}: {field}[{j + 1}] chứa «{hit}» — "
                         "giải thích/đáp án phải tự nhiên, không meta «theo tài liệu»."
                     )
+
+
+def _split_session_lecture_docs(text: str) -> list[str]:
+    """Tách corpus ghép từ nhiều link Google Docs (header do web_app thêm)."""
+    raw = (text or "").strip()
+    if not raw:
+        return []
+    parts = _SESSION_QUIZ_DOC_HEADER_RE.split(raw)
+    out = [p.strip() for p in parts if p.strip() and len(p.strip()) > 60]
+    return out if out else [raw]
+
+
+def _session_quiz_item_text_blob(it: dict[str, Any]) -> str:
+    chunks: list[str] = []
+    q = it.get("question_content")
+    if isinstance(q, str):
+        chunks.append(q)
+    for field in ("answers", "explanations"):
+        arr = it.get(field)
+        if isinstance(arr, list):
+            for s in arr:
+                if isinstance(s, str):
+                    chunks.append(s)
+    return "\n".join(chunks)
+
+
+def _session_quiz_text_matches_patterns(text: str, patterns: tuple[str, ...]) -> bool:
+    t = (text or "").lower()
+    if not t:
+        return False
+    for pat in patterns:
+        if re.search(pat, t, flags=re.I | re.UNICODE):
+            return True
+    return False
+
+
+def _validate_session_quiz_block_topics_in_corpus(items: list[Any], corpus: str) -> None:
+    """Từ chối câu nhắc chủ đề (for, list, tuple…) không xuất hiện trong toàn bộ tài liệu đã tải."""
+    corp = (corpus or "").strip()
+    if not corp:
+        return
+    for i, it in enumerate(items):
+        if not isinstance(it, dict):
+            continue
+        blob = _session_quiz_item_text_blob(it)
+        if not blob.strip():
+            continue
+        for label, patterns in _SESSION_QUIZ_GATED_TOPICS:
+            if _session_quiz_text_matches_patterns(blob, patterns) and not _session_quiz_text_matches_patterns(
+                corp, patterns
+            ):
+                raise ValueError(
+                    f"Câu {i + 1} nhắc {label} nhưng không có trong tài liệu bài giảng đã cung cấp — "
+                    "chỉ hỏi kiến thức đã học (input/output, kiểu dữ liệu, ép kiểu…)."
+                )
+
+
+def _session_quiz_excerpt_for_block(
+    *,
+    block_index: int,
+    n_blocks: int,
+    part: str,
+    prev_corpus: str,
+    curr_corpus: str,
+    fallback_corpus: str,
+    max_chars: int = _SESSION_QUIZ_EXCERPT_MAX_CHARS,
+) -> str:
+    """
+    Trích khối tài liệu cho từng block — luân phiên theo doc hoặc cửa sổ trượt,
+    tránh chỉ đọc phần đầu file khi có nhiều bài đọc.
+    """
+    if part == "prev":
+        base = (prev_corpus or fallback_corpus or "").strip()
+    else:
+        base = (curr_corpus or fallback_corpus or "").strip()
+    if not base:
+        return ""
+    docs = _split_session_lecture_docs(base)
+    bi = max(1, block_index)
+    if len(docs) >= 2:
+        picked: list[str] = []
+        for j, doc in enumerate(docs):
+            if j % n_blocks == bi - 1:
+                picked.append(doc)
+        if not picked:
+            picked = [docs[(bi - 1) % len(docs)]]
+        excerpt = "\n\n---\n\n".join(picked)
+        if len(excerpt) > max_chars:
+            return excerpt[:max_chars]
+        return excerpt
+    n = len(base)
+    if n <= max_chars:
+        return base
+    if n_blocks <= 1:
+        return base[:max_chars]
+    step = max(1, (n - max_chars) // (n_blocks - 1))
+    start = min((bi - 1) * step, max(0, n - max_chars))
+    return base[start : start + max_chars]
+
+
+def _session_quiz_full_corpus(
+    *,
+    lecture_text: str,
+    lecture_prev: str,
+    lecture_curr: str,
+    part: str,
+) -> str:
+    """Toàn bộ văn bản dùng để kiểm tra chủ đề (không cắt 9k)."""
+    lt = (lecture_text or "").strip()
+    lp = (lecture_prev or "").strip()
+    lc = (lecture_curr or "").strip()
+    if part == "prev":
+        return lp or lt
+    if part == "current":
+        return lc or lt
+    return lc or lp or lt
 
 
 def _session_quiz_question_key_for_dedupe(q: str) -> str:
@@ -627,11 +769,8 @@ SYSTEM_QUIZ_SESSION_END = (
     "Ràng buộc:\n"
     "- Giải thích đủ rõ vì sao đúng/sai (ngắn gọn, không rỗng).\n"
     "- Nếu có code: identifier chỉ tiếng Anh (snake_case), logic khớp đáp án.\n"
-    "- Nếu code có thụt lề (Python/SQL): PHẢI giữ đúng thụt lề bằng 4 dấu cách. Ví dụ:\n"
-    "  Code:\\n"
-    "  for i in range(3):\\n"
-    "      print(i)\\n"
-    "  (không được mất khoảng trắng đầu dòng như 'print(i)' nằm sát lề).\n"
+    "- Nếu code có thụt lề (Python): PHẢI giữ đúng thụt lề bằng 4 dấu cách (vd. khối sau `if:`). "
+    "Không được mất khoảng trắng đầu dòng.\n"
     "- Mục tiêu: bám sát trích liệu session hiện tại, không lẫn session trước, không mở rộng ngoài bài."
 )
 
@@ -1385,11 +1524,11 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
         subj = (params.subject or "").strip()
         prev_s = (params.session_prev or "").strip()
         curr_s = (params.session_current or "").strip()
-        prev_excerpt = (lecture_prev or lecture_text)[:9000] if (lecture_prev or lecture_text).strip() else ""
-        curr_excerpt = (lecture_curr or lecture_text)[:9000] if (lecture_curr or lecture_text).strip() else ""
-        if qkind == QUIZ_KIND_SESSION_END and not (curr_excerpt or "").strip():
-            curr_excerpt = ((prev_excerpt or lecture_text) or "")[:9000]
-        if not (prev_excerpt or "").strip() and not (curr_excerpt or "").strip():
+        prev_corpus = (lecture_prev or lecture_text).strip()
+        curr_corpus = (lecture_curr or lecture_text).strip()
+        if qkind == QUIZ_KIND_SESSION_END and not curr_corpus:
+            curr_corpus = (prev_corpus or lecture_text).strip()
+        if not prev_corpus and not curr_corpus:
             return (
                 False,
                 "Thiếu nội dung tài liệu (chưa upload DOCX và chưa có text từ link Google Docs). "
@@ -1421,13 +1560,21 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
                     )
                 except Exception:
                     pass
-            pe = (prev_excerpt or "").strip()
-            ce = (curr_excerpt or "").strip()
-            lt0 = (lecture_text or "").strip()[:9000]
-            if qkind == QUIZ_KIND_SESSION_WARMUP:
-                block_excerpt = ((pe or ce or lt0) if part == "prev" else (ce or pe or lt0))[:9000]
-            else:
-                block_excerpt = (ce or pe or lt0)[:9000]
+            lt0 = (lecture_text or "").strip()
+            block_excerpt = _session_quiz_excerpt_for_block(
+                block_index=bi,
+                n_blocks=n_blocks,
+                part=part,
+                prev_corpus=prev_corpus,
+                curr_corpus=curr_corpus,
+                fallback_corpus=lt0,
+            )
+            validation_corpus = _session_quiz_full_corpus(
+                lecture_text=lt0,
+                lecture_prev=prev_corpus,
+                lecture_curr=curr_corpus,
+                part=part,
+            )
             prior_digest = _session_quiz_prior_digest_for_prompt(all_items)
             forbidden_digest = _session_quiz_forbidden_digest(all_items) if all_items else ""
             last_raw = ""
@@ -1532,6 +1679,7 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
                         cross_block_exact_only=cross_exact,
                     )
                     _validate_session_quiz_block_wording(arr_block)
+                    _validate_session_quiz_block_topics_in_corpus(arr_block, validation_corpus)
                     break
                 except Exception as e:
                     last_parse_hint = str(e)[:1200]
