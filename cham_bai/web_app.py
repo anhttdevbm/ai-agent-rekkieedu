@@ -1554,24 +1554,78 @@ def _norm_test_schedule_item(x: dict) -> dict:
     }
 
 
+_GDOC_URL_IN_TEXT_RE = re.compile(
+    r"https?://docs\.google\.com/document/d/[a-zA-Z0-9_-]+[^\s<>\"']*",
+    re.I,
+)
+_EXAM_LABEL_BEFORE_URL_RE = re.compile(
+    r"(?:Đề|ĐỀ|DE|De)\s*0?([0-9]{1,2})\s*[:：\-]?\s*(https?://[^\s<>\"']+)",
+    re.I,
+)
+
+
+def _clean_gdoc_url_from_html(raw: str) -> str:
+    u = _html.unescape(str(raw or "").strip())
+    u = u.rstrip(".,;)")
+    # Cắt query HTML entity còn sót (vd. &amp;ouid=...)
+    u = re.split(r"[<>\s]", u, maxsplit=1)[0]
+    return u.strip()
+
+
 def _extract_exam_docs_from_html(html: str) -> dict[str, str]:
     """
     Return mapping {"01": url, "02": url, ...} from test question HTML.
-    Looks for "Đề 01" around google docs links.
+    Hỗ trợ cả href="..." và dạng text thuần: «ĐỀ 01: https://docs.google.com/...».
     """
-    s = html or ""
+    raw = _html.unescape(html or "")
+    # Chuẩn hoá xuống dòng để bắt từng đề trên một dòng.
+    s = re.sub(r"<br\s*/?>", "\n", raw, flags=re.I)
+    s = re.sub(r"</p>", "\n", s, flags=re.I)
+    s = re.sub(r"<[^>]+>", " ", s)
+    s = re.sub(r"\u00a0", " ", s)
+    s = re.sub(r"[ \t]+", " ", s)
+
     out: dict[str, str] = {}
-    # find all anchor hrefs to google docs
-    for m in re.finditer(r'href="(?P<u>https?://docs\.google\.com/document/d/[^"]+)"', s, re.I):
-        u = (m.group("u") or "").strip()
-        # look back window for "Đề xx"
-        start = max(0, m.start() - 120)
-        chunk = s[start : m.start()]
-        m2 = re.search(r"Đề\s*0?([0-9]{1,3})", chunk, re.I)
+
+    # 1) «ĐỀ 01: https://...» (đúng format API tests/{id} questionTests[].content)
+    for m in _EXAM_LABEL_BEFORE_URL_RE.finditer(s):
+        try:
+            k = int(m.group(1))
+        except Exception:
+            continue
+        if not (1 <= k <= 99):
+            continue
+        u = _clean_gdoc_url_from_html(m.group(2))
+        if u and "docs.google.com/document" in u.lower():
+            out[f"{k:02d}"] = u
+
+    # 2) href="https://docs.google.com/document/..."
+    for m in re.finditer(r'href=["\'](?P<u>https?://docs\.google\.com/document/d/[^"\']+)["\']', raw, re.I):
+        u = _clean_gdoc_url_from_html(m.group("u"))
+        start = max(0, m.start() - 160)
+        chunk = _html.unescape(re.sub(r"<[^>]+>", " ", raw[start:m.start()]))
+        m2 = re.search(r"(?:Đề|ĐỀ|DE|De)\s*0?([0-9]{1,2})", chunk, re.I)
+        if m2 and u:
+            k = int(m2.group(1))
+            if 1 <= k <= 99:
+                out.setdefault(f"{k:02d}", u)
+
+    # 3) Fallback: mọi URL Docs + nhãn Đề gần nhất phía trước (trong 200 ký tự)
+    plain = s
+    for m in _GDOC_URL_IN_TEXT_RE.finditer(plain):
+        u = _clean_gdoc_url_from_html(m.group(0))
+        if not u:
+            continue
+        start = max(0, m.start() - 200)
+        chunk = plain[start : m.start()]
+        m2 = None
+        for m2 in re.finditer(r"(?:Đề|ĐỀ|DE|De)\s*0?([0-9]{1,2})", chunk, re.I):
+            pass
         if m2:
             k = int(m2.group(1))
             if 1 <= k <= 99:
-                out[f"{k:02d}"] = u
+                out.setdefault(f"{k:02d}", u)
+
     return out
 
 
@@ -1603,6 +1657,15 @@ def _extract_exam_code_from_text(s: str) -> int | None:
     t = str(s or "").strip()
     if not t:
         return None
+    # deso04 / de_so_04 / đề04 trong tên repo (IT202 hackathon cuối môn)
+    m_deso = re.search(r"deso\s*0*([0-9]{1,3})", t, re.I)
+    if m_deso:
+        try:
+            n = int(m_deso.group(1))
+            if 1 <= n <= 99:
+                return n
+        except Exception:
+            pass
     m = re.search(r"(?:[_-])0*([0-9]{1,3})$", t, re.I)
     if not m:
         # Hỗ trợ dạng: CSDL_..._004_hackthon (mã nằm giữa chuỗi).

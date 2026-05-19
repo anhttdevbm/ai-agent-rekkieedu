@@ -45,16 +45,21 @@ SESSION_END_SPECS: list[dict[str, object]] = _build_specs()
 
 
 def apply_session_end_plan(rows: list[dict[str, object]]) -> None:
-    """Ghi đè part/category/difficulty theo plan cuối giờ (bỏ qua giá trị model nếu lệch)."""
-    if len(rows) != len(SESSION_END_SPECS):
-        raise ValueError(f"Cần đúng {len(SESSION_END_SPECS)} câu, có {len(rows)}.")
+    """Ghi đè part/category/difficulty; hỗ trợ 15–45 câu."""
+    n = len(rows)
+    if n < 12:
+        raise ValueError(f"Cần ít nhất 12 câu, có {n}.")
+    if n > len(SESSION_END_SPECS):
+        raise ValueError(f"Tối đa {len(SESSION_END_SPECS)} câu, có {n}.")
     for i, row in enumerate(rows):
-        s = SESSION_END_SPECS[i]
         row["part"] = "current"
-        row["difficulty"] = int(s["difficulty"])
-        row["category"] = str(s["category_vi"])
+        row["difficulty"] = int(SESSION_END_DIFFICULTIES[i % len(SESSION_END_DIFFICULTIES)])
+        row["category"] = "BÀI MỚI"
 
 
 def session_end_distribution_summary_vi() -> str:
-    return "45 câu (session hiện tại). Difficulty chia đều: 6 Sáng tạo ×15; 10 Vận dụng ×15; 11 Phân tích ×15."
+    return (
+        "Tối đa 45 câu session hiện tại (thường 15–45 tùy tài liệu). "
+        "Difficulty luân phiên: 6 Sáng tạo / 10 Vận dụng / 11 Phân tích."
+    )
 

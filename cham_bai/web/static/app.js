@@ -2497,6 +2497,12 @@
       const t = String(text || "");
       if (!t) return null;
 
+      const deso = /deso\s*0*([0-9]{1,3})/i.exec(t);
+      if (deso) {
+        const n = parseInt(deso[1], 10);
+        if (Number.isFinite(n) && n > 0 && n <= 99) return n;
+      }
+
       // Mục tiêu: ưu tiên mã đề dạng _003_... hơn số ngày/tháng (09-17) hoặc giờ (_09).
       // Thu thập mọi nhóm số 1–3 chữ số được phân tách bởi _ hoặc -.
       const reSeg = /(?:^|[_-])0*([0-9]{1,3})(?=[_-]|$)/g;

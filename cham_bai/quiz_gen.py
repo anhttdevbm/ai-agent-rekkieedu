@@ -212,6 +212,25 @@ _SESSION_QUIZ_GATED_TOPICS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("comprehension / lambda", (r"\blambda\b", r"\[.*\s+for\s+.*\s+in\s+", r"\{.*\s+for\s+.*\s+in\s+")),
     ("class / OOP", (r"\bclass\s+\w+", r"hướng\s+đối\s+tượng", r"\bself\b")),
     ("try / except", (r"\btry\s*:", r"\bexcept\b", r"ngoại\s+lệ")),
+    (
+        "toán tử lặp chuỗi / nhân chuỗi với `*`",
+        (r'["\'][^"\']*["\']\s*\*\s*\d', r'\w+\s*\*\s*\d+(?!\s*[=)])', r"lặp\s+chuỗi", r"nhân\s+chuỗi"),
+    ),
+    ("chia lấy phần nguyên `//`", (r"\d\s*//\s*\d", r"print\s*\([^)]*//")),
+    ("hàm `len()`", (r"\blen\s*\(",)),
+    ("hàm `type()`", (r"\btype\s*\(",)),
+    (
+        "phép toán / toán tử số trong code",
+        (
+            r"print\s*\([^)]*[\+\-\*/%]",
+            r"\d\s*\+\s*\d",
+            r"\d\s*-\s*\d",
+            r"\d\s*\*\s*\d",
+            r"\d\s*/\s*\d",
+        ),
+    ),
+    ("câu lệnh if / elif / else", (r"\bif\s+", r"\belif\b", r"\belse\s*:")),
+    ("tham số `sep` / `end` của print", (r"\bsep\s*=", r"\bend\s*=")),
 )
 
 # Model hay trả đúng 2 phương án (nhị phân) — Excel cần đúng 4 đáp án/câu.
@@ -222,7 +241,7 @@ _SESSION_QUIZ_MUST_FOUR_OPTS_VI = (
     "Câu coding: vẫn bắt buộc 4 phương án (vd. đoạn đúng + 3 đoạn sai với lỗi khác nhau). "
     "CẤM hai đáp án chỉ khác dấu nháy quanh cùng chuỗi (vd. đúng: Chào… vs sai: \"Chào…\"). "
     "Đáp án sai phải là lỗi/hành vi khác hẳn (SyntaxError, in cả lệnh print, giá trị khác, None…). "
-    "CẤM lặp nhiều câu «đoạn print() đơn in ra gì» — tối đa 1 câu kiểu đó trong cả quiz."
+    "Được nhiều câu code «in ra gì» nếu mỗi câu dùng đoạn code khác nhau trong trích."
 )
 
 # Quiz session đầu/cuối giờ: chỉ dùng trích tài liệu (DOCX / Google Docs), không bịa kiến thức ngoài bài.
@@ -241,26 +260,74 @@ _SESSION_QUIZ_STRICT_SOURCE_VI = (
     "cấm đưa đoạn code hoàn toàn mới không xuất phát từ trích.\n"
 )
 
+# Quiz session: kiểm tra kiến thức học, không phải đọc hiểu bài đọc / trivia lịch sử.
+_SESSION_QUIZ_PEDAGOGY_VI = (
+    "MỤC TIÊU PEDAGOGY (BẮT BUỘC — Session đầu/cuối giờ):\n"
+    "- Quiz kiểm tra **kiến thức kỹ thuật** sinh viên cần nhớ sau buổi học (cú pháp, khái niệm, hành vi code), "
+    "không phải bài kiểm tra **đọc hiểu** bài đọc storytelling.\n"
+    "- Bài đọc chỉ để **rút kiến thức kỹ thuật**; quiz xoay quanh **kiến thức buổi học** (mindmap/syllabus), không phải ôn lại truyện trong bài đọc.\n"
+    "- Được hỏi trực tiếp: `print()`, `input()`, ép kiểu, `int`/`str`/`float`, so sánh, lỗi khi chạy code — theo buổi dạy.\n"
+    "- CẤM câu trivia: ai tạo Python, năm ra đời, Guido/Linus/Gosling…\n"
+    "- Nếu tài liệu mỏng: **ít câu chất**, không bịa chủ đề chưa dạy.\n"
+)
+
+# Cấm mọi câu «ba lông» / kể chuyện bọc ngoài bài đọc — không phải kiến thức buổi học.
+_SESSION_QUIZ_FLUFF_BAN_VI = (
+    "CẤM TUYỆT ĐỐI — KHÔNG ĐƯA VÀO CÂU HỎI / ĐÁP ÁN / GIẢI THÍCH:\n"
+    "- Tổ chức / bối cảnh giả: trung tâm, công ty, tập đoàn, phòng ban, bộ phận, nhóm kỹ sư, nhân viên, doanh nghiệp, "
+    "khách hàng, trung tâm đào tạo…\n"
+    "- Plot bài đọc: Excel thủ công, số sinh viên tăng, tìm ngôn ngữ cho trung tâm, yêu cầu trung tâm đặt ra, "
+    "tutor/mentor đến trung tâm…\n"
+    "- Giới thiệu «ngành nghề / lĩnh vực ứng dụng Python»: AI, Web, Game, Giáo dục, chatbot, học máy, "
+    "bảng ứng dụng, «Python được ứng dụng trong lĩnh vực nào», «KHÔNG được liệt kê trong bảng»…\n"
+    "- Câu kiểu «theo nội dung bài học» nhưng hỏi plot/ứng dụng/bảng — phải hỏi **kỹ thuật** (cú pháp, kiểu, code).\n"
+    "- CẤM đếm số mục trong bảng giới thiệu (bao nhiêu công ty, bao nhiêu đặc điểm, bao nhiêu lĩnh vực…).\n"
+    "- CẤM câu «KHÔNG nằm trong danh sách / KHÔNG được liệt kê» — đây là đọc hiểu bảng, không phải quiz kỹ thuật.\n"
+    "CHỈ HỎI: kiến thức lập trình buổi này — cú pháp, semantics, ví dụ code, lỗi thực thi.\n"
+)
+
+# Khi không nghĩ ra câu lý thuyết — ưu tiên câu có đoạn code (vẫn bám trích liệu).
+_SESSION_QUIZ_CODE_FALLBACK_VI = (
+    "KHI KHÓ NGHĨ CÂU LÝ THUYẾT — ƯU TIÊN CÂU CODE (BẮT BUỘC ưu tiên):\n"
+    "- Lấy **đoạn code có sẵn** trong trích (print, input, gán biến, ép kiểu, f-string…) — có thể rút gọn, không đổi logic.\n"
+    "- CẤM tự thêm toán tử số (+ - * /), if/for, sep=/end=… nếu trích/session chưa dạy.\n"
+    "- Mẫu question_content (chọn một, đổi cách hỏi cho đa dạng):\n"
+    "  • «Đoạn code sau in ra gì?»\n"
+    "  • «Chạy đoạn code sau, kết quả hiển thị là gì?»\n"
+    "  • «Sau đoạn sau, giá trị in ra là gì?»\n"
+    "  • «Đoạn sau gây lỗi gì?» (nếu trích có ví dụ lỗi)\n"
+    "- Luôn kết thúc question_content bằng khối code (không markdown fence):\n"
+    "  Code:\n"
+    "  print(\"...\")\n"
+    "  (hoặc 2–4 dòng: input, ép kiểu, gán biến…)\n"
+    "- Mỗi câu code phải dùng **đoạn code khác nhau** (không lặp cùng một dòng print/input).\n"
+    "- 4 đáp án: output/hành vi đúng + 3 sai khác hẳn (SyntaxError, in nhầm cả lệnh, sai kiểu, giá trị sai…).\n"
+    "- Cấm hai đáp án chỉ khác dấu nháy quanh cùng chuỗi.\n"
+)
+
 # Phong cách câu hỏi session quiz (đầu giờ / cuối giờ).
 _SESSION_QUIZ_STYLE_VI = (
     "PHONG CÁCH CÂU HỎI (BẮT BUỘC):\n"
     "- CẤM mở đầu hoặc nhắc meta kiểu: «Theo tài liệu», «Trong tài liệu», «Tài liệu gọi là», «Tài liệu nêu», "
     "«Theo đoạn trích», «Theo slide/bài giảng» — hỏi thẳng concept/kịch bản/kỹ thuật như đề thi thực chiến.\n"
-    "- Ưu tiên scenario-based reasoning: bug thực tế, design flaw, runtime behavior, trade-off, cách fix — "
-    "thay vì hỏi nhớ ẩn dụ/văn («Debugger được ví như gì?», «ẩn dụ nào được dùng?»).\n"
+    "- Ưu tiên reasoning kỹ thuật: bug code, sai kiểu, output sai, ép kiểu sai — **không** dùng bối cảnh công ty/trung tâm/phòng ban.\n"
     "- question_content ngắn, đọc nhanh trên LMS: ưu tiên <= 160 ký tự; tránh đoạn storytelling dài.\n"
     "- Mỗi concept lõi (breakpoint, elif, for/while…) có thể xuất hiện nhiều câu nếu **cách hỏi và góc độ khác hẳn**; "
     "cấm trùng hoặc paraphrase sát nội dung một câu đã có trong quiz.\n"
     "- Được phép 2 câu cùng khung so sánh song song nếu đổi đối tượng kỹ thuật **đã có trong trích liệu** "
     "(vd. `int` vs `float`, `input()` vs `print()`) — miễn là đáp án và góc hỏi khác hẳn.\n"
     "- CẤM hỏi vòng lặp, list, tuple, dict nâng cao, OOP, exception… nếu trích liệu chưa dạy.\n"
+    "- CẤM toán tử/hàm chưa dạy trong session: phép toán số (+ - * / //), lặp chuỗi (`\"a\"*3`), "
+    "`if`/`for`, `sep`/`end`, `len()`, `type()`… trừ khi có trong trích.\n"
+    "- Syllabus Python đầu khóa (L01–L06): chỉ print/input, biến, kiểu cơ bản, ép kiểu, f-string — "
+    "câu code chỉ dùng gán biến + print (và f-string/ép kiểu nếu trích có).\n"
     "- difficulty phản ánh cognitive load thật: thuật ngữ mới / suy luận nhiều bước → số cao hơn; "
     "định nghĩa đơn giản → số thấp hơn; không gán difficulty ngẫu nhiên.\n"
-    "- Nếu trích liệu có đủ: ưu tiên phân bổ câu về package structure, relative import (`from .utils import …`), "
-    "import alias (`import numpy as np`), `if __name__ == \"__main__\"`, đọc traceback/stack trace — "
-    "chỉ khi các chủ đề này có trong trích.\n"
+    "- Ưu tiên câu sinh viên gặp khi code: input/output, kiểu dữ liệu, ép kiểu, lỗi runtime — "
+    "chỉ hỏi chủ đề nâng cao (import, package, traceback…) khi có trong trích.\n"
     "- explanations: đúng kỹ thuật, ngắn (<= 90 ký tự), giải thích vì sao đúng/sai — không lặp lại nguyên văn câu hỏi.\n"
     "- Câu «code in ra gì»: 4 đáp án phải khác rõ khi đọc trên LMS — không dùng cặp chỉ khác có/không dấu nháy.\n"
+    "- Nên có **nhiều câu dạng code** (ước lượng ≥ 40% block) nếu tài liệu có ví dụ code — đây là cách hỏi chính cho buổi intro.\n"
 )
 
 _SESSION_QUIZ_BANNED_WORDING_RES: tuple[re.Pattern[str], ...] = (
@@ -424,20 +491,43 @@ def _normalize_mc_answer_text(s: str) -> str:
     return t
 
 
-_PRINT_OUTPUT_QUESTION_RE = re.compile(
-    r"(in\s+ra\s+gì|kết\s+quả\s+(?:in|đầu\s+ra)|đoạn\s+code\s+sau\s+in|output)",
-    re.I,
+_CODE_QUESTION_HINT_RE = re.compile(
+    r"(in\s+ra\s+gì|kết\s+quả|đầu\s+ra|đoạn\s+code|chạy\s+đoạn|output|sau\s+đoạn|gây\s+lỗi)",
+    re.I | re.UNICODE,
 )
 
 
-def _is_trivial_print_output_question(q: str) -> bool:
+def _extract_code_snippet_fingerprint(q: str) -> str | None:
+    """Fingerprint đoạn code trong câu hỏi — để không lặp cùng một đoạn."""
     t = (q or "").strip()
-    if not t or "print" not in t.lower():
+    if not t:
+        return None
+    body = ""
+    m = re.search(r"Code:\s*\n([\s\S]+?)(?:\n\n|\Z)", t, flags=re.I)
+    if m:
+        body = m.group(1).strip()
+    else:
+        lines = [
+            ln.strip()
+            for ln in t.splitlines()
+            if re.match(r"^\s*(print|input|int|float|str)\s*[\(\[]", ln, flags=re.I)
+        ]
+        if lines:
+            body = "\n".join(lines[:6])
+    if not body or len(body) < 8:
+        return None
+    fp = re.sub(r"\s+", " ", body.lower())
+    fp = re.sub(r'["""]', '"', fp)
+    return fp[:240]
+
+
+def _is_code_based_question(q: str) -> bool:
+    t = (q or "").strip()
+    if not t:
         return False
-    if not _PRINT_OUTPUT_QUESTION_RE.search(t):
-        return False
-    prints = re.findall(r"print\s*\([^)]{0,200}\)", t, flags=re.I)
-    return len(prints) == 1 and "input(" not in t.lower()
+    if _extract_code_snippet_fingerprint(t):
+        return True
+    return bool(_CODE_QUESTION_HINT_RE.search(t) and re.search(r"\b(print|input|int|float|str)\s*\(", t, re.I))
 
 
 def _validate_session_quiz_block_answer_distinctness(items: list[Any]) -> None:
@@ -467,29 +557,203 @@ def _validate_session_quiz_block_answer_distinctness(items: list[Any]) -> None:
                     )
 
 
-def _validate_session_quiz_block_no_redundant_print_questions(
+def _validate_session_quiz_block_duplicate_code_snippets(
     items: list[Any],
     prior_items: list[Any],
 ) -> None:
-    """Tránh 2+ câu «print() đơn in ra gì» — dễ trùng A/C như nhau."""
-    prior_n = sum(
-        1
-        for it in prior_items
-        if isinstance(it, dict) and _is_trivial_print_output_question(str(it.get("question_content") or ""))
-    )
-    seen_in_block = 0
+    """Cho phép nhiều câu code; chỉ cấm lặp cùng một đoạn code."""
+    seen: set[str] = set()
+    for it in prior_items:
+        if not isinstance(it, dict):
+            continue
+        fp = _extract_code_snippet_fingerprint(str(it.get("question_content") or ""))
+        if fp:
+            seen.add(fp)
     for i, it in enumerate(items):
         if not isinstance(it, dict):
             continue
         q = str(it.get("question_content") or "")
-        if not _is_trivial_print_output_question(q):
+        fp = _extract_code_snippet_fingerprint(q)
+        if not fp:
             continue
-        if prior_n + seen_in_block >= 1:
+        if fp in seen:
             raise ValueError(
-                f"Câu {i + 1}: đã có câu «print() in ra gì» trong quiz — không lặp mẫu này; "
-                "hỏi input(), ép kiểu, so sánh kiểu dữ liệu…"
+                f"Câu {i + 1}: trùng đoạn code với câu trước — dùng ví dụ code **khác** trong trích "
+                "(input, ép kiểu, print khác, phép tính…)."
             )
-        seen_in_block += 1
+        seen.add(fp)
+
+
+_SESSION_QUIZ_BANNED_QUESTION_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (
+        "trivia tác giả / năm ra đời Python",
+        re.compile(
+            r"(tạo\s+ra\s+bởi\s+ai|do\s+ai\s+(tạo|phát\s+minh)|ai\s+(là\s+)?(người\s+)?(tạo|sáng\s+lập|phát\s+minh)|"
+            r"năm\s+nào.*python|python.*năm\s+nào|ra\s+đời.*năm|năm\s+\d{4}.*python)",
+            re.I | re.UNICODE,
+        ),
+    ),
+    (
+        "trivia Guido / Linus / Gosling",
+        re.compile(r"(guido\s+van\s+rossum|linus\s+torvalds|james\s+gosling)", re.I),
+    ),
+)
+
+_SESSION_QUIZ_FLUFF_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (
+        "bối cảnh trung tâm / tổ chức (bài đọc)",
+        re.compile(
+            r"(trung\s+tâm|trung\s+tâm\s+đào\s+tạo|công\s+ty|tập\s+đoàn|phòng\s+ban|bộ\s+phận|"
+            r"doanh\s+nghiệp|nhân\s+viên.{0,25}(trung\s+tâm|excel))",
+            re.I | re.UNICODE,
+        ),
+    ),
+    (
+        "plot Excel / sinh viên / nhóm kỹ sư (bài đọc)",
+        re.compile(
+            r"(excel.{0,30}thủ\s+công|số\s+sinh\s+viên\s+tăng|nhóm\s+kỹ\s+sư|"
+            r"nhân\s+viên.{0,20}excel|tutor|mentor)",
+            re.I | re.UNICODE,
+        ),
+    ),
+    (
+        "yêu cầu trung tâm / tìm ngôn ngữ (kể chuyện)",
+        re.compile(
+            r"((trung\s+tâm|nhóm\s+kỹ\s+sư).{0,50}(tìm|đặt\s+ra).{0,30}(ngôn\s+ngữ|yêu\s+cầu)|"
+            r"yêu\s+cầu.{0,30}trung\s+tâm)",
+            re.I | re.UNICODE,
+        ),
+    ),
+    (
+        "ngành nghề / lĩnh vực ứng dụng Python (giới thiệu bài đọc)",
+        re.compile(
+            r"(?:ngành\s+nghề|lĩnh\s+vực).{0,35}(?:python|ứng\s+dụng)|"
+            r"(?:python|ngôn\s+ngữ).{0,25}(?:được\s+)?(?:sử\s+dụng|dùng).{0,20}lĩnh\s+vực|"
+            r"ứng\s+dụng.{0,35}(?:python|trong\s+bài|lĩnh\s+vực)|"
+            r"bảng\s+ứng\s+dụng|"
+            r"bài\s+học\s+mô\s+tả\s+vai\s+trò|"
+            r"(?:được\s+)?liệt\s+kê\s+(?:trong\s+)?(?:bảng|mục|danh\s+sách)|"
+            r"theo\s+nội\s+dung\s+bài\s+học.{0,40}(?:ứng\s+dụng|lĩnh\s+vực|ngành)|"
+            r"(?:trí\s+tuệ\s+nhân\s+tạo|AI).{0,25}(?:chatbot|học\s+máy|nhận\s+diện)|"
+            r"phát\s+triển\s+(?:web|game)|thiết\s+kế\s+vi\s+mạch|"
+            r"tự\s+động\s+hóa|phân\s+tích\s+dữ\s+liệu|giáo\s+dục.{0,20}(?:lĩnh\s+vực|vai\s+trò)",
+            re.I | re.UNICODE,
+        ),
+    ),
+    (
+        "đếm công ty / đếm mục bảng giới thiệu (trivia bài đọc)",
+        re.compile(
+            r"bao\s+nhiêu\s+công\s+ty|google|netflix|instagram|"
+            r"bao\s+nhiêu\s+đặc\s+diểm\s+nổi\s+bật|"
+            r"hiểu\s+lầm\s+phổ\s+biến",
+            re.I | re.UNICODE,
+        ),
+    ),
+    (
+        "câu «KHÔNG nằm trong danh sách» (đọc hiểu bảng/plot)",
+        re.compile(
+            r"KHÔNG\s+(?:được\s+)?(?:nằm\s+trong|liệt\s+kê)|"
+            r"KHÔNG\s+(?:được\s+)?bài\s+học\s+liệt\s+kê|"
+            r"CŨNG\s+nằm\s+trong\s+danh\s+sách",
+            re.I | re.UNICODE,
+        ),
+    ),
+    (
+        "kịch bản / nhân vật minh họa (Nam, Shopee Food…)",
+        re.compile(
+            r"theo\s+kịch\s+bản|trong\s+kịch\s+bản|"
+            r"câu\s+chuyện\s+về\s+\w+|"
+            r"\bNam\b.{0,40}(?:Notepad|VS\s*Code|Terminal|hello)|"
+            r"Shopee|phí\s+ship\s+\d+k|trạng\s+thái\s+đơn\s+hàng",
+            re.I | re.UNICODE,
+        ),
+    ),
+)
+
+
+def _session_quiz_blob_has_fluff(text: str) -> tuple[str, re.Pattern[str]] | None:
+    t = (text or "").strip()
+    if not t:
+        return None
+    for label, pat in _SESSION_QUIZ_FLUFF_PATTERNS:
+        if pat.search(t):
+            return label, pat
+    for label, pat in _SESSION_QUIZ_BANNED_QUESTION_PATTERNS:
+        if pat.search(t):
+            return label, pat
+    return None
+
+
+def _validate_session_quiz_block_forbidden_question_styles(
+    items: list[Any],
+    prior_items: list[Any],
+) -> None:
+    """Cấm trivia, kịch bản bài đọc, ngành nghề/ứng dụng/công ty/trung tâm — chỉ kiến thức buổi học."""
+    for i, it in enumerate(items):
+        if not isinstance(it, dict):
+            continue
+        for field in ("question_content",):
+            raw = it.get(field)
+            if not isinstance(raw, str) or not raw.strip():
+                continue
+            hit = _session_quiz_blob_has_fluff(raw)
+            if hit:
+                label, _ = hit
+                raise ValueError(
+                    f"Câu {i + 1}: {label} — quiz chỉ hỏi **kiến thức kỹ thuật buổi học** "
+                    "(cú pháp, kiểu dữ liệu, code, lỗi runtime); không hỏi công ty/trung tâm/ngành nghề/plot bài đọc."
+                )
+
+
+def _session_quiz_target_count(
+    prev_corpus: str,
+    curr_corpus: str,
+    *,
+    qkind: str,
+) -> int:
+    """15–45 câu theo độ dày tài liệu — không cố đủ 45 khi kiến thức mỏng."""
+    combined = ((prev_corpus or "") + "\n" + (curr_corpus or "")).strip()
+    if not combined:
+        return 15
+    docs = _split_session_lecture_docs(combined)
+    n_docs = max(1, len(docs))
+    chars = len(combined)
+    est = min(45, max(15, chars // 1200 + n_docs * 2))
+    est = max(15, (est // 5) * 5)
+    if qkind == QUIZ_KIND_SESSION_WARMUP and est < 20:
+        est = 20
+    return est
+
+
+def _build_session_quiz_blocks(qkind: str, total: int) -> tuple[list[tuple[str, int, int]], int]:
+    """
+    Chia total câu thành các block ≤15 câu/lần gọi API.
+    Trả về (blocks, prev_count) — prev_count chỉ có nghĩa với warmup.
+    """
+    total = max(12, min(45, int(total)))
+    qpc = _SESSION_QUIZ_ITEMS_PER_CALL
+    blocks: list[tuple[str, int, int]] = []
+    prev_count = 0
+    if qkind == QUIZ_KIND_SESSION_WARMUP:
+        prev_count = max(0, min(30, (total * 2 + 1) // 3))
+        curr_n = total - prev_count
+        st = 1
+        for part, n in (("prev", prev_count), ("current", curr_n)):
+            off = 0
+            while off < n:
+                chunk = min(qpc, n - off)
+                blocks.append((part, st, chunk))
+                st += chunk
+                off += chunk
+    else:
+        st = 1
+        off = 0
+        while off < total:
+            chunk = min(qpc, total - off)
+            blocks.append(("current", st, chunk))
+            st += chunk
+            off += chunk
+    return blocks, prev_count
 
 
 def _session_quiz_full_corpus(
@@ -818,6 +1082,12 @@ SYSTEM_QUIZ_SESSION_WARMUP = (
     "Bạn là giảng viên đại học. Soạn quiz đầu giờ (kiểm tra bài cũ + chuẩn bị bài mới) — nội dung tiếng Việt.\n\n"
     + _SESSION_QUIZ_STRICT_SOURCE_VI
     + "\n\n"
+    + _SESSION_QUIZ_PEDAGOGY_VI
+    + "\n\n"
+    + _SESSION_QUIZ_FLUFF_BAN_VI
+    + "\n\n"
+    + _SESSION_QUIZ_CODE_FALLBACK_VI
+    + "\n\n"
     + _SESSION_QUIZ_STYLE_VI
     + "\n\n"
     "Chỉ trả về một mảng JSON hợp lệ. Không markdown, không ```, không chữ ngoài mảng.\n\n"
@@ -838,6 +1108,12 @@ SYSTEM_QUIZ_SESSION_WARMUP = (
 SYSTEM_QUIZ_SESSION_END = (
     "Bạn là giảng viên đại học. Soạn quiz cuối giờ (tổng kết/đánh giá nhanh) — nội dung tiếng Việt.\n\n"
     + _SESSION_QUIZ_STRICT_SOURCE_VI
+    + "\n\n"
+    + _SESSION_QUIZ_PEDAGOGY_VI
+    + "\n\n"
+    + _SESSION_QUIZ_FLUFF_BAN_VI
+    + "\n\n"
+    + _SESSION_QUIZ_CODE_FALLBACK_VI
     + "\n\n"
     + _SESSION_QUIZ_STYLE_VI
     + "\n\n"
@@ -933,6 +1209,12 @@ def _end_block_messages(
     sys = (
         _SESSION_QUIZ_STRICT_SOURCE_VI
         + "\n\n"
+        + _SESSION_QUIZ_PEDAGOGY_VI
+        + "\n\n"
+        + _SESSION_QUIZ_FLUFF_BAN_VI
+        + "\n\n"
+        + _SESSION_QUIZ_CODE_FALLBACK_VI
+        + "\n\n"
         + _SESSION_QUIZ_STYLE_VI
         + "\n\n"
         "Chỉ output DUY NHẤT một mảng JSON hợp lệ gồm đúng "
@@ -989,6 +1271,12 @@ def _end_block_retry_messages(
             role="system",
             content=(
                 _SESSION_QUIZ_STRICT_SOURCE_VI
+                + "\n\n"
+                + _SESSION_QUIZ_PEDAGOGY_VI
+                + "\n\n"
+                + _SESSION_QUIZ_FLUFF_BAN_VI
+                + "\n\n"
+                + _SESSION_QUIZ_CODE_FALLBACK_VI
                 + "\n\n"
                 + _SESSION_QUIZ_STYLE_VI
                 + "\n\n"
@@ -1146,6 +1434,12 @@ def _warmup_block_messages(
     sys = (
         _SESSION_QUIZ_STRICT_SOURCE_VI
         + "\n\n"
+        + _SESSION_QUIZ_PEDAGOGY_VI
+        + "\n\n"
+        + _SESSION_QUIZ_FLUFF_BAN_VI
+        + "\n\n"
+        + _SESSION_QUIZ_CODE_FALLBACK_VI
+        + "\n\n"
         + _SESSION_QUIZ_STYLE_VI
         + "\n\n"
         "Chỉ output DUY NHẤT một mảng JSON hợp lệ gồm đúng "
@@ -1202,6 +1496,12 @@ def _warmup_block_retry_messages(
             role="system",
             content=(
                 _SESSION_QUIZ_STRICT_SOURCE_VI
+                + "\n\n"
+                + _SESSION_QUIZ_PEDAGOGY_VI
+                + "\n\n"
+                + _SESSION_QUIZ_FLUFF_BAN_VI
+                + "\n\n"
+                + _SESSION_QUIZ_CODE_FALLBACK_VI
                 + "\n\n"
                 + _SESSION_QUIZ_STYLE_VI
                 + "\n\n"
@@ -1267,22 +1567,28 @@ def _validate_session_quiz_block_items(items: list[Any], n_need: int) -> None:
             raise ValueError(f"Object {i + 1}: isCorrect phải là 1..4 (thứ tự đáp án đúng trong 4 lựa chọn).")
 
 
-def _parse_session_warmup_items(arr: list[Any], *, plan: str = "warmup") -> list[dict[str, object]]:
-    if len(arr) < 45:
-        raise ValueError(f"Cần đúng 45 câu, model trả {len(arr)} phần tử.")
+def _parse_session_warmup_items(
+    arr: list[Any],
+    *,
+    plan: str = "warmup",
+    prev_count: int | None = None,
+) -> list[dict[str, object]]:
+    if len(arr) < 12:
+        raise ValueError(f"Cần ít nhất 12 câu, model trả {len(arr)} phần tử.")
     if len(arr) > 45:
-        # Model đôi khi trả thừa; lấy 45 phần tử đầu (giữ thứ tự khớp bảng vị trí).
         arr = arr[:45]
+    pc = int(prev_count) if prev_count is not None else min(30, (len(arr) * 2 + 1) // 3)
+    pc = max(0, min(len(arr), pc))
     out: list[dict[str, object]] = []
     for i, it in enumerate(arr):
         if not isinstance(it, dict):
             raise ValueError(f"Câu {i + 1}: mỗi phần tử phải là object.")
         part = str(it.get("part", "")).strip().lower()
         if plan == "warmup":
-            if i < 30 and part not in ("prev", ""):
-                raise ValueError(f"Câu {i + 1}: 30 câu đầu phải part='prev'.")
-            if i >= 30 and part not in ("current", ""):
-                raise ValueError(f"Câu {i + 1}: 15 câu sau phải part='current'.")
+            if i < pc and part not in ("prev", ""):
+                raise ValueError(f"Câu {i + 1}: phần BÀI CŨ phải part='prev'.")
+            if i >= pc and part not in ("current", ""):
+                raise ValueError(f"Câu {i + 1}: phần BÀI MỚI phải part='current'.")
         elif plan == "end":
             if part not in ("current", ""):
                 raise ValueError(f"Câu {i + 1}: part phải là 'current'.")
@@ -1319,7 +1625,7 @@ def _parse_session_warmup_items(arr: list[Any], *, plan: str = "warmup") -> list
         }
         out.append(row)
     if plan == "warmup":
-        apply_session_warmup_plan(out)
+        apply_session_warmup_plan(out, prev_count=pc)
     else:
         apply_session_end_plan(out)
     return out
@@ -1620,19 +1926,19 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
         m, chat_remap_note = resolve_quiz_llm_model(params.model or None)
         temp0 = max(0.0, min(2.0, float(params.temperature)))
 
-        # Chia 45 câu thành 3 lần gọi (15 câu/lần): ít round-trip; tăng max_tokens nếu JSON bị cắt.
-        qpc = _SESSION_QUIZ_ITEMS_PER_CALL
-        blocks: list[tuple[str, int, int]]
-        if qkind == QUIZ_KIND_SESSION_WARMUP:
-            blocks = []
-            for st in range(1, 31, qpc):
-                blocks.append(("prev", st, qpc))
-            for st in range(31, 46, qpc):
-                blocks.append(("current", st, qpc))
-        else:
-            blocks = [("current", st, qpc) for st in range(1, 46, qpc)]
+        total_q = _session_quiz_target_count(prev_corpus, curr_corpus, qkind=qkind)
+        blocks, prev_count_plan = _build_session_quiz_blocks(qkind, total_q)
         all_items: list[Any] = []
         n_blocks = len(blocks)
+        cb0 = params.progress_callback
+        if cb0:
+            try:
+                cb0(
+                    f"Sinh {total_q} câu (tài liệu ~{len((prev_corpus + curr_corpus).strip()):,} ký tự; "
+                    f"{n_blocks} lần gọi model)…"
+                )
+            except Exception:
+                pass
         for bi, (part, start_stt, n_need) in enumerate(blocks, 1):
             cb = params.progress_callback
             if cb:
@@ -1764,7 +2070,8 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
                     _validate_session_quiz_block_wording(arr_block)
                     _validate_session_quiz_block_topics_in_corpus(arr_block, validation_corpus)
                     _validate_session_quiz_block_answer_distinctness(arr_block)
-                    _validate_session_quiz_block_no_redundant_print_questions(arr_block, all_items)
+                    _validate_session_quiz_block_duplicate_code_snippets(arr_block, all_items)
+                    _validate_session_quiz_block_forbidden_question_styles(arr_block, all_items)
                     break
                 except Exception as e:
                     last_parse_hint = str(e)[:1200]
@@ -1797,7 +2104,11 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
             all_items.extend(arr_block)
 
         try:
-            rows = _parse_session_warmup_items(all_items, plan=("warmup" if qkind == QUIZ_KIND_SESSION_WARMUP else "end"))
+            rows = _parse_session_warmup_items(
+                all_items,
+                plan=("warmup" if qkind == QUIZ_KIND_SESSION_WARMUP else "end"),
+                prev_count=prev_count_plan if qkind == QUIZ_KIND_SESSION_WARMUP else None,
+            )
         except Exception as e:
             if qkind == QUIZ_KIND_SESSION_WARMUP:
                 return False, f"JSON warmup không hợp lệ: {e}\n---\n{json.dumps(all_items[:2], ensure_ascii=False)[:2800]}"
@@ -1808,6 +2119,8 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
 
         fill_template_session_warmup_quiz(params.template_xlsx, params.output_xlsx, rows)
         out_msg = str(params.output_xlsx)
+        if len(rows) < 45:
+            out_msg = f"Đã sinh {len(rows)} câu (không cố đủ 45 — tài liệu/nguồn giới hạn).\n{out_msg}"
         if chat_remap_note:
             out_msg = f"{chat_remap_note}\n{out_msg}"
         return True, out_msg

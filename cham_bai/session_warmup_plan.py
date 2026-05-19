@@ -96,12 +96,19 @@ def _build_specs() -> list[dict[str, object]]:
 SESSION_WARMUP_SPECS: list[dict[str, object]] = _build_specs()
 
 
-def apply_session_warmup_plan(rows: list[dict[str, object]]) -> None:
-    """Ghi đè difficulty theo kế hoạch cố định (bỏ qua giá trị model nếu lệch)."""
-    if len(rows) != len(SESSION_WARMUP_SPECS):
-        raise ValueError(f"Cần đúng {len(SESSION_WARMUP_SPECS)} câu, có {len(rows)}.")
+def apply_session_warmup_plan(rows: list[dict[str, object]], *, prev_count: int | None = None) -> None:
+    """Ghi đè difficulty/category; hỗ trợ 15–45 câu (không bắt buộc đủ 45)."""
+    n = len(rows)
+    if n < 12:
+        raise ValueError(f"Cần ít nhất 12 câu, có {n}.")
+    if n > len(SESSION_WARMUP_SPECS):
+        raise ValueError(f"Tối đa {len(SESSION_WARMUP_SPECS)} câu, có {n}.")
+    pc = int(prev_count) if prev_count is not None else min(30, (n * 2 + 1) // 3)
+    pc = max(0, min(n, pc))
     for i, row in enumerate(rows):
-        row["difficulty"] = int(SESSION_WARMUP_SPECS[i]["difficulty"])
+        spec = SESSION_WARMUP_SPECS[min(i, len(SESSION_WARMUP_SPECS) - 1)]
+        row["difficulty"] = int(spec["difficulty"])
+        row["category"] = "BÀI CŨ" if i < pc else "BÀI MỚI"
 
 
 def session_warmup_difficulty_legend_vi() -> str:
@@ -125,7 +132,8 @@ def session_warmup_spec_table_for_prompt(max_lines: int = 45) -> str:
 def session_warmup_distribution_summary_vi() -> str:
     """Mô tả ngắn cho UI (web/GUI)."""
     return (
-        "45 câu: 30 BÀI CŨ + 15 BÀI MỚI. "
-        "Difficulty chỉ dùng 6 mức: 4/5/6/7/8/9 và chia đều (mỗi mức 7 câu; 3 mức đầu +1 câu). "
+        "Tối đa 45 câu (thường 15–45 tùy lượng tài liệu): ~2/3 BÀI CŨ + phần còn BÀI MỚI. "
+        "Không cố đủ 45 nếu kiến thức mỏng. "
+        "Difficulty chỉ dùng 6 mức: 4/5/6/7/8/9. "
         f"Cột difficulty: {session_warmup_difficulty_legend_vi()}."
     )
