@@ -467,3 +467,37 @@ input[type="file"] {
   color: var(--muted);
   margin-top: 0.25rem;
 }
+
+.code-format-block {
+  background: #1e1e1e;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 1rem 1.1rem;
+  overflow-x: auto;
+  max-height: 480px;
+  overflow-y: auto;
+}
+
+.code-format-block .code-format-pre,
+.code-format-block pre {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  font-family: Consolas, "Cascadia Code", ui-monospace, monospace;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  white-space: pre;
+  color: #d4d4d4;
+}
+
+.code-format-block .code-format-code,
+.code-format-block code {
+  font-family: inherit;
+  font-size: inherit;
+  background: transparent;
+}
+
+.cf-out-wrap {
+  margin-top: 0.5rem;
+}

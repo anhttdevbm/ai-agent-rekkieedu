@@ -26,6 +26,7 @@
         <button type="button" class="active" data-tab="grade">Chấm bài</button>
         <button type="button" data-tab="quiz">Quiz</button>
         <button type="button" data-tab="reading">Bài đọc</button>
+        <button type="button" data-tab="code-format">Format code</button>
         <button type="button" data-tab="hackathon">Làm đề thi Hackathon</button>
         <button type="button" data-tab="hackathon-grade">Chấm bài Hackathon</button>
         <button type="button" data-tab="btvn">Chấm BTVN (Rikkei)</button>
@@ -403,6 +404,34 @@
           </div>
           <p class="status" id="r-status"></p>
         </form>
+      </section>
+
+      <!-- Format code -->
+      <section class="panel" id="panel-code-format">
+        <h2>Format code</h2>
+        <p class="hint">
+          Dán code Python (hoặc ngôn ngữ khác) — kết quả có <strong>nền tối và tô màu cú pháp</strong> giống khối code trong bài đọc. Bấm <strong>Copy</strong> để lấy nội dung.
+        </p>
+        <div class="field">
+          <label for="cf-lang">Ngôn ngữ</label>
+          <select id="cf-lang">
+            <option value="python" selected>Python</option>
+            <option value="text">Khác (chỉ nền tối, không tô màu)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="cf-input">Code gốc</label>
+          <textarea id="cf-input" rows="14" spellcheck="false" placeholder="Dán code vào đây…"></textarea>
+        </div>
+        <div class="actions">
+          <button type="button" class="primary" id="cf-submit">Format</button>
+          <button type="button" class="ghost" id="cf-copy" disabled>Copy</button>
+        </div>
+        <p class="status" id="cf-status"></p>
+        <div class="field cf-out-wrap" id="cf-out-wrap" hidden>
+          <label>Kết quả</label>
+          <div id="cf-output" class="code-format-block" aria-live="polite"></div>
+        </div>
       </section>
 
       <!-- Làm đề thi Hackathon -->

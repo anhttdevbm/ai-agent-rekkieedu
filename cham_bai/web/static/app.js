@@ -2322,11 +2322,88 @@
     }
   }
 
+  let _cfLastPlain = "";
+  let _cfLastHtml = "";
+
+  async function runFormatCode() {
+    const btn = $("#cf-submit");
+    const statusEl = $("#cf-status");
+    const outWrap = $("#cf-out-wrap");
+    const outEl = $("#cf-output");
+    const copyBtn = $("#cf-copy");
+    const code = ($("#cf-input") && $("#cf-input").value) || "";
+    const lang = ($("#cf-lang") && $("#cf-lang").value) || "python";
+    if (!code.trim()) {
+      if (statusEl) statusEl.textContent = "Dán code vào ô nhập.";
+      return;
+    }
+    setBusy(btn, true, "Đang format…");
+    if (statusEl) {
+      statusEl.textContent = "";
+      statusEl.classList.add("run");
+    }
+    if (copyBtn) copyBtn.disabled = true;
+    try {
+      const r = await fetch("/api/format-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, lang }),
+      });
+      const data = await r.json();
+      if (!r.ok) {
+        if (statusEl) statusEl.textContent = formatApiErr(data.detail) || "Lỗi format code.";
+        return;
+      }
+      _cfLastPlain = data.plain || "";
+      _cfLastHtml = data.html || "";
+      if (outEl) outEl.innerHTML = _cfLastHtml;
+      if (outWrap) outWrap.hidden = false;
+      if (copyBtn) copyBtn.disabled = !_cfLastPlain;
+      if (statusEl) statusEl.textContent = "Xong — có thể copy.";
+    } catch (e) {
+      if (statusEl) statusEl.textContent = String(e);
+    } finally {
+      if (statusEl) statusEl.classList.remove("run");
+      setBusy(btn, false);
+    }
+  }
+
+  async function copyFormatCode() {
+    const statusEl = $("#cf-status");
+    if (!_cfLastPlain) {
+      if (statusEl) statusEl.textContent = "Chưa có kết quả — bấm Format trước.";
+      return;
+    }
+    const htmlDoc =
+      '<!DOCTYPE html><html><body style="margin:0;background:#1E1E1E">' +
+      _cfLastHtml +
+      "</body></html>";
+    try {
+      if (navigator.clipboard && window.ClipboardItem) {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            "text/plain": new Blob([_cfLastPlain], { type: "text/plain" }),
+            "text/html": new Blob([htmlDoc], { type: "text/html" }),
+          }),
+        ]);
+      } else {
+        await navigator.clipboard.writeText(_cfLastPlain);
+      }
+      if (statusEl) statusEl.textContent = "Đã copy.";
+    } catch (e) {
+      if (statusEl) statusEl.textContent = "Copy thất bại: " + String(e);
+    }
+  }
+
   function init() {
     tabsSetup();
     $("#form-grade").addEventListener("submit", postGrade);
     $("#form-quiz").addEventListener("submit", postQuiz);
     $("#form-reading").addEventListener("submit", postReading);
+    const cfSubmit = $("#cf-submit");
+    if (cfSubmit) cfSubmit.addEventListener("click", runFormatCode);
+    const cfCopy = $("#cf-copy");
+    if (cfCopy) cfCopy.addEventListener("click", copyFormatCode);
     const fga = $("#form-group-a");
     if (fga) fga.addEventListener("submit", postGroupA);
     const gaDl = $("#ga-download");

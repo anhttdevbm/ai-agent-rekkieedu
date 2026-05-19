@@ -54,6 +54,7 @@ from cham_bai.quiz_gen import (
     normalize_quiz_kind,
     run_quiz_generation,
 )
+from cham_bai.code_format import highlight_code_to_html
 from cham_bai.reading_gen import (
     DEFAULT_LEARNING_GOALS,
     ReadingDocParams,
@@ -2745,6 +2746,20 @@ async def api_group_activity(
 
     body = "\n\n".join(out_chunks).strip()
     return PlainTextResponse(body, media_type="text/plain; charset=utf-8")
+
+
+@app.post("/api/format-code")
+async def api_format_code(payload: dict = Body(...)) -> JSONResponse:
+    """Tô màu code (cùng palette khối code bài đọc) — dùng tab Format code."""
+    code = str(payload.get("code") or "")
+    lang = str(payload.get("lang") or "python").strip() or "python"
+    if not code.strip():
+        raise HTTPException(status_code=400, detail="Dán code vào ô nhập.")
+    html_inner, plain = highlight_code_to_html(code, lang)
+    html = (
+        f'<pre class="code-format-pre"><code class="code-format-code">{html_inner}</code></pre>'
+    )
+    return JSONResponse({"html": html, "plain": plain})
 
 
 @app.post("/api/reading")

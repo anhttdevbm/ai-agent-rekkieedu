@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import base64
 import io
-import keyword
 import re
-import tokenize
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime
@@ -19,6 +17,11 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Cm, Inches, Pt, RGBColor
 
+from cham_bai.code_format import (
+    CODE_BLOCK_FILL as _CODE_BLOCK_FILL,
+    apply_python_highlight_to_paragraph as _add_python_syntax_runs,
+    style_code_run_on_dark as _style_code_run_on_dark,
+)
 from cham_bai.model_options import DEFAULT_IMAGE_MODEL, resolve_image_model
 from cham_bai.quiz_excel import set_excel_cell_value
 from cham_bai.openrouter import ChatMessage, complete_chat, generate_images_from_prompt
@@ -670,18 +673,6 @@ _BLACK = RGBColor(0x00, 0x00, 0x00)
 # Font văn bản chính (đề, đoạn, bảng, heading do tool gán run — không áp dụng khối code).
 READING_DOC_FONT = "Arial"
 
-# Khối code: nền tối kiểu IDE; màu chữ gần theme tối (comment xanh, từ khóa hồng, hàm tím, v.v.)
-_CODE_BLOCK_FILL = "1E1E1E"
-_CLR_CODE_COMMENT = RGBColor(0x9C, 0xDC, 0xFE)  # comment — xanh nhạt
-_CLR_CODE_KEYWORD = RGBColor(0xD1, 0x6D, 0x9A)  # for, if, break — hồng/đỏ nhạt
-_CLR_CODE_FUNCTION = RGBColor(0xC5, 0x86, 0xC0)  # gọi hàm — tím
-_CLR_CODE_STRING = RGBColor(0xCE, 0x91, 0x78)  # chuỗi — cam
-_CLR_CODE_NUMBER = RGBColor(0xB5, 0xCE, 0xA8)  # số — xanh lá nhạt
-_CLR_CODE_DEFAULT = RGBColor(0xD4, 0xD4, 0xD4)  # biến, toán tử
-
-_PY_RESERVED: frozenset[str] = frozenset(keyword.kwlist) | frozenset({"True", "False", "None"})
-
-
 def _configure_document_defaults(doc: Document) -> None:
     """Lề A4 kiểu văn bản Word thông dụng (VN); font mặc định Arial 12pt."""
     sec = doc.sections[0]
@@ -728,88 +719,6 @@ def _paragraph_has_code_block_shading(paragraph) -> bool:
         if fill and fill.upper() == _CODE_BLOCK_FILL.upper():
             return True
     return False
-
-
-def _style_code_run_on_dark(run, *, color: RGBColor = _CLR_CODE_DEFAULT) -> None:
-    run.font.name = "Consolas"
-    run.font.size = Pt(10)
-    run.font.color.rgb = color
-
-
-def _token_next_non_comment_newline(tokens: list, i: int):
-    j = i + 1
-    while j < len(tokens):
-        t = tokens[j]
-        if t.type in (tokenize.NL, tokenize.NEWLINE, tokenize.COMMENT):
-            j += 1
-            continue
-        return t
-    return None
-
-
-def _char_index_in_code(code: str, line_1based: int, col_0based: int) -> int:
-    """Chuyển (dòng 1-based, cột 0-based) của `tokenize` thành offset byte trong `code`."""
-    if line_1based < 1:
-        return 0
-    lines = code.splitlines(keepends=True)
-    idx = 0
-    for li in range(line_1based - 1):
-        if li < len(lines):
-            idx += len(lines[li])
-    idx += col_0based
-    return min(max(0, idx), len(code))
-
-
-def _python_token_color(tok: tokenize.TokenInfo, tokens: list, i: int) -> RGBColor:
-    if tok.type == tokenize.NAME:
-        if tok.string in _PY_RESERVED:
-            return _CLR_CODE_KEYWORD
-        nxt = _token_next_non_comment_newline(tokens, i)
-        if nxt and nxt.type == tokenize.OP and nxt.string == "(":
-            return _CLR_CODE_FUNCTION
-        return _CLR_CODE_DEFAULT
-    if tok.type == tokenize.COMMENT:
-        return _CLR_CODE_COMMENT
-    if tok.type == tokenize.STRING:
-        return _CLR_CODE_STRING
-    if tok.type == tokenize.NUMBER:
-        return _CLR_CODE_NUMBER
-    return _CLR_CODE_DEFAULT
-
-
-def _add_python_syntax_runs(p, code: str) -> None:
-    """Tô màu Python; luôn chèn phần nguồn giữa các token (khoảng trắng, xuống dòng) vì `tokenize` không tạo token cho space."""
-    try:
-        tokens = list(tokenize.generate_tokens(io.StringIO(code).readline))
-    except tokenize.TokenError:
-        r = p.add_run(code)
-        _style_code_run_on_dark(r)
-        return
-    cursor = 0
-    for i, tok in enumerate(tokens):
-        idx_s = _char_index_in_code(code, tok.start[0], tok.start[1])
-        idx_e = _char_index_in_code(code, tok.end[0], tok.end[1])
-        if cursor < idx_s:
-            gap = code[cursor:idx_s]
-            r = p.add_run(gap)
-            _style_code_run_on_dark(r, color=_CLR_CODE_DEFAULT)
-        if tok.type == tokenize.ENDMARKER:
-            cursor = idx_e
-            break
-        if tok.type == tokenize.ENCODING:
-            cursor = idx_e
-            continue
-        if idx_s >= idx_e:
-            cursor = idx_e
-            continue
-        piece = code[idx_s:idx_e]
-        color = _python_token_color(tok, tokens, i)
-        r = p.add_run(piece)
-        _style_code_run_on_dark(r, color=color)
-        cursor = idx_e
-    if cursor < len(code):
-        r = p.add_run(code[cursor:])
-        _style_code_run_on_dark(r, color=_CLR_CODE_DEFAULT)
 
 
 def _add_code_block_paragraph(doc: Document, code: str, fence_lang: str) -> None:
