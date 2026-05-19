@@ -1657,11 +1657,19 @@ def _extract_exam_code_from_text(s: str) -> int | None:
     t = str(s or "").strip()
     if not t:
         return None
-    # deso04 / de_so_04 / đề04 trong tên repo (IT202 hackathon cuối môn)
+    # deso04 / De04 / de_so_04 trong tên repo (IT202 hackathon cuối môn)
     m_deso = re.search(r"deso\s*0*([0-9]{1,3})", t, re.I)
     if m_deso:
         try:
             n = int(m_deso.group(1))
+            if 1 <= n <= 99:
+                return n
+        except Exception:
+            pass
+    m_de = re.search(r"(?:^|[_-])de\s*0*([0-9]{1,3})(?=[_-]|$)", t, re.I)
+    if m_de:
+        try:
+            n = int(m_de.group(1))
             if 1 <= n <= 99:
                 return n
         except Exception:

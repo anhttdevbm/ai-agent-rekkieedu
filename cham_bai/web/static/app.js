@@ -2458,6 +2458,13 @@
         const v = ($("#hg-schedule") && $("#hg-schedule").value) || "";
         if (String(v).trim()) hgLoadScheduleDetail();
       });
+    const hgBody = $("#hg-body");
+    if (hgBody)
+      hgBody.addEventListener("change", (ev) => {
+        if (ev.target && ev.target.classList && ev.target.classList.contains("hg-exam-pick")) {
+          hgUpdateRowNoteFromSelect(ev.target);
+        }
+      });
     const bSel = $("#b-homework");
     if (bSel) bSel.addEventListener("change", btvnOnPickHomework);
 
@@ -2500,6 +2507,11 @@
       const deso = /deso\s*0*([0-9]{1,3})/i.exec(t);
       if (deso) {
         const n = parseInt(deso[1], 10);
+        if (Number.isFinite(n) && n > 0 && n <= 99) return n;
+      }
+      const de = /(?:^|[_-])de\s*0*([0-9]{1,3})(?=[_-]|$)/i.exec(t);
+      if (de) {
+        const n = parseInt(de[1], 10);
         if (Number.isFinite(n) && n > 0 && n <= 99) return n;
       }
 
@@ -2607,6 +2619,57 @@
   function hgMergedDocs() {
     const base = ((hgCtx && hgCtx.docs) || {});
     return { ...base, ...hgManualDocsMap() };
+  }
+
+  function hgExamDocKeys(docsMap) {
+    return Object.keys(docsMap || {}).sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
+  }
+
+  function hgExamSelectHtml(idx, autoKey, docsMap) {
+    const keys = hgExamDocKeys(docsMap);
+    const ak = autoKey ? String(autoKey).padStart(2, "0") : "";
+    let html = `<select class="hg-exam-pick" data-idx="${idx}" title="Chọn mã đề">`;
+    html += `<option value="">${ak ? "(Tự động / đổi)" : "— Chọn đề —"}</option>`;
+    keys.forEach((k) => {
+      const sel = k === ak ? " selected" : "";
+      html += `<option value="${escapeHtml(k)}"${sel}>Đề ${escapeHtml(k)}</option>`;
+    });
+    html += "</select>";
+    if (ak && docsMap[ak]) {
+      html += ` <a href="${escapeHtml(docsMap[ak])}" target="_blank" rel="noreferrer" class="small">Docs</a>`;
+    }
+    return html;
+  }
+
+  function hgRowNote(gitRaw, examKey, docUrl) {
+    if (!gitRaw) return "Không nộp bài.";
+    if (examKey && docUrl) return "";
+    if (examKey && !docUrl) return "Đã chọn đề nhưng chưa có link Docs.";
+    return "Chưa nhận mã đề — chọn cột Đề hoặc kiểm tra tên repo.";
+  }
+
+  function hgUpdateRowNoteFromSelect(sel) {
+    if (!sel || !sel.classList.contains("hg-exam-pick")) return;
+    const tr = sel.closest("tr");
+    if (!tr || !tr.cells || tr.cells.length < 6) return;
+    const idx = parseInt(sel.getAttribute("data-idx") || "0", 10);
+    const row = (hgCtx.visible || [])[idx];
+    const gitRaw = row ? String(row.link || "").trim() : "";
+    const docsMap = hgMergedDocs();
+    const manual = String(sel.value || "").trim();
+    const key = manual || (extractExamCodeFromRepoLink(gitRaw) != null ? String(extractExamCodeFromRepoLink(gitRaw)).padStart(2, "0") : "");
+    tr.cells[5].textContent = hgRowNote(gitRaw, key, key && docsMap[key] ? docsMap[key] : "");
+  }
+
+  async function hgExamCodeForRow(idx, gitRaw, docsMap) {
+    const sel = document.querySelector(`select.hg-exam-pick[data-idx="${String(idx)}"]`);
+    const manual = sel && sel.value ? String(sel.value).trim() : "";
+    if (manual) {
+      const n = parseInt(manual, 10);
+      return Number.isFinite(n) && n > 0 ? n : null;
+    }
+    if (!gitRaw) return null;
+    return hgResolveExamCodeFromGithub(gitRaw, docsMap);
   }
 
   async function hgResolveExamCodeFromGithub(gitUrl, docsMap) {
@@ -2756,8 +2819,7 @@
         const skipZeroOverwrite = !!includeGraded && Number(x.point) === 0;
         let note = "";
         if (skipZeroOverwrite) note = "Đã có điểm 0 (bỏ qua theo rule không đè).";
-        else if (!gitRaw) note = "Không nộp bài.";
-        else if (!code || !docUrl) note = "Nộp sai tên, không rõ mã đề.";
+        else note = hgRowNote(gitRaw, key, docUrl);
 
         const tr = document.createElement("tr");
         const td = (html) => {
@@ -2767,12 +2829,12 @@
           c.innerHTML = html;
           return c;
         };
-        const checked = !skipZeroOverwrite && (!gitRaw || !!git);
+        const checked = !skipZeroOverwrite && !!gitRaw;
         tr.appendChild(td(`<input type="checkbox" class="hg-row" data-idx="${idx}" ${checked ? "checked" : ""} />`));
         tr.appendChild(td(escapeHtml(x.studentCode || "")));
         tr.appendChild(td(escapeHtml(x.fullName || "")));
         tr.appendChild(td(git ? `<a href="${escapeHtml(git)}" target="_blank" rel="noreferrer">${escapeHtml(git)}</a>` : "<span class='small'>(trống)</span>"));
-        tr.appendChild(td(docUrl ? `<a href="${escapeHtml(docUrl)}" target="_blank" rel="noreferrer">Đề ${key}</a>` : "<span class='small'>(không có)</span>"));
+        tr.appendChild(td(hgExamSelectHtml(idx, key, docsMap)));
         tr.appendChild(td(escapeHtml(note)));
         if (body) body.appendChild(tr);
       });
@@ -2812,11 +2874,11 @@
       if (includeGraded && Number(x.point) === 0) continue; // không đè các bài đã 0 điểm
       const gitRaw = String(x.link || "").trim();
       const git = normalizeGithubRepo(gitRaw);
-      const code = gitRaw ? await hgResolveExamCodeFromGithub(gitRaw, docs) : null;
+      const code = gitRaw ? await hgExamCodeForRow(idx, gitRaw, docs) : null;
       const key = code == null ? "" : String(code).padStart(2, "0");
       const docUrl = key && docs[key] ? docs[key] : "";
       const isMissing = !gitRaw;
-      const isInvalidExamCode = !isMissing && (!code || !docUrl);
+      const isInvalidExamCode = !isMissing && (!key || !docUrl);
       if (!isMissing && !git) continue;
       selected.push({
         docUrl,
