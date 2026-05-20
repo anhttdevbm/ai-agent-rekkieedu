@@ -50,7 +50,8 @@ YÊU CẦU XUẤT (bắt buộc):
 - Chỉ dùng «video» (cấm transcript/phụ đề). Không mở đầu dài «Nhóm trưởng X báo cáo…» — vào thẳng kết luận.
 - Câu 1 (bắt buộc): điểm đạt + thiếu sót chính trong cùng một câu (dùng dấu phẩy/chấm phẩy, không tách thành nhiều câu kể lể).
 - Câu 2 (chỉ khi cần): một việc phải sửa, ≤12 từ. Nếu nhóm tốt: chỉ 1 câu khen ngắn.
-- Không liệt kê từng bài/Session trừ khi thiếu sót gắn trực tiếp; ưu tiên 1–2 tên người quan trọng nhất."""
+- Không liệt kê từng bài/Session trừ khi thiếu sót gắn trực tiếp; ưu tiên 1–2 tên người quan trọng nhất.
+- Mỗi câu phải viết TRỌN, kết thúc bằng . ! ? hoặc ; — tuyệt đối không dừng giữa từ/câu."""
 
 _MEMBERS_SYSTEM = """Bạn trích danh sách thành viên nhóm từ BÁO CÁO (chỉ đọc báo cáo, không dùng video/transcript).
 
@@ -139,24 +140,35 @@ def _clean_plain_paragraph(s: str) -> str:
     return t
 
 
-_GROUP_COMMENT_MAX_WORDS = 55
-_GROUP_COMMENT_MAX_SENTENCES = 2
+_GROUP_COMMENT_MAX_WORDS = 70
+_GROUP_COMMENT_MAX_PARTS = 2
+_COMPLETE_END_RE = re.compile(r"[.!?…;]$")
 
 
-def _truncate_words(s: str, max_words: int) -> str:
-    words = s.split()
-    if len(words) <= max_words:
-        return s
-    cut = " ".join(words[:max_words])
-    for sep in (". ", "! ", "? ", "; ", "。"):
-        pos = cut.rfind(sep)
-        if pos > len(cut) * 0.35:
-            return cut[: pos + 1].strip()
-    return cut.rstrip(" ,;:") + "."
+def _unit_complete(s: str) -> bool:
+    s = (s or "").strip()
+    return bool(s) and bool(_COMPLETE_END_RE.search(s))
+
+
+def _split_comment_parts(t: str) -> list[str]:
+    """Tách theo câu (.!?) hoặc mệnh đề (;) — không cắt giữa từ."""
+    parts = [p.strip() for p in re.split(r"(?<=[.!?…])\s+", t) if p.strip()]
+    if len(parts) > 1:
+        return parts
+    semi = [p.strip() for p in re.split(r";\s+", t) if p.strip()]
+    if len(semi) > 1:
+        out: list[str] = []
+        for i, p in enumerate(semi):
+            if i < len(semi) - 1 and not _COMPLETE_END_RE.search(p):
+                out.append(p + ";")
+            else:
+                out.append(p)
+        return out
+    return parts if parts else [t.strip()]
 
 
 def _polish_group_comment(s: str) -> str:
-    """Rút gọn và chuẩn từ ngữ nhận xét gửi sinh viên."""
+    """Rút gọn và chuẩn từ ngữ; không cắt giữa câu/từ."""
     t = _clean_plain_paragraph(s)
     if not t:
         return t
@@ -166,15 +178,21 @@ def _polish_group_comment(s: str) -> str:
     t = re.sub(r"\bvideo\s+video\b", "video", t, flags=re.IGNORECASE)
     t = re.sub(r"[ \t\r\f\v]+", " ", t).strip()
 
-    # Tối đa 2 câu.
-    sentences = re.split(r"(?<=[.!?…])\s+", t)
-    sentences = [x.strip() for x in sentences if x.strip()]
-    if len(sentences) > _GROUP_COMMENT_MAX_SENTENCES:
-        t = " ".join(sentences[:_GROUP_COMMENT_MAX_SENTENCES])
-    else:
-        t = " ".join(sentences)
+    parts = _split_comment_parts(t)
+    while parts and not _unit_complete(parts[-1]):
+        parts.pop()
+    if not parts:
+        return ""
 
-    return _truncate_words(t, _GROUP_COMMENT_MAX_WORDS)
+    if len(parts) > _GROUP_COMMENT_MAX_PARTS:
+        parts = parts[:_GROUP_COMMENT_MAX_PARTS]
+
+    out = " ".join(parts).strip()
+    if len(out.split()) > _GROUP_COMMENT_MAX_WORDS and len(parts) > 1:
+        out = parts[0].strip()
+    if out and not _unit_complete(out):
+        out = out.rstrip(" ,;:") + "."
+    return out
 
 
 def _parse_json_object(raw: str) -> dict[str, Any] | None:
@@ -268,7 +286,7 @@ def _grade_comment_only(
         [{"role": "system", "content": _SYSTEM}, {"role": "user", "content": user_parts}],
         model=model,
         temperature=0.12,
-        max_tokens=120,
+        max_tokens=256,
         timeout_s=300.0,
     )
     out = _polish_group_comment(text)
