@@ -645,6 +645,7 @@
 
   function btvnNormText(s) {
     return String(s || "")
+      .replace(/[đĐ]/g, "d")
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
       .replace(/\s+/g, " ")
@@ -652,21 +653,48 @@
       .toLowerCase();
   }
 
-  function btvnNormNameForMatch(s) {
-    return btvnNormText(s).replace(/\(leader\)/g, "").trim();
+  function btvnNormPersonName(s) {
+    let t = String(s || "").trim();
+    t = t.replace(/[đĐ]/g, "d");
+    t = t.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    t = t.replace(BTVN_DATE_CHUNK_RE, " ");
+    t = t.replace(/[\s_\-–—]+$/, "");
+    t = t.replace(/\s+\d+\s*$/, "");
+    t = t.replace(/\(leader\)/gi, "");
+    return t.replace(/\s+/g, " ").trim().toLowerCase();
   }
 
-  const BTVN_TIER_END_RE = /\s*(yếu|yeu|tb|khá|kha|giỏi|gioi)\s*$/i;
+  function btvnNormNameForMatch(s) {
+    return btvnNormPersonName(s);
+  }
+
   const BTVN_DATE_CHUNK_RE =
-    /(?:[\s_\-–—]+)?(?:\(?\s*)?\d{1,2}\s*[/\-.]\s*\d{1,2}\s*[/\-.]\s*\d{2,4}(?:\s*\)?)?/gi;
+    /(?:[\s_\-–—]+)?(?:\(?\s*)?\d{1,2}\s*[/\-.]+\s*\d{1,2}\s*[/\-.]+\s*\d{2,4}(?:\s*\)?)?/gi;
   const BTVN_GROUP_LINE_RE = /^(?:cntt\s*\d*|nh[oó]m\s*(?:cá\s*biệt|\d+)|group\s*\d*)\s*$/i;
 
-  function btvnCanonicalTier(raw) {
-    const t = btvnNormText(raw);
-    if (t === "yeu" || t === "yếu") return "Yếu";
-    if (t === "tb") return "TB";
-    if (t === "kha" || t === "khá") return "Khá";
-    if (t === "gioi" || t === "giỏi") return "Giỏi";
+  function btvnSplitTierLine(line) {
+    const s = String(line || "").trim();
+    if (!s) return null;
+    let work = s.replace(BTVN_DATE_CHUNK_RE, " ").trim();
+    work = work.replace(/[\s_\-–—]+$/, "").trim();
+    const low = btvnNormText(work);
+    const suffixes = [
+      [" gioi", "Giỏi"],
+      [" kha", "Khá"],
+      [" yeu", "Yếu"],
+      [" tb", "TB"],
+    ];
+    for (const [suffix, tier] of suffixes) {
+      if (!low.endsWith(suffix)) continue;
+      const nameLow = low.slice(0, -suffix.length).trim();
+      if (!nameLow) continue;
+      const tokens = work.split(/\s+/);
+      while (tokens.length) {
+        const cand = tokens.join(" ");
+        if (btvnNormText(cand) === nameLow) return { namePart: cand, tier };
+        tokens.pop();
+      }
+    }
     return null;
   }
 
@@ -675,28 +703,26 @@
     for (const rawLine of String(text || "").split(/\r?\n/)) {
       const line = rawLine.trim();
       if (!line || BTVN_GROUP_LINE_RE.test(line)) continue;
-      const m = line.match(BTVN_TIER_END_RE);
-      if (!m) continue;
-      const tier = btvnCanonicalTier(m[1]);
-      if (!tier) continue;
-      let namePart = line.slice(0, m.index).trim();
-      namePart = namePart.replace(BTVN_DATE_CHUNK_RE, " ");
+      const split = btvnSplitTierLine(line);
+      if (!split) continue;
+      let namePart = split.namePart.replace(BTVN_DATE_CHUNK_RE, " ");
       namePart = namePart.replace(/[\s_\-–—]+$/, "").replace(/\s+/g, " ").trim();
       if (!namePart) continue;
-      const key = btvnNormNameForMatch(namePart);
-      if (key) out.set(key, tier);
+      const key = btvnNormPersonName(namePart);
+      if (key) out.set(key, split.tier);
     }
     return out;
   }
 
   function btvnLookupStudentTier(fullName, tiersMap) {
-    const key = btvnNormNameForMatch(fullName);
+    const key = btvnNormPersonName(fullName);
     if (!key || !tiersMap || tiersMap.size === 0) return "";
     if (tiersMap.has(key)) return tiersMap.get(key);
     let best = null;
     for (const [k, tier] of tiersMap.entries()) {
+      if (!k) continue;
       if (k === key) return tier;
-      if (k.length >= 6 && (k.includes(key) || key.includes(k))) {
+      if (k.length >= 4 && (key.startsWith(k) || k.startsWith(key))) {
         const score = Math.min(k.length, key.length);
         if (!best || score > best.score) best = { score, tier };
       }
@@ -723,7 +749,9 @@
       const tierCell = tr.querySelector(".b-stu-tier");
       if (!tierCell) return;
       const nameCell = tr.children[1];
-      const name = nameCell ? nameCell.textContent.trim() : "";
+      const name =
+        (tr.dataset && tr.dataset.fullName) ||
+        (nameCell ? nameCell.textContent.trim() : "");
       const tier = tiersMap ? btvnLookupStudentTier(name, tiersMap) : "";
       tierCell.textContent = btvnFormatStudentTierLabel(tier);
       tierCell.title = tier ? "" : tiersMap ? "Không khớp tên trong danh sách phân loại" : "";
@@ -1101,6 +1129,7 @@
           const name = String(st.fullName || "").trim();
           const tr = document.createElement("tr");
             tr.dataset.studentId = String(studentId);
+            tr.dataset.fullName = name;
           const td = (html) => {
             const c = document.createElement("td");
             c.style.padding = "10px";
@@ -2712,7 +2741,10 @@
     if (fb) fb.addEventListener("submit", postBtvn);
     ["b-min-completed", "b-ratio-ok", "b-score-threshold", "b-student-tiers"].forEach((id) => {
       const el = $("#" + id);
-      if (el) el.addEventListener("input", btvnUpdatePassRuleHint);
+      if (el) {
+        el.addEventListener("input", btvnUpdatePassRuleHint);
+        el.addEventListener("paste", () => setTimeout(btvnUpdatePassRuleHint, 0));
+      }
     });
     btvnUpdatePassRuleHint();
     const bLoad = $("#b-rk-load");

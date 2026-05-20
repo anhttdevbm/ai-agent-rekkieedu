@@ -23,7 +23,6 @@ from openpyxl.utils import get_column_letter
 
 from cham_bai.collector import CollectedBundle, format_bundle_for_prompt
 from cham_bai.git_remote import fetch_repo_sources_bundle, normalize_github_repo_url
-from cham_bai.google_sheets import _norm_name_for_match
 from cham_bai.openrouter import ChatMessage, complete_chat
 
 
@@ -336,24 +335,68 @@ def _extract_strengths_weaknesses(comment: str) -> str:
 
 def _norm_text_simple(s: str) -> str:
     t = str(s or "")
+    t = t.replace("đ", "d").replace("Đ", "d")
     t = unicodedata.normalize("NFD", t)
     t = "".join(ch for ch in t if unicodedata.category(ch) != "Mn")
     t = re.sub(r"\s+", " ", t).strip().lower()
     return t
 
 
+def _norm_btvn_person_name(s: str) -> str:
+    """Chuẩn hoá họ tên để khớp danh sách phân loại ↔ portal (bỏ ngày sinh, hậu tố số)."""
+    t = str(s or "").strip()
+    t = t.replace("đ", "d").replace("Đ", "d")
+    t = unicodedata.normalize("NFD", t)
+    t = "".join(ch for ch in t if unicodedata.category(ch) != "Mn")
+    t = _BTVN_DATE_CHUNK_RE.sub(" ", t)
+    t = re.sub(r"[\s_\-–—]+$", "", t)
+    t = re.sub(r"\s+\d+\s*$", "", t)
+    t = re.sub(r"\(leader\)", "", t, flags=re.I)
+    t = re.sub(r"\s+", " ", t).strip().lower()
+    return t
+
+
 _BTVN_TIER_END_RE = re.compile(
-    r"\s*(?P<tier>yếu|yeu|tb|khá|kha|giỏi|gioi)\s*$",
+    r"\s*(?P<tier>y[eê]u|yeu|tb|kh[aá]|kha|gi[oô]i|gioi)\s*$",
     re.IGNORECASE,
 )
 _BTVN_DATE_CHUNK_RE = re.compile(
-    r"(?:[\s_\-–—]+)?(?:\(?\s*)?\d{1,2}\s*[/\-\.]\s*\d{1,2}\s*[/\-\.]\s*\d{2,4}(?:\s*\)?)?",
+    r"(?:[\s_\-–—]+)?(?:\(?\s*)?\d{1,2}\s*[/\-\.]+\s*\d{1,2}\s*[/\-\.]+\s*\d{2,4}(?:\s*\)?)?",
     re.IGNORECASE,
 )
 _BTVN_GROUP_LINE_RE = re.compile(
     r"^(?:cntt\s*\d*|nh[oó]m\s*(?:cá\s*biệt|\d+)|group\s*\d*)\s*$",
     re.IGNORECASE,
 )
+
+
+def _split_btvn_tier_line(line: str) -> tuple[str, str] | None:
+    """Tách (họ tên, tier) từ một dòng — dùng chuỗi đã bỏ dấu để nhận diện tier cuối dòng."""
+    s = line.strip()
+    if not s:
+        return None
+    work = _BTVN_DATE_CHUNK_RE.sub(" ", s).strip()
+    work = re.sub(r"[\s_\-–—]+$", "", work).strip()
+    low = _norm_text_simple(work)
+    tier_suffixes = (
+        (" gioi", "Giỏi"),
+        (" kha", "Khá"),
+        (" yeu", "Yếu"),
+        (" tb", "TB"),
+    )
+    for suffix, tier in tier_suffixes:
+        if not low.endswith(suffix):
+            continue
+        name_low = low[: -len(suffix)].strip()
+        if not name_low:
+            continue
+        tokens = work.split()
+        while tokens:
+            cand = " ".join(tokens)
+            if _norm_text_simple(cand) == name_low:
+                return cand, tier
+            tokens.pop()
+    return None
 
 
 def _canonical_btvn_tier(raw: str) -> str | None:
@@ -381,26 +424,23 @@ def parse_btvn_student_tier_text(text: str) -> dict[str, str]:
             continue
         if _BTVN_GROUP_LINE_RE.match(line):
             continue
-        m = _BTVN_TIER_END_RE.search(line)
-        if not m:
+        split = _split_btvn_tier_line(line)
+        if not split:
             continue
-        tier = _canonical_btvn_tier(m.group("tier"))
-        if not tier:
-            continue
-        name_part = line[: m.start()].strip()
+        name_part, tier = split
         name_part = _BTVN_DATE_CHUNK_RE.sub(" ", name_part)
         name_part = re.sub(r"[\s_\-–—]+$", "", name_part).strip()
         name_part = re.sub(r"\s+", " ", name_part).strip()
         if not name_part:
             continue
-        key = _norm_name_for_match(name_part)
+        key = _norm_btvn_person_name(name_part)
         if key:
             out[key] = tier
     return out
 
 
 def lookup_btvn_student_tier(full_name: str, tiers: dict[str, str]) -> str | None:
-    key = _norm_name_for_match(full_name)
+    key = _norm_btvn_person_name(full_name)
     if not key or not tiers:
         return None
     if key in tiers:
@@ -411,7 +451,7 @@ def lookup_btvn_student_tier(full_name: str, tiers: dict[str, str]) -> str | Non
             continue
         if k == key:
             return tier
-        if len(k) >= 6 and (k in key or key in k):
+        if len(k) >= 4 and (key.startswith(k) or k.startswith(key)):
             score = min(len(k), len(key))
             if best is None or score > best[0]:
                 best = (score, tier)
