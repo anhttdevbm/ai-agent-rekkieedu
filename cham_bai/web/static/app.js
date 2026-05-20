@@ -643,6 +643,94 @@
 
   let btvnCtx = { students: [], sessionHomeworkCount: 0 };
 
+  function btvnNormText(s) {
+    return String(s || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase();
+  }
+
+  function btvnNormNameForMatch(s) {
+    return btvnNormText(s).replace(/\(leader\)/g, "").trim();
+  }
+
+  const BTVN_TIER_END_RE = /\s*(yếu|yeu|tb|khá|kha|giỏi|gioi)\s*$/i;
+  const BTVN_DATE_CHUNK_RE =
+    /(?:[\s_\-–—]+)?(?:\(?\s*)?\d{1,2}\s*[/\-.]\s*\d{1,2}\s*[/\-.]\s*\d{2,4}(?:\s*\)?)?/gi;
+  const BTVN_GROUP_LINE_RE = /^(?:cntt\s*\d*|nh[oó]m\s*(?:cá\s*biệt|\d+)|group\s*\d*)\s*$/i;
+
+  function btvnCanonicalTier(raw) {
+    const t = btvnNormText(raw);
+    if (t === "yeu" || t === "yếu") return "Yếu";
+    if (t === "tb") return "TB";
+    if (t === "kha" || t === "khá") return "Khá";
+    if (t === "gioi" || t === "giỏi") return "Giỏi";
+    return null;
+  }
+
+  function btvnParseStudentTierText(text) {
+    const out = new Map();
+    for (const rawLine of String(text || "").split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!line || BTVN_GROUP_LINE_RE.test(line)) continue;
+      const m = line.match(BTVN_TIER_END_RE);
+      if (!m) continue;
+      const tier = btvnCanonicalTier(m[1]);
+      if (!tier) continue;
+      let namePart = line.slice(0, m.index).trim();
+      namePart = namePart.replace(BTVN_DATE_CHUNK_RE, " ");
+      namePart = namePart.replace(/[\s_\-–—]+$/, "").replace(/\s+/g, " ").trim();
+      if (!namePart) continue;
+      const key = btvnNormNameForMatch(namePart);
+      if (key) out.set(key, tier);
+    }
+    return out;
+  }
+
+  function btvnLookupStudentTier(fullName, tiersMap) {
+    const key = btvnNormNameForMatch(fullName);
+    if (!key || !tiersMap || tiersMap.size === 0) return "";
+    if (tiersMap.has(key)) return tiersMap.get(key);
+    let best = null;
+    for (const [k, tier] of tiersMap.entries()) {
+      if (k === key) return tier;
+      if (k.length >= 6 && (k.includes(key) || key.includes(k))) {
+        const score = Math.min(k.length, key.length);
+        if (!best || score > best.score) best = { score, tier };
+      }
+    }
+    return best ? best.tier : "";
+  }
+
+  function btvnGetStudentTiersMap() {
+    const tiersEl = $("#b-student-tiers");
+    const tiersRaw = tiersEl && tiersEl.value != null ? String(tiersEl.value).trim() : "";
+    return tiersRaw ? btvnParseStudentTierText(tiersRaw) : null;
+  }
+
+  function btvnFormatStudentTierLabel(tier) {
+    if (!tier) return "—";
+    return tier;
+  }
+
+  function btvnRefreshStudentTierColumn() {
+    const body = $("#b-students-body");
+    if (!body) return;
+    const tiersMap = btvnGetStudentTiersMap();
+    body.querySelectorAll("tr").forEach((tr) => {
+      const tierCell = tr.querySelector(".b-stu-tier");
+      if (!tierCell) return;
+      const nameCell = tr.children[1];
+      const name = nameCell ? nameCell.textContent.trim() : "";
+      const tier = tiersMap ? btvnLookupStudentTier(name, tiersMap) : "";
+      tierCell.textContent = btvnFormatStudentTierLabel(tier);
+      tierCell.title = tier ? "" : tiersMap ? "Không khớp tên trong danh sách phân loại" : "";
+      tierCell.style.color = tiersMap && !tier ? "#b45309" : "";
+    });
+  }
+
   function btvnUpdatePassRuleHint() {
     const hint = $("#b-pass-rule-hint");
     if (!hint) return;
@@ -662,6 +750,7 @@
       hint.textContent =
         `Chế độ phân loại (${lineCount} dòng): Yếu — 2 bài đầu; TB — 3 bài đầu; Khá — 3 bài (bỏ bài 1); Giỏi — 3 bài cuối.` +
         ` Tất cả slot bắt buộc đạt (ĐẠT hoặc điểm > ${scoreTh}). SV không khớp tên → CHƯA HOÀN THÀNH.`;
+      btvnRefreshStudentTierColumn();
       return;
     }
     const minRaw = minEl && minEl.value != null ? String(minEl.value).trim() : "";
@@ -686,6 +775,7 @@
     } else {
       hint.textContent = `Chọn session để xem tổng số bài. Để trống «Số bài đạt» = ${Math.round(ratio * 100)}% tổng; điểm > ${scoreTh}.`;
     }
+    btvnRefreshStudentTierColumn();
   }
 
   async function btvnLoadSession() {
@@ -1038,6 +1128,13 @@
               pickSessionStatus() || st.homeworkStatus || st.status || st.sessionStatus || "";
             // Portal: null/empty => hiểu là "ĐANG CHỜ KIỂM TRA"
             if (!String(initStatus || "").trim()) initStatus = "ĐANG CHỜ KIỂM TRA";
+            const tiersMap = btvnGetStudentTiersMap();
+            const tierLabel = btvnFormatStudentTierLabel(
+              tiersMap ? btvnLookupStudentTier(name, tiersMap) : ""
+            );
+            const tierTd = td(`<span class="b-stu-tier">${escapeHtml(tierLabel)}</span>`);
+            if (tiersMap && tierLabel === "—") tierTd.style.color = "#b45309";
+            tr.appendChild(tierTd);
             tr.appendChild(td(`<span class="b-stu-status">${escapeHtml(initStatus)}</span>`));
           tr.appendChild(
             td(
@@ -1046,6 +1143,7 @@
           );
           body.appendChild(tr);
         });
+        btvnRefreshStudentTierColumn();
       }
       if (statusEl) statusEl.textContent = `Đã tải ${items.length} học sinh.`;
     } catch (e) {

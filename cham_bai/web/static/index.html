@@ -726,22 +726,6 @@
           <input type="hidden" id="b-homework-id" name="homework_id" />
 
           <div class="field">
-            <label>Danh sách học sinh (theo class/session)</label>
-            <div style="overflow:auto; max-height: 40vh; border: 1px solid #e5e7eb; border-radius: 12px; margin-top:.25rem">
-              <table class="tbl" style="width: 100%; border-collapse: collapse">
-                <thead>
-                  <tr>
-                    <th style="text-align:left; padding:10px; border-bottom:1px solid #e5e7eb">Mã SV</th>
-                    <th style="text-align:left; padding:10px; border-bottom:1px solid #e5e7eb">Họ tên</th>
-                    <th style="text-align:left; padding:10px; border-bottom:1px solid #e5e7eb">Trạng thái</th>
-                    <th style="text-align:left; padding:10px; border-bottom:1px solid #e5e7eb">Xem bài</th>
-                  </tr>
-                </thead>
-                <tbody id="b-students-body"></tbody>
-              </table>
-            </div>
-          </div>
-          <div class="field">
             <label for="b-model">Model OpenRouter</label>
             <select id="b-model" name="model"></select>
           </div>
@@ -836,6 +820,23 @@
                 </tr>
               </thead>
               <tbody id="b-results-body"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="field" style="margin-top: 1rem">
+          <label>Danh sách học sinh (theo class/session)</label>
+          <div style="overflow:auto; max-height: 50vh; border: 1px solid #e5e7eb; border-radius: 12px; margin-top:.25rem">
+            <table class="tbl" style="width: 100%; border-collapse: collapse">
+              <thead>
+                <tr>
+                  <th style="text-align:left; padding:10px; border-bottom:1px solid #e5e7eb">Mã SV</th>
+                  <th style="text-align:left; padding:10px; border-bottom:1px solid #e5e7eb">Họ tên</th>
+                  <th style="text-align:left; padding:10px; border-bottom:1px solid #e5e7eb">Phân loại</th>
+                  <th style="text-align:left; padding:10px; border-bottom:1px solid #e5e7eb">Trạng thái</th>
+                  <th style="text-align:left; padding:10px; border-bottom:1px solid #e5e7eb">Xem bài</th>
+                </tr>
+              </thead>
+              <tbody id="b-students-body"></tbody>
             </table>
           </div>
         </div>
