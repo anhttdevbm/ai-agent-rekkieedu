@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import re
+import json
 import math
 import unicodedata
 import random
@@ -439,6 +440,29 @@ def parse_btvn_student_tier_text(text: str) -> dict[str, str]:
     return out
 
 
+def parse_btvn_student_tier_overrides(raw: str | dict | None) -> dict[int, str]:
+    """Map studentId -> tier từ JSON hoặc dict (chỉ nhận Yếu/TB/Khá/Giỏi)."""
+    valid = {"Yếu", "TB", "Khá", "Giỏi"}
+    data: Any = raw
+    if isinstance(raw, str):
+        try:
+            data = json.loads(raw or "{}")
+        except Exception:
+            return {}
+    if not isinstance(data, dict):
+        return {}
+    out: dict[int, str] = {}
+    for k, v in data.items():
+        try:
+            sid = int(k)
+        except Exception:
+            continue
+        tier = str(v or "").strip()
+        if tier in valid:
+            out[sid] = tier
+    return out
+
+
 def lookup_btvn_student_tier(full_name: str, tiers: dict[str, str]) -> str | None:
     key = _norm_btvn_person_name(full_name)
     if not key or not tiers:
@@ -650,13 +674,15 @@ def mark_btvn_session_status_from_exercise_scores(
     ratio_ok: float = 0.5,
     min_completed: int | None = None,
     student_tiers: dict[str, str] | None = None,
+    student_tier_overrides: dict[int, str] | None = None,
     waiting_status: str = "ĐANG CHỜ KIỂM TRA",
 ) -> dict[str, Any]:
     """
     Chốt trạng thái session dựa vào comment của từng exercise.
     - Điểm > score_threshold hoặc dòng ĐẠT => đạt từng bài
     - Chế độ mặc định: đạt >= pass_required (min_completed hoặc ceil(ratio_ok * total))
-    - Chế độ phân loại (student_tiers): Yếu 2 đầu, TB 3 đầu, Khá 3 (bỏ bài 1), Giỏi 3 cuối — tất cả slot bắt buộc phải đạt
+    - Chế độ phân loại (student_tiers / student_tier_overrides): Yếu 2 đầu, TB 3 đầu, Khá 3 (bỏ bài 1), Giỏi 3 cuối
+    - Override theo studentId ưu tiên hơn map tên từ danh sách dán
     - Chỉ cập nhật nếu trạng thái hiện tại = waiting_status
     """
     sid = str(session_id).strip()
@@ -665,7 +691,8 @@ def mark_btvn_session_status_from_exercise_scores(
     if total <= 0:
         return {"ok": False, "reason": "Không đọc được total bài trong homework/session.", "total": total}
 
-    use_tier_mode = bool(student_tiers)
+    tier_overrides = student_tier_overrides or {}
+    use_tier_mode = bool(student_tiers) or bool(tier_overrides)
     ratio_ok_count = resolve_btvn_pass_required_count(
         total, min_completed=min_completed, ratio_ok=ratio_ok
     )
@@ -729,9 +756,11 @@ def mark_btvn_session_status_from_exercise_scores(
 
             achieved = sum(1 for x in slot_achieved if x)
 
-            if use_tier_mode and student_tiers:
+            if use_tier_mode:
                 st_name = str(st.get("fullName") or st.get("full_name") or "").strip()
-                tier_label = lookup_btvn_student_tier(st_name, student_tiers)
+                tier_label = tier_overrides.get(st_id)
+                if not tier_label and student_tiers:
+                    tier_label = lookup_btvn_student_tier(st_name, student_tiers)
                 if not tier_label:
                     tier_missing = True
                     new_status = "CHƯA HOÀN THÀNH"
@@ -833,6 +862,7 @@ def mark_btvn_session_status_from_exercise_scores(
         "min_completed_override": min_completed,
         "tier_mode": use_tier_mode,
         "tier_students_parsed": len(student_tiers or {}),
+        "tier_overrides_count": len(tier_overrides),
     }
 
 

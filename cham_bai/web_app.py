@@ -74,6 +74,7 @@ from cham_bai.rikkei_homework import (
 from cham_bai.rikkei_homework import (
     mark_btvn_session_status_from_exercise_scores as _mark_btvn_session,
     parse_btvn_student_tier_text as _parse_btvn_student_tier_text,
+    parse_btvn_student_tier_overrides as _parse_btvn_student_tier_overrides,
 )
 from cham_bai.google_sheets import (
     extract_spreadsheet_id as _gs_extract_spreadsheet_id,
@@ -2549,6 +2550,7 @@ async def api_btvn_rikkei_session_status(
     ratio_ok: str = Form("0.5"),
     score_threshold: str = Form("50"),
     student_tiers_text: str = Form(""),
+    student_tier_overrides_json: str = Form("{}"),
 ) -> JSONResponse:
     """
     Chỉ chốt trạng thái session trên Rikkei (HOÀN THÀNH/CHƯA HOÀN THÀNH),
@@ -2591,6 +2593,7 @@ async def api_btvn_rikkei_session_status(
             status_code=400,
             detail="Danh sách phân loại không hợp lệ (mỗi dòng cần họ tên + Yếu/TB/Khá/Giỏi).",
         )
+    tier_overrides = _parse_btvn_student_tier_overrides(student_tier_overrides_json or "{}")
 
     # Chỉ cập nhật cho các bạn đang ở trạng thái "ĐANG CHỜ KIỂM TRA".
     session_update = _mark_btvn_session(
@@ -2603,6 +2606,7 @@ async def api_btvn_rikkei_session_status(
         ratio_ok=ratio_f,
         score_threshold=score_th,
         student_tiers=student_tiers,
+        student_tier_overrides=tier_overrides or None,
     )
 
     sheet_update = None

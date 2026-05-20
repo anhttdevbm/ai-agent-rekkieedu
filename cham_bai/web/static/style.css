@@ -304,7 +304,15 @@ textarea {
   resize: vertical;
 }
 
-/* BTVN: một ô contenteditable thay textarea + file ảnh */
+/* BTVN: dropdown phân loại từng SV trong bảng */
+.b-stu-tier-select {
+  width: auto;
+  min-width: 8.5rem;
+  max-width: 100%;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.875rem;
+}
+
 .btvn-editor {
   min-height: 8rem;
   max-height: 50vh;

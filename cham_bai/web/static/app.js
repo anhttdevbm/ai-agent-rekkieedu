@@ -736,9 +736,67 @@
     return tiersRaw ? btvnParseStudentTierText(tiersRaw) : null;
   }
 
-  function btvnFormatStudentTierLabel(tier) {
-    if (!tier) return "—";
-    return tier;
+  const BTVN_TIER_OPTIONS = ["Yếu", "TB", "Khá", "Giỏi"];
+
+  function btvnCreateTierSelect(studentId, autoTier, selectedTier) {
+    const sel = document.createElement("select");
+    sel.className = "b-stu-tier-select";
+    sel.dataset.studentId = String(studentId);
+    sel.title = "Chọn xếp loại thủ công hoặc để Tự động (map từ danh sách dán)";
+
+    const autoOpt = document.createElement("option");
+    autoOpt.value = "";
+    autoOpt.textContent = autoTier ? `Tự động (${autoTier})` : "Tự động (—)";
+    sel.appendChild(autoOpt);
+
+    BTVN_TIER_OPTIONS.forEach((t) => {
+      const o = document.createElement("option");
+      o.value = t;
+      o.textContent = t;
+      sel.appendChild(o);
+    });
+
+    const manual = selectedTier && BTVN_TIER_OPTIONS.includes(selectedTier) ? selectedTier : "";
+    sel.value = manual;
+    sel.dataset.manual = manual ? "1" : "0";
+
+    sel.addEventListener("change", () => {
+      sel.dataset.manual = sel.value ? "1" : "0";
+    });
+    return sel;
+  }
+
+  function btvnResolveStudentTier(tr) {
+    if (!tr) return "";
+    const sel = tr.querySelector(".b-stu-tier-select");
+    if (sel && sel.value) return sel.value;
+    const name = (tr.dataset && tr.dataset.fullName) || "";
+    const tiersMap = btvnGetStudentTiersMap();
+    return tiersMap ? btvnLookupStudentTier(name, tiersMap) : "";
+  }
+
+  function btvnCollectStudentTierOverrides() {
+    const out = {};
+    const body = $("#b-students-body");
+    if (!body) return out;
+    body.querySelectorAll("tr").forEach((tr) => {
+      const sid = tr.dataset && tr.dataset.studentId;
+      const sel = tr.querySelector(".b-stu-tier-select");
+      if (!sid || !sel || !sel.value) return;
+      out[String(sid)] = sel.value;
+    });
+    return out;
+  }
+
+  function btvnHasTierModeConfigured() {
+    const tiersRaw =
+      ($("#b-student-tiers") && $("#b-student-tiers").value != null
+        ? String($("#b-student-tiers").value)
+        : ""
+      ).trim();
+    if (tiersRaw) return true;
+    const overrides = btvnCollectStudentTierOverrides();
+    return Object.keys(overrides).length > 0;
   }
 
   function btvnRefreshStudentTierColumn() {
@@ -746,16 +804,17 @@
     if (!body) return;
     const tiersMap = btvnGetStudentTiersMap();
     body.querySelectorAll("tr").forEach((tr) => {
-      const tierCell = tr.querySelector(".b-stu-tier");
-      if (!tierCell) return;
-      const nameCell = tr.children[1];
+      const sel = tr.querySelector(".b-stu-tier-select");
+      if (!sel) return;
       const name =
         (tr.dataset && tr.dataset.fullName) ||
-        (nameCell ? nameCell.textContent.trim() : "");
-      const tier = tiersMap ? btvnLookupStudentTier(name, tiersMap) : "";
-      tierCell.textContent = btvnFormatStudentTierLabel(tier);
-      tierCell.title = tier ? "" : tiersMap ? "Không khớp tên trong danh sách phân loại" : "";
-      tierCell.style.color = tiersMap && !tier ? "#b45309" : "";
+        (tr.children[1] ? tr.children[1].textContent.trim() : "");
+      const autoTier = tiersMap ? btvnLookupStudentTier(name, tiersMap) : "";
+      const autoOpt = sel.querySelector('option[value=""]');
+      if (autoOpt) autoOpt.textContent = autoTier ? `Tự động (${autoTier})` : "Tự động (—)";
+      if (sel.dataset.manual !== "1") {
+        sel.value = "";
+      }
     });
   }
 
@@ -777,8 +836,14 @@
       const lineCount = tiersRaw.split(/\r?\n/).filter((ln) => String(ln || "").trim()).length;
       hint.textContent =
         `Chế độ phân loại (${lineCount} dòng): Yếu — 2 bài đầu; TB — 3 bài đầu; Khá — 3 bài (bỏ bài 1); Giỏi — 3 bài cuối.` +
-        ` Tất cả slot bắt buộc đạt (ĐẠT hoặc điểm > ${scoreTh}). SV không khớp tên → CHƯA HOÀN THÀNH.`;
+        ` Tất cả slot bắt buộc đạt (ĐẠT hoặc điểm > ${scoreTh}). Có thể chỉnh từng SV ở cột Phân loại.`;
       btvnRefreshStudentTierColumn();
+      return;
+    }
+    const manualCount = Object.keys(btvnCollectStudentTierOverrides()).length;
+    if (manualCount > 0) {
+      hint.textContent =
+        `Chế độ phân loại thủ công (${manualCount} SV): Yếu 2 đầu; TB 3 đầu; Khá 3 (bỏ bài 1); Giỏi 3 cuối; điểm > ${scoreTh}.`;
       return;
     }
     const minRaw = minEl && minEl.value != null ? String(minEl.value).trim() : "";
@@ -1158,11 +1223,11 @@
             // Portal: null/empty => hiểu là "ĐANG CHỜ KIỂM TRA"
             if (!String(initStatus || "").trim()) initStatus = "ĐANG CHỜ KIỂM TRA";
             const tiersMap = btvnGetStudentTiersMap();
-            const tierLabel = btvnFormatStudentTierLabel(
-              tiersMap ? btvnLookupStudentTier(name, tiersMap) : ""
-            );
-            const tierTd = td(`<span class="b-stu-tier">${escapeHtml(tierLabel)}</span>`);
-            if (tiersMap && tierLabel === "—") tierTd.style.color = "#b45309";
+            const autoTier = tiersMap ? btvnLookupStudentTier(name, tiersMap) : "";
+            const tierTd = document.createElement("td");
+            tierTd.style.padding = "10px";
+            tierTd.style.borderBottom = "1px solid #f3f4f6";
+            tierTd.appendChild(btvnCreateTierSelect(studentId, autoTier, ""));
             tr.appendChild(tierTd);
             tr.appendChild(td(`<span class="b-stu-status">${escapeHtml(initStatus)}</span>`));
           tr.appendChild(
@@ -1963,8 +2028,11 @@
       if (scoreEl) fd.set("score_threshold", String(scoreEl.value || "50").trim() || "50");
       const tiersEl = $("#b-student-tiers");
       const tiersRaw = tiersEl && tiersEl.value != null ? String(tiersEl.value).trim() : "";
-      if (tiersRaw) {
-        fd.set("student_tiers_text", tiersRaw);
+      const tierOverrides = btvnCollectStudentTierOverrides();
+      fd.set("student_tier_overrides_json", JSON.stringify(tierOverrides));
+      if (tiersRaw || Object.keys(tierOverrides).length > 0) {
+        if (tiersRaw) fd.set("student_tiers_text", tiersRaw);
+        else fd.delete("student_tiers_text");
         fd.delete("min_completed");
       } else {
         fd.delete("student_tiers_text");
@@ -2739,6 +2807,14 @@
     }
     const fb = $("#form-btvn");
     if (fb) fb.addEventListener("submit", postBtvn);
+    const bStudentsBody = $("#b-students-body");
+    if (bStudentsBody) {
+      bStudentsBody.addEventListener("change", (ev) => {
+        if (ev.target && ev.target.classList && ev.target.classList.contains("b-stu-tier-select")) {
+          btvnUpdatePassRuleHint();
+        }
+      });
+    }
     ["b-min-completed", "b-ratio-ok", "b-score-threshold", "b-student-tiers"].forEach((id) => {
       const el = $("#" + id);
       if (el) {
