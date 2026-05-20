@@ -641,7 +641,52 @@
       .replace(/\son\w+='[^']*'/gi, "");
   }
 
-  let btvnCtx = { students: [] };
+  let btvnCtx = { students: [], sessionHomeworkCount: 0 };
+
+  function btvnUpdatePassRuleHint() {
+    const hint = $("#b-pass-rule-hint");
+    if (!hint) return;
+    const tiersEl = $("#b-student-tiers");
+    const tiersRaw = tiersEl && tiersEl.value != null ? String(tiersEl.value).trim() : "";
+    const minEl = $("#b-min-completed");
+    const ratioEl = $("#b-ratio-ok");
+    const scoreEl = $("#b-score-threshold");
+    const total = parseInt(String(btvnCtx.sessionHomeworkCount || 0), 10) || 0;
+    let scoreTh = 50;
+    if (scoreEl && scoreEl.value != null) {
+      const s = parseInt(String(scoreEl.value), 10);
+      if (Number.isFinite(s)) scoreTh = Math.max(0, Math.min(100, s));
+    }
+    if (tiersRaw) {
+      const lineCount = tiersRaw.split(/\r?\n/).filter((ln) => String(ln || "").trim()).length;
+      hint.textContent =
+        `Chế độ phân loại (${lineCount} dòng): Yếu — 2 bài đầu; TB — 3 bài đầu; Khá — 3 bài (bỏ bài 1); Giỏi — 3 bài cuối.` +
+        ` Tất cả slot bắt buộc đạt (ĐẠT hoặc điểm > ${scoreTh}). SV không khớp tên → CHƯA HOÀN THÀNH.`;
+      return;
+    }
+    const minRaw = minEl && minEl.value != null ? String(minEl.value).trim() : "";
+    let minN = null;
+    if (minRaw) {
+      const p = parseInt(minRaw, 10);
+      if (Number.isFinite(p) && p > 0) minN = p;
+    }
+    let ratio = 0.5;
+    if (ratioEl && ratioEl.value != null) {
+      const r = parseFloat(String(ratioEl.value));
+      if (Number.isFinite(r) && r > 0) ratio = Math.max(0.05, Math.min(1, r));
+    }
+    let required = null;
+    if (total > 0) {
+      required = minN != null ? Math.min(minN, total) : Math.max(1, Math.ceil(total * ratio - 1e-9));
+    }
+    if (minN != null && total > 0) {
+      hint.textContent = `Quy tắc: đạt ≥ ${required}/${total} bài (bạn chọn ${minN}); điểm > ${scoreTh} hoặc dòng ĐẠT trong nhận xét.`;
+    } else if (total > 0) {
+      hint.textContent = `Quy tắc: đạt ≥ ${required}/${total} bài (${Math.round(ratio * 100)}% làm tròn lên); điểm > ${scoreTh} hoặc dòng ĐẠT.`;
+    } else {
+      hint.textContent = `Chọn session để xem tổng số bài. Để trống «Số bài đạt» = ${Math.round(ratio * 100)}% tổng; điểm > ${scoreTh}.`;
+    }
+  }
 
   async function btvnLoadSession() {
     const token = ($("#b-rk-token") && $("#b-rk-token").value) || "";
@@ -708,6 +753,8 @@
 
       if (statusEl) statusEl.textContent = `Đã tải session: ${data && data.name ? data.name : sid}`;
       if (hwStatusEl) hwStatusEl.textContent = `Đã tải ${hw.length} bài tập của session.`;
+      btvnCtx.sessionHomeworkCount = hw.length;
+      btvnUpdatePassRuleHint();
 
       // Auto load students ngay khi chọn session
       await btvnLoadStudents();
@@ -1780,6 +1827,21 @@
       fd.delete("assignment_image_urls");
       fd.delete("homework_id");
       fd.delete("model");
+      const minEl = $("#b-min-completed");
+      const ratioEl = $("#b-ratio-ok");
+      const scoreEl = $("#b-score-threshold");
+      if (minEl && String(minEl.value || "").trim()) fd.set("min_completed", String(minEl.value).trim());
+      else fd.delete("min_completed");
+      if (ratioEl) fd.set("ratio_ok", String(ratioEl.value || "0.5").trim() || "0.5");
+      if (scoreEl) fd.set("score_threshold", String(scoreEl.value || "50").trim() || "50");
+      const tiersEl = $("#b-student-tiers");
+      const tiersRaw = tiersEl && tiersEl.value != null ? String(tiersEl.value).trim() : "";
+      if (tiersRaw) {
+        fd.set("student_tiers_text", tiersRaw);
+        fd.delete("min_completed");
+      } else {
+        fd.delete("student_tiers_text");
+      }
       const r = await fetch("/api/btvn/rikkei/session-status", { method: "POST", body: fd });
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
@@ -1808,10 +1870,17 @@
         if (el && typeof st === "string" && st) el.textContent = st;
       });
 
-      const ratioInfo =
-        su && typeof su.ratio_ok_count !== "undefined" && typeof su.total !== "undefined"
-          ? ` (đạt >= ${su.ratio_ok_count}/${su.total}; điểm > 50)`
-          : "";
+      const scoreTh =
+        su && su.score_threshold != null && su.score_threshold !== ""
+          ? su.score_threshold
+          : ($("#b-score-threshold") && $("#b-score-threshold").value) || "50";
+      let ratioInfo = "";
+      if (su && su.tier_mode) {
+        const parsed = su.tier_students_parsed != null ? su.tier_students_parsed : "?";
+        ratioInfo = ` (phân loại: ${parsed} SV; điểm > ${scoreTh})`;
+      } else if (su && typeof su.ratio_ok_count !== "undefined" && typeof su.total !== "undefined") {
+        ratioInfo = ` (cần đạt ≥ ${su.ratio_ok_count}/${su.total} bài; điểm > ${scoreTh})`;
+      }
       const ignoredCount = su && Array.isArray(su.ignored) ? su.ignored.length : 0;
       const msg = su && su.ok
         ? `Session update: ${su.ok_count || 0} cập nhật, ${su.fail_count || 0} lỗi, ${ignoredCount} bị bỏ qua${ratioInfo}`
@@ -2543,6 +2612,11 @@
     }
     const fb = $("#form-btvn");
     if (fb) fb.addEventListener("submit", postBtvn);
+    ["b-min-completed", "b-ratio-ok", "b-score-threshold", "b-student-tiers"].forEach((id) => {
+      const el = $("#" + id);
+      if (el) el.addEventListener("input", btvnUpdatePassRuleHint);
+    });
+    btvnUpdatePassRuleHint();
     const bLoad = $("#b-rk-load");
     if (bLoad) bLoad.addEventListener("click", btvnLoadSystems);
     const bSys = $("#b-rk-system");

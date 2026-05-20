@@ -23,6 +23,7 @@ from openpyxl.utils import get_column_letter
 
 from cham_bai.collector import CollectedBundle, format_bundle_for_prompt
 from cham_bai.git_remote import fetch_repo_sources_bundle, normalize_github_repo_url
+from cham_bai.google_sheets import _norm_name_for_match
 from cham_bai.openrouter import ChatMessage, complete_chat
 
 
@@ -333,7 +334,183 @@ def _extract_strengths_weaknesses(comment: str) -> str:
     return tail
 
 
+def _norm_text_simple(s: str) -> str:
+    t = str(s or "")
+    t = unicodedata.normalize("NFD", t)
+    t = "".join(ch for ch in t if unicodedata.category(ch) != "Mn")
+    t = re.sub(r"\s+", " ", t).strip().lower()
+    return t
+
+
+_BTVN_TIER_END_RE = re.compile(
+    r"\s*(?P<tier>yếu|yeu|tb|khá|kha|giỏi|gioi)\s*$",
+    re.IGNORECASE,
+)
+_BTVN_DATE_CHUNK_RE = re.compile(
+    r"(?:[\s_\-–—]+)?(?:\(?\s*)?\d{1,2}\s*[/\-\.]\s*\d{1,2}\s*[/\-\.]\s*\d{2,4}(?:\s*\)?)?",
+    re.IGNORECASE,
+)
+_BTVN_GROUP_LINE_RE = re.compile(
+    r"^(?:cntt\s*\d*|nh[oó]m\s*(?:cá\s*biệt|\d+)|group\s*\d*)\s*$",
+    re.IGNORECASE,
+)
+
+
+def _canonical_btvn_tier(raw: str) -> str | None:
+    t = _norm_text_simple(raw)
+    if t in ("yeu", "yếu"):
+        return "Yếu"
+    if t == "tb":
+        return "TB"
+    if t in ("kha", "khá"):
+        return "Khá"
+    if t in ("gioi", "giỏi"):
+        return "Giỏi"
+    return None
+
+
+def parse_btvn_student_tier_text(text: str) -> dict[str, str]:
+    """
+    Parse danh sách phân loại (mỗi dòng: họ tên + ngày sinh tuỳ chọn + Yếu/TB/Khá/Giỏi).
+    Trả về map tên đã chuẩn hoá -> tier chuẩn.
+    """
+    out: dict[str, str] = {}
+    for raw_line in str(text or "").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if _BTVN_GROUP_LINE_RE.match(line):
+            continue
+        m = _BTVN_TIER_END_RE.search(line)
+        if not m:
+            continue
+        tier = _canonical_btvn_tier(m.group("tier"))
+        if not tier:
+            continue
+        name_part = line[: m.start()].strip()
+        name_part = _BTVN_DATE_CHUNK_RE.sub(" ", name_part)
+        name_part = re.sub(r"[\s_\-–—]+$", "", name_part).strip()
+        name_part = re.sub(r"\s+", " ", name_part).strip()
+        if not name_part:
+            continue
+        key = _norm_name_for_match(name_part)
+        if key:
+            out[key] = tier
+    return out
+
+
+def lookup_btvn_student_tier(full_name: str, tiers: dict[str, str]) -> str | None:
+    key = _norm_name_for_match(full_name)
+    if not key or not tiers:
+        return None
+    if key in tiers:
+        return tiers[key]
+    best: tuple[int, str] | None = None
+    for k, tier in tiers.items():
+        if not k:
+            continue
+        if k == key:
+            return tier
+        if len(k) >= 6 and (k in key or key in k):
+            score = min(len(k), len(key))
+            if best is None or score > best[0]:
+                best = (score, tier)
+    return best[1] if best else None
+
+
+def btvn_tier_required_indices(tier: str, total: int) -> list[int]:
+    """
+    Chỉ số bài (0-based, theo thứ tự homework session) bắt buộc phải đạt:
+    - Yếu: 2 bài đầu
+    - TB: 3 bài đầu
+    - Khá: 3 bài (bỏ qua bài đầu)
+    - Giỏi: 3 bài cuối
+    """
+    if total <= 0:
+        return []
+    t = _norm_text_simple(tier)
+    if t in ("yeu", "yếu"):
+        return list(range(min(2, total)))
+    if t == "tb":
+        return list(range(min(3, total)))
+    if t in ("kha", "khá"):
+        start = 1 if total > 1 else 0
+        return list(range(start, min(start + 3, total)))
+    if t in ("gioi", "giỏi"):
+        if total >= 3:
+            return list(range(total - 3, total))
+        return list(range(total))
+    return list(range(min(3, total)))
+
+
+def fetch_homework_session_order(token: str, session_id: int | str) -> list[int]:
+    """Thứ tự homework id trong session (dùng sắp xếp exercise)."""
+    sid = str(session_id).strip()
+    ids: list[int] = []
+    url = f"{RIKKEI_BASE}/homework/session/{sid}"
+    try:
+        r = _rikkei_request("GET", url, token)
+        r.raise_for_status()
+        data = r.json()
+        items: list[Any] = []
+        if isinstance(data, list):
+            items = data
+        elif isinstance(data, dict):
+            for k in ("homework", "homeworks", "data", "items", "content"):
+                v = data.get(k)
+                if isinstance(v, list):
+                    items = v
+                    break
+            if not items:
+                items = _unwrap_array(data)
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            hid = _as_int(item.get("id"))
+            if hid is not None:
+                ids.append(hid)
+    except Exception:
+        pass
+    if ids:
+        return ids
+    try:
+        r2 = _rikkei_request("GET", f"{RIKKEI_BASE}/sessions/{sid}", token)
+        r2.raise_for_status()
+        payload = r2.json()
+        if isinstance(payload, dict):
+            hw = payload.get("homework")
+            if isinstance(hw, list):
+                for item in hw:
+                    if isinstance(item, dict):
+                        hid = _as_int(item.get("id"))
+                        if hid is not None:
+                            ids.append(hid)
+    except Exception:
+        pass
+    return ids
+
+
+def sort_exercises_by_session_homework(
+    exercises: list[dict[str, Any]],
+    homework_ids_ordered: list[int],
+) -> list[dict[str, Any]]:
+    if not homework_ids_ordered:
+        return list(exercises)
+    hw_to_idx = {hid: i for i, hid in enumerate(homework_ids_ordered)}
+
+    def _key(ex: dict[str, Any]) -> tuple[int, int, int]:
+        hid = _homework_id(ex)
+        if hid is None:
+            return (1, 9999, _as_int(ex.get("id")) or 0)
+        return (0, hw_to_idx.get(hid, 9999), hid)
+
+    return sorted(exercises, key=_key)
+
+
 def fetch_homework_session_total(token: str, session_id: int | str) -> int:
+    ordered = fetch_homework_session_order(token, session_id)
+    if ordered:
+        return len(ordered)
     sid = str(session_id).strip()
     url = f"{RIKKEI_BASE}/homework/session/{sid}"
     r = _rikkei_request("GET", url, token)
@@ -348,6 +525,38 @@ def fetch_homework_session_total(token: str, session_id: int | str) -> int:
                 return int(v.strip())
     # fallback
     return 0
+
+
+def _exercise_achieved_with_mindmap_side_effects(
+    token: str,
+    ex: dict[str, Any],
+    *,
+    score_threshold: float,
+) -> bool:
+    if is_mindmap_homework_exercise(ex):
+        eid = _as_int(ex.get("id"))
+        link = ex.get("link_git") or ex.get("linkGit") or ""
+        if isinstance(link, str):
+            link = link.strip()
+        else:
+            link = ""
+        if eid is not None and link:
+            try:
+                put_exercise_comment(
+                    token,
+                    eid,
+                    comment=MINDMAP_PLACEHOLDER_COMMENT,
+                    link_git=link,
+                    homework_id=_homework_id(ex),
+                    full_body=ex,
+                )
+            except Exception:
+                pass
+        return True
+    cmt = ex.get("comment")
+    if isinstance(cmt, str) and cmt.strip():
+        return _exercise_achieved_for_session(cmt.strip(), score_threshold)
+    return False
 
 
 def session_student_update(
@@ -375,6 +584,21 @@ def session_student_update(
         raise RuntimeError(f"Rikkei session-student error: {r.status_code} {detail}")
 
 
+def resolve_btvn_pass_required_count(
+    total: int,
+    *,
+    min_completed: int | None = None,
+    ratio_ok: float = 0.5,
+) -> int:
+    """Số bài đạt tối thiểu để gán HOÀN THÀNH (ưu tiên min_completed nếu có)."""
+    if total <= 0:
+        return 1
+    if min_completed is not None and int(min_completed) > 0:
+        return min(int(min_completed), total)
+    n = int(math.ceil(total * float(ratio_ok) - 1e-12))
+    return max(1, min(n, total))
+
+
 def mark_btvn_session_status_from_exercise_scores(
     token: str,
     *,
@@ -384,23 +608,27 @@ def mark_btvn_session_status_from_exercise_scores(
     student_ids: list[int] | None = None,
     score_threshold: float = 50.0,
     ratio_ok: float = 0.5,
+    min_completed: int | None = None,
+    student_tiers: dict[str, str] | None = None,
     waiting_status: str = "ĐANG CHỜ KIỂM TRA",
 ) -> dict[str, Any]:
     """
     Chốt trạng thái session dựa vào comment của từng exercise.
-    - Điểm > score_threshold => đạt
-    - Nếu đạt >= ratio_ok * total => HOÀN THÀNH, ngược lại CHƯA HOÀN THÀNH
+    - Điểm > score_threshold hoặc dòng ĐẠT => đạt từng bài
+    - Chế độ mặc định: đạt >= pass_required (min_completed hoặc ceil(ratio_ok * total))
+    - Chế độ phân loại (student_tiers): Yếu 2 đầu, TB 3 đầu, Khá 3 (bỏ bài 1), Giỏi 3 cuối — tất cả slot bắt buộc phải đạt
     - Chỉ cập nhật nếu trạng thái hiện tại = waiting_status
     """
     sid = str(session_id).strip()
-    total = fetch_homework_session_total(token, sid)
+    hw_order = fetch_homework_session_order(token, sid)
+    total = len(hw_order) if hw_order else fetch_homework_session_total(token, sid)
     if total <= 0:
         return {"ok": False, "reason": "Không đọc được total bài trong homework/session.", "total": total}
 
-    # Ví dụ total=3, ratio_ok=0.5 => cần đạt >=2 (không được làm tròn xuống).
-    ratio_ok_count = int(math.ceil(total * ratio_ok - 1e-12))
-    if ratio_ok_count <= 0:
-        ratio_ok_count = 1
+    use_tier_mode = bool(student_tiers)
+    ratio_ok_count = resolve_btvn_pass_required_count(
+        total, min_completed=min_completed, ratio_ok=ratio_ok
+    )
 
     students = fetch_students(token, class_id, sid)
     if student_ids:
@@ -432,6 +660,10 @@ def mark_btvn_session_status_from_exercise_scores(
             cur_status = waiting_status
 
         achieved = 0
+        tier_label: str | None = None
+        required_slots: list[int] = []
+        passed_slots = 0
+        tier_missing = False
         comments_pool: list[str] = []
         try:
             exercises = fetch_all_exercises_for_student(
@@ -442,41 +674,47 @@ def mark_btvn_session_status_from_exercise_scores(
                 student_id=st_id,
                 page_limit=100,
             )
+            exercises = sort_exercises_by_session_homework(exercises, hw_order)
+            slot_achieved: list[bool] = []
             for ex in exercises:
                 if not isinstance(ex, dict):
-                    continue
-                if is_mindmap_homework_exercise(ex):
-                    achieved += 1
-                    eid = _as_int(ex.get("id"))
-                    link = ex.get("link_git") or ex.get("linkGit") or ""
-                    if isinstance(link, str):
-                        link = link.strip()
-                    else:
-                        link = ""
-                    if eid is not None and link:
-                        try:
-                            put_exercise_comment(
-                                token,
-                                eid,
-                                comment=MINDMAP_PLACEHOLDER_COMMENT,
-                                link_git=link,
-                                homework_id=_homework_id(ex),
-                                full_body=ex,
-                            )
-                        except Exception:
-                            pass
                     continue
                 cmt = ex.get("comment")
                 if isinstance(cmt, str) and cmt.strip():
                     comments_pool.append(cmt.strip())
-                if _exercise_achieved_for_session(cmt, score_threshold):
-                    achieved += 1
+                ok_slot = _exercise_achieved_with_mindmap_side_effects(
+                    token, ex, score_threshold=score_threshold
+                )
+                slot_achieved.append(ok_slot)
+
+            achieved = sum(1 for x in slot_achieved if x)
+
+            if use_tier_mode and student_tiers:
+                st_name = str(st.get("fullName") or st.get("full_name") or "").strip()
+                tier_label = lookup_btvn_student_tier(st_name, student_tiers)
+                if not tier_label:
+                    tier_missing = True
+                    new_status = "CHƯA HOÀN THÀNH"
+                    required_slots = []
+                    passed_slots = 0
+                else:
+                    required_slots = btvn_tier_required_indices(tier_label, total)
+                    passed_slots = 0
+                    for idx in required_slots:
+                        if idx < len(slot_achieved) and slot_achieved[idx]:
+                            passed_slots += 1
+                    new_status = (
+                        "HOÀN THÀNH"
+                        if required_slots and passed_slots >= len(required_slots)
+                        else "CHƯA HOÀN THÀNH"
+                    )
+                    achieved = passed_slots
+            else:
+                new_status = "HOÀN THÀNH" if achieved >= ratio_ok_count else "CHƯA HOÀN THÀNH"
         except Exception:
             fail += 1
             updated.append({"studentId": st_id, "ok": False, "error": "Lỗi đọc exercise để tính điểm"})
             continue
-
-        new_status = "HOÀN THÀNH" if achieved >= ratio_ok_count else "CHƯA HOÀN THÀNH"
         rand_comment_raw = random.choice(comments_pool) if comments_pool else ""
         rand_comment = _extract_strengths_weaknesses(rand_comment_raw)
 
@@ -484,6 +722,12 @@ def mark_btvn_session_status_from_exercise_scores(
         wait_norm = _norm_status_text(waiting_status)
         # Chỉ POST portal khi đang ở trạng thái chờ kiểm tra; nhưng vẫn trả dữ liệu để fill sheet.
         should_post = not (cur_norm and (cur_norm != wait_norm) and (wait_norm not in cur_norm))
+        extra_row = {
+            "tier": tier_label,
+            "requiredSlots": required_slots,
+            "passedSlots": passed_slots,
+            "tierMissing": tier_missing,
+        }
         if not should_post:
             ignored.append(
                 {
@@ -495,6 +739,7 @@ def mark_btvn_session_status_from_exercise_scores(
                     "achieved": achieved,
                     "randomComment": rand_comment,
                     "total": total,
+                    **extra_row,
                 }
             )
             continue
@@ -504,7 +749,6 @@ def mark_btvn_session_status_from_exercise_scores(
                 student_id=st_id,
                 session_id=sid,
                 status=new_status,
-                # Fill số bài đạt: "Kết quả: ... ĐẠT" hoặc điểm > ngưỡng (mặc định 50).
                 completed_exercises=achieved,
             )
             ok += 1
@@ -517,6 +761,7 @@ def mark_btvn_session_status_from_exercise_scores(
                     "achieved": achieved,
                     "randomComment": rand_comment,
                     "total": total,
+                    **extra_row,
                 }
             )
         except Exception as e:
@@ -530,6 +775,7 @@ def mark_btvn_session_status_from_exercise_scores(
                     "achieved": achieved,
                     "randomComment": rand_comment,
                     "error": str(e)[:200],
+                    **extra_row,
                 }
             )
 
@@ -541,6 +787,12 @@ def mark_btvn_session_status_from_exercise_scores(
         "updated": updated[:50],
         "ignored": ignored[:50],
         "ratio_ok_count": ratio_ok_count,
+        "min_completed_required": ratio_ok_count,
+        "score_threshold": score_threshold,
+        "ratio_ok": ratio_ok,
+        "min_completed_override": min_completed,
+        "tier_mode": use_tier_mode,
+        "tier_students_parsed": len(student_tiers or {}),
     }
 
 

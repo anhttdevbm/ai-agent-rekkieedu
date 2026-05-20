@@ -627,7 +627,7 @@
         <h2>Chấm BTVN (chốt trạng thái)</h2>
         <p class="hint">
           Nhập <strong>Token Rikkei</strong> → tải <strong>Hệ → Lớp → Môn → Session</strong>. Chọn homework để xem đề (text + ảnh).
-          Sau đó tải <strong>Danh sách học sinh</strong> (theo class/session), bấm nút để <strong>chốt trạng thái HOÀN THÀNH/CHƯA HOÀN THÀNH</strong> lên Rikkei dựa trên điểm có sẵn trong từng exercise.
+          Sau đó tải <strong>Danh sách học sinh</strong> (theo class/session). Có thể chốt theo <strong>phân loại Yếu/TB/Khá/Giỏi</strong> (dán danh sách lớp) hoặc theo <strong>số bài đạt / tỷ lệ %</strong>, rồi bấm <strong>Chốt trạng thái</strong>.
           Bài có tiêu đề chứa <strong>Hệ thống kiến thức Mindmap</strong> không chấm điểm — tự +1 bài hoàn thành và ghi nhận xét <code>Chưa có nhận xét</code>.
         </p>
         <form id="form-btvn">
@@ -758,6 +758,63 @@
             <label for="b-sheet-name">Tên tab trong Sheet (tuỳ chọn)</label>
             <input type="text" id="b-sheet-name" value="Tracking" placeholder="vd. Tracking" />
           </div>
+          <div class="field">
+            <label for="b-student-tiers">Danh sách phân loại (Yếu / TB / Khá / Giỏi)</label>
+            <textarea
+              id="b-student-tiers"
+              name="student_tiers_text"
+              rows="12"
+              placeholder="CNTT6&#10;Nhóm 1&#10;Nguyễn Minh Đức_14/01/2007 TB&#10;Lê Quang Huy_18/09/2007 Giỏi&#10;..."
+              spellcheck="false"
+            ></textarea>
+            <p class="small">
+              Mỗi dòng: họ tên + (ngày sinh tuỳ chọn) + <strong>Yếu</strong>, <strong>TB</strong>, <strong>Khá</strong> hoặc <strong>Giỏi</strong>.
+              Khi có nội dung, bỏ qua «Số bài đạt / tỷ lệ»:
+              <strong>Yếu</strong> 2 bài đầu; <strong>TB</strong> 3 bài đầu;
+              <strong>Khá</strong> 3 bài (bỏ bài 1); <strong>Giỏi</strong> 3 bài cuối — tất cả slot phải đạt.
+            </p>
+          </div>
+          <div class="row2">
+            <div class="field" style="margin: 0">
+              <label for="b-min-completed">Số bài đạt tối thiểu (HOÀN THÀNH)</label>
+              <input
+                type="number"
+                id="b-min-completed"
+                name="min_completed"
+                min="1"
+                max="99"
+                step="1"
+                placeholder="vd. 2 — để trống = 50% tổng"
+              />
+            </div>
+            <div class="field" style="margin: 0">
+              <label for="b-ratio-ok">Hoặc tỷ lệ đạt (nếu không điền số bài)</label>
+              <input
+                type="number"
+                id="b-ratio-ok"
+                name="ratio_ok"
+                min="0.05"
+                max="1"
+                step="0.05"
+                value="0.5"
+              />
+            </div>
+          </div>
+          <div class="field">
+            <label for="b-score-threshold">Ngưỡng điểm đạt (/100)</label>
+            <input
+              type="number"
+              id="b-score-threshold"
+              name="score_threshold"
+              min="0"
+              max="100"
+              step="1"
+              value="50"
+            />
+          </div>
+          <p class="small" id="b-pass-rule-hint">
+            Mặc định: đạt ≥ làm tròn lên 50% tổng số bài session; mỗi bài đạt khi nhận xét có ĐẠT hoặc điểm &gt; ngưỡng.
+          </p>
           <div class="actions">
             <button type="submit" class="primary" id="b-submit">Chốt trạng thái</button>
           </div>

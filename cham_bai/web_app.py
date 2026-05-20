@@ -71,7 +71,10 @@ from cham_bai.rikkei_homework import (
     is_mindmap_homework_exercise,
     put_exercise_comment,
 )
-from cham_bai.rikkei_homework import mark_btvn_session_status_from_exercise_scores as _mark_btvn_session
+from cham_bai.rikkei_homework import (
+    mark_btvn_session_status_from_exercise_scores as _mark_btvn_session,
+    parse_btvn_student_tier_text as _parse_btvn_student_tier_text,
+)
 from cham_bai.google_sheets import (
     extract_spreadsheet_id as _gs_extract_spreadsheet_id,
     detect_session_columns as _gs_detect_session_columns,
@@ -2504,6 +2507,34 @@ async def api_btvn_rikkei(
     )
 
 
+def _parse_btvn_session_pass_params(
+    *,
+    min_completed: str = "",
+    ratio_ok: str = "",
+    score_threshold: str = "",
+) -> tuple[int | None, float, float]:
+    min_c: int | None = None
+    raw_min = (min_completed or "").strip()
+    if raw_min:
+        try:
+            v = int(float(raw_min))
+            if v > 0:
+                min_c = v
+        except (TypeError, ValueError):
+            pass
+    try:
+        ratio = float((ratio_ok or "0.5").strip() or "0.5")
+    except (TypeError, ValueError):
+        ratio = 0.5
+    ratio = max(0.05, min(1.0, ratio))
+    try:
+        score_th = float((score_threshold or "50").strip() or "50")
+    except (TypeError, ValueError):
+        score_th = 50.0
+    score_th = max(0.0, min(100.0, score_th))
+    return min_c, ratio, score_th
+
+
 @app.post("/api/btvn/rikkei/session-status")
 async def api_btvn_rikkei_session_status(
     rikkei_token: str = Form(...),
@@ -2514,6 +2545,10 @@ async def api_btvn_rikkei_session_status(
     sheet_url: str = Form(""),
     sheet_name: str = Form(""),
     session_no: str = Form(""),
+    min_completed: str = Form(""),
+    ratio_ok: str = Form("0.5"),
+    score_threshold: str = Form("50"),
+    student_tiers_text: str = Form(""),
 ) -> JSONResponse:
     """
     Chỉ chốt trạng thái session trên Rikkei (HOÀN THÀNH/CHƯA HOÀN THÀNH),
@@ -2543,6 +2578,20 @@ async def api_btvn_rikkei_session_status(
         except Exception:
             continue
 
+    min_c, ratio_f, score_th = _parse_btvn_session_pass_params(
+        min_completed=min_completed,
+        ratio_ok=ratio_ok,
+        score_threshold=score_threshold,
+    )
+
+    tiers_raw = (student_tiers_text or "").strip()
+    student_tiers = _parse_btvn_student_tier_text(tiers_raw) if tiers_raw else None
+    if tiers_raw and not student_tiers:
+        raise HTTPException(
+            status_code=400,
+            detail="Danh sách phân loại không hợp lệ (mỗi dòng cần họ tên + Yếu/TB/Khá/Giỏi).",
+        )
+
     # Chỉ cập nhật cho các bạn đang ở trạng thái "ĐANG CHỜ KIỂM TRA".
     session_update = _mark_btvn_session(
         tok,
@@ -2550,6 +2599,10 @@ async def api_btvn_rikkei_session_status(
         course_id=crid,
         session_id=sid,
         student_ids=s_id_ints or None,
+        min_completed=min_c,
+        ratio_ok=ratio_f,
+        score_threshold=score_th,
+        student_tiers=student_tiers,
     )
 
     sheet_update = None
