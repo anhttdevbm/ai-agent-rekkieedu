@@ -64,9 +64,11 @@ from cham_bai.reading_gen import (
 )
 from cham_bai.btvn_comment import BtvnCommentParams, grade_one as _btvn_grade_one, run_btvn_comments_json
 from cham_bai.rikkei_homework import (
+    MINDMAP_PLACEHOLDER_COMMENT,
     fetch_students as _btvn_fetch_students,
     fetch_all_exercises_for_student as _btvn_fetch_all_exercises_for_student,
     _homework_id as _btvn_homework_id,
+    is_mindmap_homework_exercise,
     put_exercise_comment,
 )
 from cham_bai.rikkei_homework import mark_btvn_session_status_from_exercise_scores as _mark_btvn_session
@@ -1071,6 +1073,8 @@ async def api_rikkei_exercise_patch_batch(
         hwid = p.get("homework_id", None)
         cid = p.get("course_id", None)
         full_body = p.get("full_body") if isinstance(p.get("full_body"), dict) else None
+        if full_body and is_mindmap_homework_exercise(full_body):
+            comment = MINDMAP_PLACEHOLDER_COMMENT
         try:
             ex_id_int = int(ex_id)
         except Exception:

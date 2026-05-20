@@ -1099,7 +1099,28 @@
     return `Kết quả: ${ok ? "✔ ĐẠT" : "✘ CHƯA ĐẠT"} — ${n}/100`;
   }
 
-  function btvnComposePortalComment(score, note) {
+  const BTVN_MINDMAP_PHRASE = "Hệ thống kiến thức Mindmap";
+  const BTVN_MINDMAP_COMMENT = "Chưa có nhận xét";
+
+  function btvnIsMindmapExercise(it) {
+    if (!it || typeof it !== "object") return false;
+    const parts = [
+      it.homework_title,
+      it.title,
+      it.name,
+      it.description,
+      it.homework && it.homework.title,
+      it.homework && it.homework.name,
+      it.homework && it.homework.description,
+    ]
+      .filter((x) => typeof x === "string" && x.trim())
+      .join("\n");
+    if (!parts) return false;
+    return parts.toLowerCase().includes(BTVN_MINDMAP_PHRASE.toLowerCase());
+  }
+
+  function btvnComposePortalComment(score, note, it) {
+    if (it && btvnIsMindmapExercise(it)) return BTVN_MINDMAP_COMMENT;
     const head = btvnFormatResultLine(score);
     const body = String(note || "").trim();
     if (!head && !body) return "";
@@ -1153,29 +1174,30 @@
                 const link = (it && (it.link_git || it.linkGit || it.linkGitHub || it.link)) || "";
                 const hwTitle = (it && (it.homework_title || (it.homework && it.homework.title))) || "";
                 const hwId = it && (it.homeworkId || it.homework_id || (it.homework && it.homework.id));
+                const isMindmap = btvnIsMindmapExercise(it);
                 const rawComment = it && (it.comment || it.note || "");
-                const commentTxt = btvnHtmlToText(rawComment);
-                const short = commentTxt.length > 220 ? commentTxt.slice(0, 217).trim() + "…" : commentTxt;
-                const score = it && (it.score != null ? it.score : "");
+                const commentTxt = isMindmap ? BTVN_MINDMAP_COMMENT : btvnHtmlToText(rawComment);
+                const score = isMindmap ? "" : it && (it.score != null ? it.score : "");
                 return `
-                  <tr data-idx="${idx}" style="vertical-align:top">
+                  <tr data-idx="${idx}" data-mindmap="${isMindmap ? "1" : "0"}" style="vertical-align:top">
                     <td style="padding:10px;border-bottom:1px solid #f3f4f6">
                       <input type="checkbox" class="btvn-ex-chk" data-idx="${idx}" />
                     </td>
                     <td style="padding:10px;border-bottom:1px solid #f3f4f6">
                       <div style="font-weight:700">${esc(hwTitle || ("Exercise " + exId))}</div>
+                      ${isMindmap ? `<div class="small" style="color:#0d9488;margin-top:4px">Mindmap — không chấm điểm; tự tính hoàn thành</div>` : ""}
                       <div class="small">exercise_id=${esc(exId)} · homework_id=${esc(hwId || "")}</div>
                     </td>
                     <td style="padding:10px;border-bottom:1px solid #f3f4f6;max-width:260px;word-break:break-word">
                       ${link ? `<a href="${esc(link)}" target="_blank" rel="noreferrer" style="color:#0ea5e9;text-decoration:underline">${esc(link)}</a>` : "<span class='small'>(trống)</span>"}
                     </td>
                     <td style="padding:10px;border-bottom:1px solid #f3f4f6;width:110px">
-                      <input class="btvn-ex-score" data-idx="${idx}" type="number" min="0" max="100" value="${esc(score)}" style="display:block;width:96px;box-sizing:border-box;background:#fff;color:#0f172a;border:1px solid #cbd5e1;border-radius:10px;padding:8px" />
+                      <input class="btvn-ex-score" data-idx="${idx}" type="number" min="0" max="100" value="${esc(score)}" ${isMindmap ? "disabled title='Bài Mindmap không chấm điểm'" : ""} style="display:block;width:96px;box-sizing:border-box;background:#fff;color:#0f172a;border:1px solid #cbd5e1;border-radius:10px;padding:8px" />
                     </td>
                     <td style="padding:10px;border-bottom:1px solid #f3f4f6;min-width:320px">
-                      <textarea class="btvn-ex-note" data-idx="${idx}" rows="4" style="width:100%;background:#fff;color:#0f172a;border:1px solid #cbd5e1;border-radius:10px;padding:10px" placeholder="Nhận xét 2–4 câu…">${esc(commentTxt)}</textarea>
+                      <textarea class="btvn-ex-note" data-idx="${idx}" rows="4" ${isMindmap ? "readonly" : ""} style="width:100%;background:#fff;color:#0f172a;border:1px solid #cbd5e1;border-radius:10px;padding:10px" placeholder="Nhận xét 2–4 câu…">${esc(commentTxt)}</textarea>
                       <div class="small" style="margin-top:6px;color:#64748b">
-                        Sẽ ghi lên portal theo dạng: <code>Kết quả: ✔ ĐẠT — 85/100</code> + 1 đoạn nhận xét.
+                        ${isMindmap ? "Ghi portal: <code>Chưa có nhận xét</code> (không kèm điểm)." : "Sẽ ghi lên portal theo dạng: <code>Kết quả: ✔ ĐẠT — 85/100</code> + 1 đoạn nhận xét."}
                       </div>
                     </td>
                   </tr>
@@ -1247,9 +1269,16 @@
         }
         // Group by homeworkId so each exercise matches correct assignment text
         const groups = new Map(); // key=hwid string (or "default"), value={assignment_text, idxs, repos}
+        let mindmapSkipped = 0;
         for (const c of checks) {
           const idx = parseInt(String(c.getAttribute("data-idx") || ""), 10);
           const it = items[idx] || {};
+          if (btvnIsMindmapExercise(it)) {
+            mindmapSkipped += 1;
+            const noteEl = document.querySelector(`textarea.btvn-ex-note[data-idx="${idx}"]`);
+            if (noteEl) noteEl.value = BTVN_MINDMAP_COMMENT;
+            continue;
+          }
           const link = String(it.link_git || it.linkGit || it.link || "").trim();
           if (!link) continue;
           const hwid =
@@ -1263,13 +1292,20 @@
           g.repos.push(link);
         }
         if (groups.size === 0) {
+          if (mindmapSkipped > 0) {
+            if (statusEl)
+              statusEl.textContent = `Đã bỏ qua ${mindmapSkipped} bài Mindmap (không chấm điểm).`;
+            return;
+          }
           if (statusEl) statusEl.textContent = "Không có link repo trong các bài đã chọn.";
           return;
         }
 
         try {
           const total = Array.from(groups.values()).reduce((a, g) => a + (g.repos ? g.repos.length : 0), 0);
-          if (statusEl) statusEl.textContent = `AI đang chấm ${total} bài…`;
+          if (statusEl)
+            statusEl.textContent =
+              (mindmapSkipped > 0 ? `Bỏ qua ${mindmapSkipped} bài Mindmap. ` : "") + `AI đang chấm ${total} bài…`;
           aiBtn.disabled = true;
           for (const g of Array.from(groups.values())) {
             const fd = new FormData();
@@ -1328,7 +1364,7 @@
           const noteEl = document.querySelector(`textarea.btvn-ex-note[data-idx="${idx}"]`);
           const score = scoreEl && scoreEl.value != null ? String(scoreEl.value).trim() : "";
           const note = noteEl && noteEl.value != null ? String(noteEl.value) : "";
-          const comment = btvnComposePortalComment(score, note);
+          const comment = btvnComposePortalComment(score, note, it);
           patches.push({ exercise_id: exId, link_git, homework_id: hwid, comment, full_body: it });
         }
 

@@ -64,6 +64,10 @@ _DAT_LINE_SCORE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Bài Mindmap: không chấm điểm; vẫn tính +1 bài hoàn thành; nhận xét cố định.
+MINDMAP_HOMEWORK_PHRASE = "Hệ thống kiến thức Mindmap"
+MINDMAP_PLACEHOLDER_COMMENT = "Chưa có nhận xét"
+
 
 def _scores_from_comment(comment: str | None) -> list[float]:
     c = str(comment or "")
@@ -441,6 +445,27 @@ def mark_btvn_session_status_from_exercise_scores(
             for ex in exercises:
                 if not isinstance(ex, dict):
                     continue
+                if is_mindmap_homework_exercise(ex):
+                    achieved += 1
+                    eid = _as_int(ex.get("id"))
+                    link = ex.get("link_git") or ex.get("linkGit") or ""
+                    if isinstance(link, str):
+                        link = link.strip()
+                    else:
+                        link = ""
+                    if eid is not None and link:
+                        try:
+                            put_exercise_comment(
+                                token,
+                                eid,
+                                comment=MINDMAP_PLACEHOLDER_COMMENT,
+                                link_git=link,
+                                homework_id=_homework_id(ex),
+                                full_body=ex,
+                            )
+                        except Exception:
+                            pass
+                    continue
                 cmt = ex.get("comment")
                 if isinstance(cmt, str) and cmt.strip():
                     comments_pool.append(cmt.strip())
@@ -669,12 +694,41 @@ def _homework_id(ex: dict[str, Any]) -> int | None:
 
 
 def _homework_title(ex: dict[str, Any]) -> str:
+    t = ex.get("homework_title")
+    if isinstance(t, str) and t.strip():
+        return t.strip()
     hw = ex.get("homework")
     if isinstance(hw, dict):
         t = hw.get("title")
         if isinstance(t, str):
             return t.strip()
     return ""
+
+
+def _exercise_label_blob(ex: dict[str, Any]) -> str:
+    """Gộp các trường tiêu đề/mô tả để nhận diện bài đặc biệt (Mindmap)."""
+    parts: list[str] = []
+    for key in ("homework_title", "title", "name", "description"):
+        v = ex.get(key)
+        if isinstance(v, str) and v.strip():
+            parts.append(v.strip())
+    hw = ex.get("homework")
+    if isinstance(hw, dict):
+        for key in ("title", "name", "description"):
+            v = hw.get(key)
+            if isinstance(v, str) and v.strip():
+                parts.append(v.strip())
+    title = _homework_title(ex)
+    if title:
+        parts.append(title)
+    return "\n".join(parts)
+
+
+def is_mindmap_homework_exercise(ex: dict[str, Any]) -> bool:
+    blob = _exercise_label_blob(ex)
+    if not blob:
+        return False
+    return MINDMAP_HOMEWORK_PHRASE.casefold() in blob.casefold()
 
 
 def _as_int(v: Any) -> int | None:
@@ -927,6 +981,7 @@ def run_btvn_job(params: BtvnJobParams) -> tuple[bool, str, Path | None]:
             hid = _homework_id(ex)
             title = _homework_title(ex)
             repo_key = _repo_group_key(link)
+            mindmap = is_mindmap_homework_exercise(ex)
 
             link_valid = True
             link_reason = ""
@@ -949,7 +1004,8 @@ def run_btvn_job(params: BtvnJobParams) -> tuple[bool, str, Path | None]:
                     "link_valid": link_valid,
                     "link_reason": link_reason,
                     "_repo_key": repo_key,
-                    "ai_comment": "",
+                    "mindmap_skip": mindmap,
+                    "ai_comment": MINDMAP_PLACEHOLDER_COMMENT if mindmap else "",
                     "pushed": False,
                     "push_error": "",
                     "ai_error": "",
@@ -967,6 +1023,8 @@ def run_btvn_job(params: BtvnJobParams) -> tuple[bool, str, Path | None]:
     for r in all_rows:
         if not r.get("link_valid"):
             r["ai_comment"] = ""
+            continue
+        if r.get("mindmap_skip"):
             continue
         bundle = None
         try:
@@ -993,7 +1051,10 @@ def run_btvn_job(params: BtvnJobParams) -> tuple[bool, str, Path | None]:
         for r in all_rows:
             if not r.get("link_valid"):
                 continue
-            comment = (r.get("ai_comment") or "").strip()
+            if r.get("mindmap_skip"):
+                comment = MINDMAP_PLACEHOLDER_COMMENT
+            else:
+                comment = (r.get("ai_comment") or "").strip()
             if not comment:
                 r["push_error"] = "Không có nhận xét để ghi."
                 continue
