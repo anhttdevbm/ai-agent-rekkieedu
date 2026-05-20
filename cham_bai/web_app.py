@@ -77,7 +77,11 @@ from cham_bai.google_sheets import (
     detect_session_columns as _gs_detect_session_columns,
     update_session_cells as _gs_update_session_cells,
 )
-from cham_bai.group_activity import GroupGradeParams, grade_group_activity
+from cham_bai.group_activity import (
+    GroupGradeParams,
+    grade_group_activity,
+    group_grade_result_to_dict,
+)
 from cham_bai.video_transcript import fetch_youtube_transcript_plain
 from cham_bai.hackathon_exam import (
     HackathonExamParams,
@@ -2669,7 +2673,7 @@ async def api_group_activity(
     video_transcript_row: list[str] = Form(default_factory=list),
     report_files: list[UploadFile] = File(...),
     model: str = Form(""),
-) -> PlainTextResponse:
+) -> JSONResponse:
     try:
         from cham_bai.settings import api_key as _need_key
 
@@ -2692,7 +2696,7 @@ async def api_group_activity(
     manual_lines = [(t or "") for t in video_transcript_row]
 
     loop = asyncio.get_event_loop()
-    out_chunks: list[str] = []
+    rows_out: list[dict[str, Any]] = []
 
     for idx, report_file in enumerate(report_files):
         stt = idx + 1
@@ -2738,7 +2742,7 @@ async def api_group_activity(
             model=m,
         )
 
-        def work(p: GroupGradeParams = params) -> str:
+        def work(p: GroupGradeParams = params):
             return grade_group_activity(p)
 
         try:
@@ -2746,10 +2750,17 @@ async def api_group_activity(
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"{fname}: {e}") from e
 
-        out_chunks.append(f"=== {stt}. {fname} ===\n{(result or '').strip()}")
+        payload = group_grade_result_to_dict(result)
+        rows_out.append(
+            {
+                "stt": stt,
+                "file": fname,
+                "comment": payload.get("comment") or "",
+                "members": payload.get("members") if isinstance(payload.get("members"), list) else [],
+            }
+        )
 
-    body = "\n\n".join(out_chunks).strip()
-    return PlainTextResponse(body, media_type="text/plain; charset=utf-8")
+    return JSONResponse({"ok": True, "rows": rows_out})
 
 
 @app.post("/api/format-code")

@@ -236,6 +236,54 @@ nav.tabs button:active {
   margin-top: 1rem;
 }
 
+.gr-members-mini {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+  margin: 0;
+}
+
+.gr-members-mini th,
+.gr-members-mini td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.gr-members-mini tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.gr-att {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.gr-att-present {
+  background: rgba(34, 211, 238, 0.15);
+  color: var(--cyan);
+}
+
+.gr-att-absent {
+  background: rgba(251, 113, 133, 0.15);
+  color: var(--danger);
+}
+
+.gr-att-unknown {
+  background: rgba(161, 161, 170, 0.15);
+  color: var(--muted);
+}
+
+.gr-members-empty {
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-style: italic;
+}
+
 input[type="text"],
 input[type="number"],
 input[type="url"],

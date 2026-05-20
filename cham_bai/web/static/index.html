@@ -857,8 +857,8 @@
       <section class="panel" id="panel-group">
         <h2>Chấm hoạt động nhóm</h2>
         <p class="hint">
-          Upload <strong>một hoặc nhiều báo cáo</strong>. Với mỗi file, điền <strong>một dòng trong bảng</strong>: link YouTube (tuỳ chọn, server tự tải phụ đề) và/hoặc transcript/ghi chú.
-          Mỗi file chấm riêng; kết quả hiển thị theo bảng cùng thứ tự. Không dùng URL <code>timedtext</code> có <code>signature</code>/<code>expire</code>.
+          Upload <strong>một hoặc nhiều báo cáo</strong>. Với mỗi file, điền <strong>một dòng trong bảng</strong>: link YouTube (tuỳ chọn, server tự tải phụ đề) và/hoặc ghi chú nội dung video.
+          Mỗi file chấm riêng; kết quả có bảng <strong>thành viên + có mặt/vắng</strong> (trích từ báo cáo) và <strong>nhận xét ngắn</strong> (~30–55 từ). Không dùng URL <code>timedtext</code> có <code>signature</code>/<code>expire</code>.
         </p>
         <form id="form-group" enctype="multipart/form-data">
           <div class="field">
@@ -877,7 +877,7 @@
                     <th>#</th>
                     <th>File báo cáo</th>
                     <th>Link YouTube</th>
-                    <th>Transcript / ghi chú</th>
+                    <th>Ghi chú video</th>
                   </tr>
                 </thead>
                 <tbody id="gr-links-tbody"></tbody>
@@ -900,6 +900,7 @@
                   <tr>
                     <th>#</th>
                     <th>File</th>
+                    <th>Thành viên (từ báo cáo)</th>
                     <th>Nhận xét</th>
                   </tr>
                 </thead>
@@ -913,6 +914,6 @@
 
       <footer>Chạy local · OpenRouter · không lưu dữ liệu trên server sau khi tải file</footer>
     </div>
-    <script src="/static/app.js?v=20260513_4"></script>
+    <script src="/static/app.js?v=20260519_1"></script>
   </body>
 </html>

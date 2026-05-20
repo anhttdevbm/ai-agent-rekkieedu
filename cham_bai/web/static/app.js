@@ -2258,6 +2258,61 @@
     return rows;
   }
 
+  function grAttendanceLabel(att) {
+    const a = String(att || "").toLowerCase();
+    if (a === "present") return { text: "Có mặt", cls: "gr-att gr-att-present" };
+    if (a === "absent") return { text: "Vắng", cls: "gr-att gr-att-absent" };
+    return { text: "Chưa rõ", cls: "gr-att gr-att-unknown" };
+  }
+
+  function buildGroupMembersCell(members) {
+    const td = document.createElement("td");
+    const list = Array.isArray(members) ? members : [];
+    if (!list.length) {
+      const span = document.createElement("span");
+      span.className = "gr-members-empty";
+      span.textContent = "(Báo cáo không liệt kê thành viên)";
+      td.appendChild(span);
+      return td;
+    }
+    const table = document.createElement("table");
+    table.className = "gr-members-mini";
+    table.setAttribute("aria-label", "Thành viên từ báo cáo");
+    const thead = document.createElement("thead");
+    const hr = document.createElement("tr");
+    ["Thành viên", "Buổi họp", "Ghi chú"].forEach((h) => {
+      const th = document.createElement("th");
+      th.textContent = h;
+      hr.appendChild(th);
+    });
+    thead.appendChild(hr);
+    table.appendChild(thead);
+    const tb = document.createElement("tbody");
+    list.forEach((m) => {
+      if (!m || typeof m !== "object") return;
+      const name = String(m.name || "").trim();
+      if (!name) return;
+      const tr = document.createElement("tr");
+      const tdN = document.createElement("td");
+      tdN.textContent = name;
+      const tdA = document.createElement("td");
+      const lab = grAttendanceLabel(m.attendance);
+      const badge = document.createElement("span");
+      badge.className = lab.cls;
+      badge.textContent = lab.text;
+      tdA.appendChild(badge);
+      const tdNote = document.createElement("td");
+      tdNote.textContent = String(m.note || "").trim() || "—";
+      tr.appendChild(tdN);
+      tr.appendChild(tdA);
+      tr.appendChild(tdNote);
+      tb.appendChild(tr);
+    });
+    table.appendChild(tb);
+    td.appendChild(table);
+    return td;
+  }
+
   function showGroupSuccessTable(rows) {
     const wrap = $("#gr-results-wrap");
     const pre = $("#gr-log");
@@ -2272,15 +2327,17 @@
     for (const row of rows) {
       const tr = document.createElement("tr");
       const td1 = document.createElement("td");
-      td1.textContent = row.stt || "";
+      td1.textContent = row.stt != null ? String(row.stt) : "";
       const td2 = document.createElement("td");
       td2.textContent = row.file || "";
-      const td3 = document.createElement("td");
-      td3.className = "gr-result-body";
-      td3.textContent = row.body || "";
+      const tdMembers = buildGroupMembersCell(row.members);
+      const tdComment = document.createElement("td");
+      tdComment.className = "gr-result-body";
+      tdComment.textContent = row.comment || row.body || "";
       tr.appendChild(td1);
       tr.appendChild(td2);
-      tr.appendChild(td3);
+      tr.appendChild(tdMembers);
+      tr.appendChild(tdComment);
       tbody.appendChild(tr);
     }
     wrap.style.display = "";
@@ -2342,12 +2399,23 @@
         showGroupErrorOutput(formatApiErr(data.detail) || JSON.stringify(data));
         return;
       }
-      const txt = await r.text().catch(() => "");
-      const rows = parseGroupActivityBlocks(txt);
+      const raw = await r.text().catch(() => "");
+      let rows = [];
+      try {
+        const data = JSON.parse(raw);
+        if (data && Array.isArray(data.rows)) rows = data.rows;
+      } catch {
+        rows = parseGroupActivityBlocks(raw).map((x) => ({
+          stt: x.stt,
+          file: x.file,
+          comment: x.body,
+          members: [],
+        }));
+      }
       if (rows.length) {
         showGroupSuccessTable(rows);
       } else {
-        showGroupErrorOutput((txt || "").trim() || "(Phản hồi rỗng)");
+        showGroupErrorOutput("(Phản hồi rỗng)");
         return;
       }
       $("#gr-status").textContent = "Xong.";
