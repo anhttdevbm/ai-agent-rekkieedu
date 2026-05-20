@@ -6,7 +6,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 # Giới hạn cứng `comment` sau parse JSON (khớp mục 8 trong prompt theo comment_style).
-MAX_GRADE_COMMENT_CHARS_HACKATHON = 200
+# Hackathon: liệt kê đủ từng câu sai (P1C2, P3C1…) — không cắt ngắn / không thêm «…».
+MAX_GRADE_COMMENT_CHARS_HACKATHON = 12_000
 MAX_GRADE_COMMENT_CHARS_DEFAULT = 600
 MAX_GRADE_COMMENT_CHARS_DETAILED = 1400
 
@@ -16,16 +17,31 @@ def _truncate_grade_comment(
     *,
     max_len: int,
     collapse_whitespace: bool = False,
+    hard_truncate: bool = True,
+    use_ellipsis: bool = True,
 ) -> str:
     s = (text or "").strip()
     if collapse_whitespace:
         s = re.sub(r"\s+", " ", s)
     if len(s) <= max_len:
         return s
-    suffix = "…"
-    if max_len <= len(suffix):
-        return s[:max_len]
-    return s[: max_len - len(suffix)].rstrip() + suffix
+    if not hard_truncate:
+        return s
+    clipped = s[:max_len]
+    cuts = [clipped.rfind("."), clipped.rfind("!"), clipped.rfind("?"), clipped.rfind(";")]
+    cut_at = max(cuts)
+    if cut_at >= int(max_len * 0.5):
+        out = clipped[: cut_at + 1].strip()
+    else:
+        ws = clipped.rfind(" ")
+        out = (clipped[:ws] if ws >= int(max_len * 0.4) else clipped).strip()
+        if out and out[-1] not in ".!?;":
+            out += "."
+    if use_ellipsis and len(s) > max_len:
+        suffix = "…"
+        if len(out) + len(suffix) <= max_len:
+            return out + suffix
+    return out
 
 
 @dataclass
@@ -94,7 +110,11 @@ def coalesce_grade(d: dict[str, Any], *, comment_style: str = "hackathon_per_que
     )
     _collapse = _cs == "hackathon_per_question"
     comment = _truncate_grade_comment(
-        comment, max_len=_max, collapse_whitespace=_collapse
+        comment,
+        max_len=_max,
+        collapse_whitespace=_collapse,
+        hard_truncate=(_cs != "hackathon_per_question"),
+        use_ellipsis=(_cs != "hackathon_per_question"),
     )
 
     verdict_raw = str(d.get("integrity_verdict", "pass")).strip().lower()

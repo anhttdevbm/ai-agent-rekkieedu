@@ -1837,13 +1837,17 @@ def _result_test_point_str(point_f: float) -> str:
 
 
 RESULT_TEST_NOTE_MAX = 200
+RESULT_TEST_NOTE_MAX_HACKATHON = 12_000
 
 
-def _normalize_result_test_note(note: str) -> str:
+def _normalize_result_test_note(note: str, *, max_len: int | None = None) -> str:
+    cap = int(max_len) if max_len is not None else RESULT_TEST_NOTE_MAX
+    if cap < 200:
+        cap = 200
     s = " ".join(str(note or "").split()).strip()
     if not s:
         return ""
-    if len(s) <= RESULT_TEST_NOTE_MAX:
+    if len(s) <= cap:
         out0 = s
         out0 = re.sub(r"[:;,]\s*$", ".", out0)
         out0 = re.sub(r"\b(tuy nhiên|nhưng|và|cụ thể|gồm)\s*[:;,]?\s*$", ".", out0, flags=re.I)
@@ -1851,15 +1855,16 @@ def _normalize_result_test_note(note: str) -> str:
         return out0
 
     # Ưu tiên cắt theo ranh giới câu để tránh bị cụt "... và", "... thay vì".
-    clipped = s[:RESULT_TEST_NOTE_MAX]
+    clipped = s[:cap]
     cuts = [clipped.rfind("."), clipped.rfind("!"), clipped.rfind("?"), clipped.rfind(";"), clipped.rfind(":")]
     cut_at = max(cuts)
-    if cut_at >= 80:
+    min_cut = max(80, int(cap * 0.4))
+    if cut_at >= min_cut:
         out = clipped[: cut_at + 1].strip()
     else:
         # fallback theo khoảng trắng gần cuối
         ws = clipped.rfind(" ")
-        out = (clipped[:ws] if ws >= 60 else clipped).strip()
+        out = (clipped[:ws] if ws >= int(cap * 0.3) else clipped).strip()
         if out and out[-1] not in ".!?":
             out += "."
     out = re.sub(r"[:;,]\s*$", ".", out)
@@ -1931,7 +1936,9 @@ async def api_rikkei_result_test_patch_batch(
                 continue
             point_f = max(0.0, min(100.0, point_f))
             point_str = _result_test_point_str(point_f)
-            note_full = _normalize_result_test_note(note) if note else ""
+            note_full = (
+                _normalize_result_test_note(note, max_len=RESULT_TEST_NOTE_MAX_HACKATHON) if note else ""
+            )
 
             # Thử vài biến thể body: portal dùng point string; 500 hay gặp khi note quá dài hoặc link không khớp chuẩn hóa của Rikkei.
             attempt_bodies: list[dict] = []

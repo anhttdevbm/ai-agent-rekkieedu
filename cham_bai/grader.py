@@ -42,12 +42,11 @@ _RULE8_COMMENT_DETAILED = """8) Trường "comment" (chi tiết):
 - Không nhắc chất lượng mini project, không dùng comment để thay thế `mini_project_present`.
 """
 
-_RULE8_COMMENT_HACKATHON = """8) Trường "comment" (chấm Hackathon / đề có **câu đánh số**):
-- **Một đoạn duy nhất** (2–3 câu văn ngắn trong ý), **tối đa 200 ký tự** (hệ thống cắt nếu vượt); **không xuống dòng** — viết liền một dòng, khoảng trắng bình thường; không markdown.
-- **Chỉ** nêu các câu **sai**, **thiếu**, hoặc **không đối chiếu được** (vd. «Câu 5 sai dùng = thay vì IN. Câu 9 sai ORDER BY ngược đề. Câu 14 thiếu HAVING.»). **Cấm** liệt kê câu **đúng**; **cấm** mở bài kiểu «Bài làm hoàn thành tốt phần …», «Hoàn thành tốt …», «Nhìn chung …».
-- Nếu không có câu sai/thiếu sau khi đối chiếu: ghi ngắn một ý như «Không thấy câu sai hoặc thiếu theo đề.» (vẫn trong giới hạn ký tự).
-- Nếu đề có **báo cáo** để chấm và có lỗi: thêm cụm rất ngắn trong cùng đoạn (vd. «Báo cáo thiếu mục kết luận.»), **cấm** mô tả chất lượng mini project.
-- Nếu nhiều lỗi mà không đủ chỗ: ưu tiên **tối đa 3** câu số quan trọng nhất, diễn đạt cực ngắn.
+_RULE8_COMMENT_HACKATHON = """8) Trường "comment" (chấm Hackathon / đề có **câu đánh số** kiểu P2C2, P3C1…):
+- **Một đoạn duy nhất**, viết liền một dòng (không xuống dòng), không markdown. **Liệt kê đầy đủ** mọi câu sai/thiếu — **không** tự cắt bớt, **không** kết thúc bằng «…» hoặc «r…».
+- **Chỉ** nêu câu **sai**, **thiếu**, hoặc **không đối chiếu được**; mỗi câu ghi mã + lỗi cụ thể (vd. «P2C2 sai điều kiện năm (dùng <=2025 thay vì >=2025). P3C1 thiếu LEFT JOIN Claims. P3C2 thiếu SUM/GROUP BY/HAVING/lọc Approved.»). **Cấm** liệt kê câu đúng; **cấm** mở bài «Bài làm tốt…», «Nhìn chung…».
+- Nếu không có lỗi: «Không thấy câu sai hoặc thiếu theo đề.»
+- Báo cáo (nếu chấm): thêm lỗi báo cáo ngắn trong cùng đoạn; **cấm** mô tả mini project.
 """
 
 _SYSTEM_PROMPT_TAIL = """9) Cho điểm 0–100 (số nguyên), phù hợp mức độ lỏng tay ở mục 3–6 và trọng số bài tập đầu giờ ưu tiên hơn báo cáo.
@@ -194,7 +193,7 @@ def build_user_prompt(
     _pcs = (comment_style or "hackathon_per_question").strip().lower()
     cs = _pcs if _pcs in ("default", "detailed", "hackathon_per_question") else "hackathon_per_question"
     comment_line = (
-        "- `comment` (Hackathon): **một dòng** ≤200 ký tự, **chỉ** câu sai/thiếu/không đối chiếu được, không liệt kê câu đúng — xem SYSTEM mục 8.\n"
+        "- `comment` (Hackathon): **một dòng**, liệt kê **đủ** mã câu sai/thiếu (P*C*), không cắt gọn, không «…» — xem SYSTEM mục 8.\n"
         if cs == "hackathon_per_question"
         else ("- `comment` (chi tiết): một đoạn 4–8 câu, không bullet/markdown/xuống dòng.\n" if cs == "detailed" else "- `comment`: một đoạn ngắn, không bullet, không markdown.\n")
     )
