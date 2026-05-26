@@ -20,6 +20,8 @@ GIT_SSH_RE = re.compile(
 )
 
 
+
+
 @dataclass
 class DocxContent:
     plain_text: str
