@@ -108,7 +108,14 @@ from cham_bai.workflow import (
     run_grade_job,
 )
 
-_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="web")
+_WEB_THREADPOOL_WORKERS_DEFAULT = 8
+_executor = ThreadPoolExecutor(
+    max_workers=max(
+        2,
+        int(os.getenv("AGENT_EDU_WEB_THREADPOOL_WORKERS", str(_WEB_THREADPOOL_WORKERS_DEFAULT))),
+    ),
+    thread_name_prefix="web",
+)
 
 
 @dataclass
