@@ -287,7 +287,7 @@ def _grade_comment_only(
         model=model,
         temperature=0.12,
         max_tokens=256,
-        timeout_s=300.0,
+        timeout_s=600.0,
     )
     out = _polish_group_comment(text)
     if not out:

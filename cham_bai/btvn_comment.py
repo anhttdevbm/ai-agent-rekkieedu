@@ -382,7 +382,7 @@ def comment_one(
         model=model,
         temperature=0.2,
         max_tokens=480,
-        timeout_s=300.0,
+        timeout_s=600.0,
     )
     raw1, flag1 = _split_comment_and_ai_flag(text)
     cleaned = _vietnamese_comment_only(re.sub(r"\s+", " ", raw1).strip())
@@ -420,7 +420,7 @@ def comment_one(
         model=model,
         temperature=0.2,
         max_tokens=700,
-        timeout_s=300.0,
+        timeout_s=600.0,
     )
     raw2, flag2 = _split_comment_and_ai_flag(text2)
     cleaned2 = _vietnamese_comment_only(re.sub(r"\s+", " ", raw2).strip())
@@ -444,7 +444,7 @@ def comment_one(
             model=model,
             temperature=0.2,
             max_tokens=700,
-            timeout_s=300.0,
+            timeout_s=600.0,
         )
         raw3, flag3 = _split_comment_and_ai_flag(text3)
         cleaned3 = _vietnamese_comment_only(re.sub(r"\s+", " ", raw3).strip())

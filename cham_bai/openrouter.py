@@ -103,7 +103,7 @@ def message_content_to_assistant_text(message: dict[str, Any]) -> str:
     return text
 
 
-def post_chat_completions(body: dict[str, Any], *, timeout_s: float = 300.0) -> dict[str, Any]:
+def post_chat_completions(body: dict[str, Any], *, timeout_s: float = 600.0) -> dict[str, Any]:
     """
     Gọi OpenRouter chat completions. Tự chờ và gọi lại khi gặp HTTP 429 (rate limit tạm provider).
     """
@@ -164,7 +164,7 @@ def complete_chat(
     model: str,
     temperature: float = 0.2,
     max_tokens: int = 4096,
-    timeout_s: float = 300.0,
+    timeout_s: float = 600.0,
 ) -> tuple[str, dict[str, Any]]:
     body: dict[str, Any] = {
         "model": model,
@@ -203,7 +203,7 @@ def complete_chat_raw(
     model: str,
     temperature: float = 0.2,
     max_tokens: int = 4096,
-    timeout_s: float = 300.0,
+    timeout_s: float = 600.0,
     extra_body: dict[str, Any] | None = None,
 ) -> tuple[str, dict[str, Any]]:
     """
