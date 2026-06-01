@@ -182,12 +182,15 @@ def _finish_reason(data: dict[str, Any]) -> str | None:
         return None
 
 
-# Mỗi lần gọi sinh N object JSON (warmup/cuối giờ). 45 câu = 3 lần gọi × 15 câu/block.
+# Mỗi lần gọi sinh N object JSON (warmup/cuối giờ). Block nhỏ → ít bị cắt JSON / dễ retry.
 _SESSION_QUIZ_BLOCK_OUT_TOKENS_FIRST = 32768
 _SESSION_QUIZ_BLOCK_OUT_TOKENS_RETRY = 49152
-# 15 câu/block → đúng 3 block cho 45 câu (cuối giờ); đầu giờ: 2 block BÀI CŨ + 1 block BÀI MỚI.
-_SESSION_QUIZ_ITEMS_PER_CALL = 15
+# Warmup: 8 câu/lần (block 13 câu một lần hay bị cắt + đáp án trùng chỉ khác HOA/thường).
+_SESSION_WARMUP_ITEMS_PER_CALL = 8
+# Cuối giờ: 10 câu/lần (15 câu × 4 đáp án + 4 explanations dễ vượt output thực tế).
+_SESSION_END_ITEMS_PER_CALL = 10
 _SESSION_BLOCK_PARSE_ATTEMPTS = 9
+_SESSION_QUIZ_BLOCK_TIMEOUT_S = 600.0
 # Trích gửi model mỗi block (đủ nhiều bài đọc; tránh chỉ lấy ~9k ký tự đầu → lệch chủ đề).
 _SESSION_QUIZ_EXCERPT_MAX_CHARS = 32_000
 _SESSION_QUIZ_DOC_HEADER_RE = re.compile(
@@ -240,7 +243,9 @@ _SESSION_QUIZ_MUST_FOUR_OPTS_VI = (
     "\"explanations\" ĐÚNG 4 chuỗi giải thích lần lượt cho 4 phương án. isCorrect là 1..4. "
     "Câu coding: vẫn bắt buộc 4 phương án (vd. đoạn đúng + 3 đoạn sai với lỗi khác nhau). "
     "CẤM hai đáp án chỉ khác dấu nháy quanh cùng chuỗi (vd. đúng: Chào… vs sai: \"Chào…\"). "
-    "Đáp án sai phải là lỗi/hành vi khác hẳn (SyntaxError, in cả lệnh print, giá trị khác, None…). "
+    "CẤM hai đáp án chỉ khác HOA/thường hoặc khoảng trắng đầu/cuối "
+    "(vd. «Lam Tung Duong» vs «lam tung duong» vs « LAM TUNG DUONG » — coi là TRÙNG). "
+    "Đáp án sai phải là lỗi/hành vi khác hẳn (SyntaxError, in cả lệnh print(...), giá trị khác, None, kiểu sai…). "
     "Được nhiều câu code «in ra gì» nếu mỗi câu dùng đoạn code khác nhau trong trích."
 )
 
@@ -326,7 +331,8 @@ _SESSION_QUIZ_STYLE_VI = (
     "- Ưu tiên câu sinh viên gặp khi code: input/output, kiểu dữ liệu, ép kiểu, lỗi runtime — "
     "chỉ hỏi chủ đề nâng cao (import, package, traceback…) khi có trong trích.\n"
     "- explanations: đúng kỹ thuật, ngắn (<= 90 ký tự), giải thích vì sao đúng/sai — không lặp lại nguyên văn câu hỏi.\n"
-    "- Câu «code in ra gì»: 4 đáp án phải khác rõ khi đọc trên LMS — không dùng cặp chỉ khác có/không dấu nháy.\n"
+    "- Câu «code in ra gì»: 4 đáp án phải khác rõ khi đọc trên LMS — "
+    "cấm cặp chỉ khác dấu nháy, chỉ khác HOA/thường, hoặc chỉ thêm/bớt khoảng trắng.\n"
     "- Nên có **nhiều câu dạng code** (ước lượng ≥ 40% block) nếu tài liệu có ví dụ code — đây là cách hỏi chính cho buổi intro.\n"
 )
 
@@ -548,7 +554,8 @@ def _validate_session_quiz_block_answer_distinctness(items: list[Any]) -> None:
                 if norms[j] == norms[k]:
                     raise ValueError(
                         f"Câu {i + 1}: đáp án {j + 1} và {k + 1} trùng nội dung hiển thị "
-                        f"(chỉ khác dấu nháy hoặc bọc print) — cần 4 phương án khác hẳn."
+                        f"(chỉ khác dấu nháy, bọc print, HOA/thường hoặc khoảng trắng) — "
+                        "cần 4 phương án khác hẳn (SyntaxError, in cả lệnh print, giá trị/kiểu khác…)."
                     )
                 if SequenceMatcher(None, norms[j], norms[k]).ratio() >= 0.9:
                     raise ValueError(
@@ -725,13 +732,46 @@ def _session_quiz_target_count(
     return est
 
 
+def _session_quiz_items_per_call(qkind: str) -> int:
+    if qkind == QUIZ_KIND_SESSION_WARMUP:
+        return _SESSION_WARMUP_ITEMS_PER_CALL
+    return _SESSION_END_ITEMS_PER_CALL
+
+
+def _session_quiz_brevity_limits(attempt: int) -> tuple[int, int]:
+    """Giới hạn độ dài theo lần retry — block lớn hay bị cắt JSON nếu câu dài."""
+    if attempt >= 4:
+        return 100, 55
+    if attempt >= 2:
+        return 120, 65
+    return 160, 90
+
+
+def _session_quiz_validation_retry_extra(hint: str) -> str:
+    h = (hint or "").strip()
+    if not h:
+        return ""
+    if "trùng nội dung hiển thị" in h or "quá giống" in h:
+        return (
+            "\nSửa đáp án: 4 phương án phải khác hẳn khi đọc trên LMS — "
+            "CẤM cặp chỉ khác HOA/thường (vd. «Lam Tung Duong» vs «lam tung duong»). "
+            "Đáp án sai nên là SyntaxError, in cả lệnh print(...), giá trị khác, None, kiểu sai…\n"
+        )
+    if "Mảng JSON chưa đóng" in h or "Không parse được JSON" in h:
+        return (
+            "\nOutput bị cắt — rút cực ngắn: question_content <= 100 ký tự; "
+            "mỗi explanation <= 55 ký tự; ưu tiên câu lý thuyết ngắn thay vì code dài.\n"
+        )
+    return ""
+
+
 def _build_session_quiz_blocks(qkind: str, total: int) -> tuple[list[tuple[str, int, int]], int]:
     """
-    Chia total câu thành các block ≤15 câu/lần gọi API.
+    Chia total câu thành các block nhỏ/lần gọi API (warmup 8, cuối giờ 10).
     Trả về (blocks, prev_count) — prev_count chỉ có nghĩa với warmup.
     """
     total = max(12, min(45, int(total)))
-    qpc = _SESSION_QUIZ_ITEMS_PER_CALL
+    qpc = _session_quiz_items_per_call(qkind)
     blocks: list[tuple[str, int, int]] = []
     prev_count = 0
     if qkind == QUIZ_KIND_SESSION_WARMUP:
@@ -1396,11 +1436,13 @@ def _warmup_block_messages(
     n: int,
     docx_excerpt: str,
     prior_questions_digest: str = "",
+    attempt: int = 0,
 ) -> list[ChatMessage]:
     part_norm = (part or "").strip().lower()
     if part_norm not in ("prev", "current"):
         part_norm = "prev"
     end_stt = start_stt + n - 1
+    q_max, e_max = _session_quiz_brevity_limits(attempt)
     focus = (
         f"session trước: «{session_prev}»" if part_norm == "prev" else f"session hiện tại: «{session_current}»"
     )
@@ -1451,8 +1493,8 @@ def _warmup_block_messages(
         "Mẫu một object: {\"part\":\"prev\",\"question_content\":\"...?\",\"answers\":[\"Đúng\",\"Sai A\",\"Sai B\",\"Sai C\"],"
         "\"explanations\":[\"vì đúng\",\"vì sai 1\",\"vì sai 2\",\"vì sai 3\"],\"isCorrect\":1,\"difficulty\":7}\n"
         "difficulty chỉ được là 4/5/6/7/8/9.\n"
-        "Để tránh bị cắt output: viết RẤT NGẮN — question_content <= 160 ký tự; "
-        "mỗi explanation <= 90 ký tự.\n"
+        f"Để tránh bị cắt output: viết RẤT NGẮN — question_content <= {q_max} ký tự; "
+        f"mỗi explanation <= {e_max} ký tự.\n"
         "Ngôn ngữ: toàn bộ câu hỏi, đáp án và giải thích bằng tiếng Việt (trừ thuật ngữ/identifier trong code bắt buộc).\n"
         "Không dùng ví dụ kiến thức phổ thông tiếng Anh có sẵn (kiểu địa lý/wikipedia nước ngoài) trừ khi đúng chủ đề trong tài liệu.\n"
         "Nếu có code: đặt code ở CUỐI question_content theo đúng cấu trúc:\n"
@@ -1472,6 +1514,7 @@ def _warmup_block_retry_messages(
     validate_hint: str = "",
     docx_excerpt: str = "",
     prior_questions_digest: str = "",
+    attempt: int = 1,
 ) -> list[ChatMessage]:
     tail = bad_raw[-9000:] if len(bad_raw) > 9000 else bad_raw
     part_norm = (part or "").strip().lower()
@@ -1479,6 +1522,8 @@ def _warmup_block_retry_messages(
         part_norm = "prev"
     hint = validate_hint.strip()[:1200]
     hint_block = f"\n---\nChương trình báo lỗi kiểm tra/parse (sửa theo đây): {hint}\n" if hint else ""
+    hint_block += _session_quiz_validation_retry_extra(hint)
+    q_max, e_max = _session_quiz_brevity_limits(attempt)
     ex = (docx_excerpt or "").strip()
     doc_block = ""
     if ex:
@@ -1510,7 +1555,7 @@ def _warmup_block_retry_messages(
                 "Mỗi object có đúng các khóa ASCII: part, question_content, answers, explanations, isCorrect, difficulty. "
                 + _SESSION_QUIZ_MUST_FOUR_OPTS_VI
                 + " answers và explanations mỗi mảng ĐÚNG 4 string; isCorrect 1..4; difficulty chỉ 4/5/6/7/8/9. "
-                "Viết RẤT NGẮN: question_content <= 160 ký tự; mỗi explanation <= 90 ký tự. "
+                f"Viết RẤT NGẮN: question_content <= {q_max} ký tự; mỗi explanation <= {e_max} ký tự. "
                 "Toàn bộ câu hỏi/đáp án/giải thích tiếng Việt (trừ code). "
                 "Nếu có code: đặt ở cuối question_content theo dạng 'Code:\\n...' (không markdown fence). "
                 "Chỉ question_content được phép có xuống dòng; answers/explanations phải 1 dòng. "
@@ -1996,6 +2041,7 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
                             n=n_need,
                             docx_excerpt=block_excerpt,
                             prior_questions_digest=prior_digest,
+                            attempt=attempt,
                         )
                     else:
                         msgs = _warmup_block_retry_messages(
@@ -2005,6 +2051,7 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
                             validate_hint=last_parse_hint,
                             docx_excerpt=block_excerpt,
                             prior_questions_digest=prior_digest,
+                            attempt=attempt,
                         )
                 else:
                     if attempt == 0:
@@ -2041,7 +2088,7 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
                             else min(0.58, temp0 + 0.05 * attempt)
                         ),
                         max_tokens=mt_out,
-                        timeout_s=420.0,
+                        timeout_s=_SESSION_QUIZ_BLOCK_TIMEOUT_S,
                     )
                 except Exception as ex:
                     last_call_error = str(ex)
@@ -2052,6 +2099,12 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
                     continue
                 last_call_error = None
                 last_raw = raw
+                fr = _finish_reason(data)
+                if fr == "length":
+                    last_parse_hint = (
+                        "Output bị cắt do giới hạn token model (finish_reason=length). "
+                        "Rút ngắn question_content và explanations; ưu tiên câu lý thuyết ngắn."
+                    )
                 try:
                     arr_block = _parse_json_array(raw)
                     if len(arr_block) != n_need:
@@ -2075,6 +2128,11 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
                     break
                 except Exception as e:
                     last_parse_hint = str(e)[:1200]
+                    if fr == "length" and "finish_reason=length" not in last_parse_hint:
+                        last_parse_hint = (
+                            "Output bị cắt (finish_reason=length). "
+                            + last_parse_hint
+                        )
                     if attempt >= _SESSION_BLOCK_PARSE_ATTEMPTS - 1:
                         arr_block = None
                         break
