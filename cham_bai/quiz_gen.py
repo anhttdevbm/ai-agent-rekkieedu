@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import random
 import re
+import zlib
 from difflib import SequenceMatcher
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -1740,6 +1741,34 @@ def _parse_session_warmup_items(
         apply_session_warmup_plan(out, prev_count=pc)
     else:
         apply_session_end_plan(out)
+
+    # Xáo đáp án để tránh tất cả câu đều đúng ở A (model hay trả isCorrect=1).
+    for r in out:
+        q0 = str(r.get("question_content") or "")
+        try:
+            correct_idx0 = int(r.get("isCorrect") or 1) - 1
+        except Exception:
+            correct_idx0 = 0
+        correct_idx0 = max(0, min(3, correct_idx0))
+
+        pairs = [
+            (str(r.get("answer_1") or ""), str(r.get("explanation_answer_1") or "")),
+            (str(r.get("answer_2") or ""), str(r.get("explanation_answer_2") or "")),
+            (str(r.get("answer_3") or ""), str(r.get("explanation_answer_3") or "")),
+            (str(r.get("answer_4") or ""), str(r.get("explanation_answer_4") or "")),
+        ]
+        order = [0, 1, 2, 3]
+        # Seed ổn định theo nội dung câu, để chạy lại không đổi vị trí đáp án quá nhiều.
+        rrng = random.Random(zlib.adler32(q0.encode("utf-8")) & 0xFFFFFFFF)
+        rrng.shuffle(order)
+        new_pairs = [pairs[i] for i in order]
+        new_correct = order.index(correct_idx0)
+
+        r["answer_1"], r["explanation_answer_1"] = new_pairs[0]
+        r["answer_2"], r["explanation_answer_2"] = new_pairs[1]
+        r["answer_3"], r["explanation_answer_3"] = new_pairs[2]
+        r["answer_4"], r["explanation_answer_4"] = new_pairs[3]
+        r["isCorrect"] = new_correct + 1
     return out
 
 
