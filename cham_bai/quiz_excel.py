@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html as html_module
 import math
 import re
 import shutil
@@ -83,6 +84,36 @@ def clean_quiz_explanation(text: str) -> str:
         if not hit:
             break
     return s.strip()
+
+
+def format_quiz_question_content_for_lms(text: str) -> str:
+    """
+    Câu có code: chuyển dạng plain «Câu hỏi?\\nCode:\\n<dòng>…» sang HTML LMS:
+    «Câu hỏi? Code:&nbsp;<br><code>dòng 1&nbsp;</code>…»
+    """
+    t = (text or "").strip()
+    if not t:
+        return t
+    if re.search(r"<br\s*/?\s*>\s*<code\b", t, re.I):
+        return t
+
+    parts = re.split(r"\bCode:\s*", t, maxsplit=1, flags=re.I)
+    if len(parts) < 2:
+        return t
+
+    question = re.sub(r"\s+", " ", parts[0].strip())
+    code_body = parts[1].strip()
+    code_body = re.sub(r"^```[\w]*\s*\n?", "", code_body, flags=re.I)
+    code_body = re.sub(r"\n?```\s*$", "", code_body).strip()
+    lines = code_body.splitlines()
+    if not lines:
+        return t
+
+    header = f"{question} Code:&nbsp;" if question else "Code:&nbsp;"
+    code_html = "".join(
+        f"<br><code>{html_module.escape(ln)}&nbsp;</code>" for ln in lines
+    )
+    return header + code_html
 
 
 _QUIZ_FONT_NAME = "Calibri"
@@ -425,7 +456,10 @@ def fill_template_session_warmup_quiz(
     start_row = 2
     for i, r in enumerate(rows):
         rr = start_row + i
-        set_excel_cell_value(ws.cell(rr, 1), r.get("question_content", ""))
+        set_excel_cell_value(
+            ws.cell(rr, 1),
+            format_quiz_question_content_for_lms(str(r.get("question_content") or "")),
+        )
         set_excel_cell_value(ws.cell(rr, 2), r.get("answer_1", ""))
         set_excel_cell_value(ws.cell(rr, 3), r.get("explanation_answer_1", ""))
         set_excel_cell_value(ws.cell(rr, 4), r.get("answer_2", ""))

@@ -21,6 +21,7 @@ from cham_bai.quiz_excel import (
     fill_template_from_rows,
     fill_template_session_warmup_quiz,
     fill_template_vertical_quiz,
+    format_quiz_question_content_for_lms,
     is_vertical_quiz_template,
     read_headers_from_template,
 )
@@ -306,9 +307,8 @@ _SESSION_QUIZ_CODE_FALLBACK_VI = (
     "  • «Chạy đoạn code sau, kết quả hiển thị là gì?»\n"
     "  • «Sau đoạn sau, giá trị in ra là gì?»\n"
     "  • «Đoạn sau gây lỗi gì?» (nếu trích có ví dụ lỗi)\n"
-    "- Luôn kết thúc question_content bằng khối code (không markdown fence):\n"
-    "  Code:\n"
-    "  print(\"...\")\n"
+    "- Luôn kết thúc question_content bằng khối code plain (không markdown fence); chương trình tự đổi sang HTML LMS khi ghi Excel:\n"
+    "  Câu hỏi?\\nCode:\\n<dòng 1>\\n<dòng 2>…\n"
     "  (hoặc 2–4 dòng: input, ép kiểu, gán biến…)\n"
     "- Mỗi câu code phải dùng **đoạn code khác nhau** (không lặp cùng một dòng print/input).\n"
     "- 4 đáp án: output/hành vi đúng + 3 sai khác hẳn (SyntaxError, in nhầm cả lệnh, sai kiểu, giá trị sai…).\n"
@@ -1769,6 +1769,9 @@ def _parse_session_warmup_items(
         r["answer_3"], r["explanation_answer_3"] = new_pairs[2]
         r["answer_4"], r["explanation_answer_4"] = new_pairs[3]
         r["isCorrect"] = new_correct + 1
+        r["question_content"] = format_quiz_question_content_for_lms(
+            str(r.get("question_content") or "")
+        )
     return out
 
 
@@ -1995,7 +1998,7 @@ def _parse_vertical_quiz_items(arr: list[Any]) -> list[VerticalQuizBlock]:
                 stt=stt,
                 muc_do=md,
                 muc_tieu=mt,
-                question_text=qv,
+                question_text=format_quiz_question_content_for_lms(qv),
                 choices=(row_choices[0], row_choices[1], row_choices[2], row_choices[3]),
             )
         )
