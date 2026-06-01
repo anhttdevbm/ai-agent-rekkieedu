@@ -182,6 +182,8 @@ def _finish_reason(data: dict[str, Any]) -> str | None:
         return None
 
 
+# Quiz session đầu/cuối giờ: luôn bắt buộc đủ 45 câu.
+_SESSION_QUIZ_REQUIRED_COUNT = 45
 # Mỗi lần gọi sinh N object JSON (warmup/cuối giờ). Block nhỏ → ít bị cắt JSON / dễ retry.
 _SESSION_QUIZ_BLOCK_OUT_TOKENS_FIRST = 32768
 _SESSION_QUIZ_BLOCK_OUT_TOKENS_RETRY = 49152
@@ -718,18 +720,9 @@ def _session_quiz_target_count(
     *,
     qkind: str,
 ) -> int:
-    """15–45 câu theo độ dày tài liệu — không cố đủ 45 khi kiến thức mỏng."""
-    combined = ((prev_corpus or "") + "\n" + (curr_corpus or "")).strip()
-    if not combined:
-        return 15
-    docs = _split_session_lecture_docs(combined)
-    n_docs = max(1, len(docs))
-    chars = len(combined)
-    est = min(45, max(15, chars // 1200 + n_docs * 2))
-    est = max(15, (est // 5) * 5)
-    if qkind == QUIZ_KIND_SESSION_WARMUP and est < 20:
-        est = 20
-    return est
+    """Quiz session đầu giờ / cuối giờ: luôn sinh đúng 45 câu."""
+    _ = (prev_corpus, curr_corpus, qkind)  # corpus vẫn dùng cho validator nội dung từng block
+    return _SESSION_QUIZ_REQUIRED_COUNT
 
 
 def _session_quiz_items_per_call(qkind: str) -> int:
@@ -770,7 +763,7 @@ def _build_session_quiz_blocks(qkind: str, total: int) -> tuple[list[tuple[str, 
     Chia total câu thành các block nhỏ/lần gọi API (warmup 8, cuối giờ 10).
     Trả về (blocks, prev_count) — prev_count chỉ có nghĩa với warmup.
     """
-    total = max(12, min(45, int(total)))
+    total = _SESSION_QUIZ_REQUIRED_COUNT
     qpc = _session_quiz_items_per_call(qkind)
     blocks: list[tuple[str, int, int]] = []
     prev_count = 0
@@ -1618,10 +1611,10 @@ def _parse_session_warmup_items(
     plan: str = "warmup",
     prev_count: int | None = None,
 ) -> list[dict[str, object]]:
-    if len(arr) < 12:
-        raise ValueError(f"Cần ít nhất 12 câu, model trả {len(arr)} phần tử.")
-    if len(arr) > 45:
-        arr = arr[:45]
+    if len(arr) != _SESSION_QUIZ_REQUIRED_COUNT:
+        raise ValueError(
+            f"Cần đúng {_SESSION_QUIZ_REQUIRED_COUNT} câu, model trả {len(arr)} phần tử."
+        )
     pc = int(prev_count) if prev_count is not None else min(30, (len(arr) * 2 + 1) // 3)
     pc = max(0, min(len(arr), pc))
     out: list[dict[str, object]] = []
@@ -2161,6 +2154,12 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
                 )
             all_items.extend(arr_block)
 
+        if len(all_items) != _SESSION_QUIZ_REQUIRED_COUNT:
+            return (
+                False,
+                f"Quiz phải đủ {_SESSION_QUIZ_REQUIRED_COUNT} câu; hiện chỉ có {len(all_items)} câu sau khi gọi model.",
+            )
+
         try:
             rows = _parse_session_warmup_items(
                 all_items,
@@ -2177,8 +2176,11 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
 
         fill_template_session_warmup_quiz(params.template_xlsx, params.output_xlsx, rows)
         out_msg = str(params.output_xlsx)
-        if len(rows) < 45:
-            out_msg = f"Đã sinh {len(rows)} câu (không cố đủ 45 — tài liệu/nguồn giới hạn).\n{out_msg}"
+        if len(rows) != _SESSION_QUIZ_REQUIRED_COUNT:
+            return (
+                False,
+                f"Quiz phải đủ {_SESSION_QUIZ_REQUIRED_COUNT} câu; đã parse được {len(rows)} câu.",
+            )
         if chat_remap_note:
             out_msg = f"{chat_remap_note}\n{out_msg}"
         return True, out_msg
