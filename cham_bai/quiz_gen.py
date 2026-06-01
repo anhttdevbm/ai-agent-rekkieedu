@@ -187,10 +187,10 @@ _SESSION_QUIZ_REQUIRED_COUNT = 45
 # Mỗi lần gọi sinh N object JSON (warmup/cuối giờ). Block nhỏ → ít bị cắt JSON / dễ retry.
 _SESSION_QUIZ_BLOCK_OUT_TOKENS_FIRST = 32768
 _SESSION_QUIZ_BLOCK_OUT_TOKENS_RETRY = 49152
-# Warmup: 8 câu/lần (block 13 câu một lần hay bị cắt + đáp án trùng chỉ khác HOA/thường).
-_SESSION_WARMUP_ITEMS_PER_CALL = 8
-# Cuối giờ: 10 câu/lần (15 câu × 4 đáp án + 4 explanations dễ vượt output thực tế).
-_SESSION_END_ITEMS_PER_CALL = 10
+# Warmup: 5 câu/lần — 8 câu vẫn hay bị cắt JSON / trùng đáp án chỉ khác HOA/thường.
+_SESSION_WARMUP_ITEMS_PER_CALL = 5
+# Cuối giờ: 8 câu/lần.
+_SESSION_END_ITEMS_PER_CALL = 8
 _SESSION_BLOCK_PARSE_ATTEMPTS = 9
 _SESSION_QUIZ_BLOCK_TIMEOUT_S = 600.0
 # Trích gửi model mỗi block (đủ nhiều bài đọc; tránh chỉ lấy ~9k ký tự đầu → lệch chủ đề).
@@ -247,6 +247,8 @@ _SESSION_QUIZ_MUST_FOUR_OPTS_VI = (
     "CẤM hai đáp án chỉ khác dấu nháy quanh cùng chuỗi (vd. đúng: Chào… vs sai: \"Chào…\"). "
     "CẤM hai đáp án chỉ khác HOA/thường hoặc khoảng trắng đầu/cuối "
     "(vd. «Lam Tung Duong» vs «lam tung duong» vs « LAM TUNG DUONG » — coi là TRÙNG). "
+    "CẤM đáp án sai là .upper()/.title() của cùng output đúng "
+    "(vd. đúng «python core_2026» thì SAI không được «PYTHON CORE_2026» hay «Python Core_2026»). "
     "Đáp án sai phải là lỗi/hành vi khác hẳn (SyntaxError, in cả lệnh print(...), giá trị khác, None, kiểu sai…). "
     "Được nhiều câu code «in ra gì» nếu mỗi câu dùng đoạn code khác nhau trong trích."
 )
@@ -310,6 +312,7 @@ _SESSION_QUIZ_CODE_FALLBACK_VI = (
     "- Mỗi câu code phải dùng **đoạn code khác nhau** (không lặp cùng một dòng print/input).\n"
     "- 4 đáp án: output/hành vi đúng + 3 sai khác hẳn (SyntaxError, in nhầm cả lệnh, sai kiểu, giá trị sai…).\n"
     "- Cấm hai đáp án chỉ khác dấu nháy quanh cùng chuỗi.\n"
+    "- Cấm đáp án sai chỉ đổi HOA/thường của output đúng (vd. sau .lower() không dùng .upper() làm phương án sai).\n"
 )
 
 # Phong cách câu hỏi session quiz (đầu giờ / cuối giờ).
@@ -318,7 +321,7 @@ _SESSION_QUIZ_STYLE_VI = (
     "- CẤM mở đầu hoặc nhắc meta kiểu: «Theo tài liệu», «Trong tài liệu», «Tài liệu gọi là», «Tài liệu nêu», "
     "«Theo đoạn trích», «Theo slide/bài giảng» — hỏi thẳng concept/kịch bản/kỹ thuật như đề thi thực chiến.\n"
     "- Ưu tiên reasoning kỹ thuật: bug code, sai kiểu, output sai, ép kiểu sai — **không** dùng bối cảnh công ty/trung tâm/phòng ban.\n"
-    "- question_content ngắn, đọc nhanh trên LMS: ưu tiên <= 160 ký tự; tránh đoạn storytelling dài.\n"
+    "- question_content ngắn, đọc nhanh trên LMS: ưu tiên <= 130 ký tự; tránh đoạn storytelling dài.\n"
     "- Mỗi concept lõi (breakpoint, elif, for/while…) có thể xuất hiện nhiều câu nếu **cách hỏi và góc độ khác hẳn**; "
     "cấm trùng hoặc paraphrase sát nội dung một câu đã có trong quiz.\n"
     "- Được phép 2 câu cùng khung so sánh song song nếu đổi đối tượng kỹ thuật **đã có trong trích liệu** "
@@ -332,7 +335,7 @@ _SESSION_QUIZ_STYLE_VI = (
     "định nghĩa đơn giản → số thấp hơn; không gán difficulty ngẫu nhiên.\n"
     "- Ưu tiên câu sinh viên gặp khi code: input/output, kiểu dữ liệu, ép kiểu, lỗi runtime — "
     "chỉ hỏi chủ đề nâng cao (import, package, traceback…) khi có trong trích.\n"
-    "- explanations: đúng kỹ thuật, ngắn (<= 90 ký tự), giải thích vì sao đúng/sai — không lặp lại nguyên văn câu hỏi.\n"
+    "- explanations: đúng kỹ thuật, ngắn (<= 65 ký tự), giải thích vì sao đúng/sai — không lặp lại nguyên văn câu hỏi.\n"
     "- Câu «code in ra gì»: 4 đáp án phải khác rõ khi đọc trên LMS — "
     "cấm cặp chỉ khác dấu nháy, chỉ khác HOA/thường, hoặc chỉ thêm/bớt khoảng trắng.\n"
     "- Nên có **nhiều câu dạng code** (ước lượng ≥ 40% block) nếu tài liệu có ví dụ code — đây là cách hỏi chính cho buổi intro.\n"
@@ -538,6 +541,75 @@ def _is_code_based_question(q: str) -> bool:
     return bool(_CODE_QUESTION_HINT_RE.search(t) and re.search(r"\b(print|input|int|float|str)\s*\(", t, re.I))
 
 
+_GENERIC_WRONG_ANSWER_POOL: tuple[str, ...] = (
+    "SyntaxError: invalid syntax",
+    "TypeError: unsupported operand type(s)",
+    "NameError: name is not defined",
+    "None",
+    "0",
+    "Traceback (most recent call last):",
+    "AttributeError: 'str' object has no attribute",
+)
+
+
+def _pick_replacement_wrong_answer(existing_norms: set[str]) -> str:
+    for candidate in _GENERIC_WRONG_ANSWER_POOL:
+        if _normalize_mc_answer_text(candidate) not in existing_norms:
+            return candidate
+    n = 1
+    while True:
+        candidate = f"Lỗi runtime #{n}"
+        if _normalize_mc_answer_text(candidate) not in existing_norms:
+            return candidate
+        n += 1
+
+
+def _remediate_session_quiz_block_answer_distinctness(items: list[Any]) -> int:
+    """
+    Sửa nhẹ đáp án trùng sau chuẩn hóa (HOA/thường, print wrapper…) trên phương án SAI.
+    Trả về số lần đã sửa — giảm retry vô ích khi model lặp PYTHON CORE_2026 vs python core_2026.
+    """
+    fixes = 0
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        answers = it.get("answers")
+        exps = it.get("explanations")
+        if not isinstance(answers, list) or len(answers) != 4:
+            continue
+        if not isinstance(exps, list) or len(exps) != 4:
+            exps = ["", "", "", ""]
+
+        try:
+            correct_idx = int(it.get("isCorrect", 1)) - 1
+        except Exception:
+            correct_idx = 0
+        correct_idx = max(0, min(3, correct_idx))
+
+        for _ in range(12):
+            norms = [_normalize_mc_answer_text(str(a)) for a in answers]
+            existing = {n for n in norms if n}
+            collision: tuple[int, int] | None = None
+            for j in range(4):
+                for k in range(j + 1, 4):
+                    if norms[j] and norms[j] == norms[k]:
+                        collision = (j, k)
+                        break
+                if collision:
+                    break
+            if not collision:
+                break
+            j, k = collision
+            fix_idx = k if k != correct_idx else (j if j != correct_idx else k)
+            answers[fix_idx] = _pick_replacement_wrong_answer(existing)
+            exps[fix_idx] = "Phương án này không khớp output/hành vi đúng của đoạn code."
+            fixes += 1
+
+        it["answers"] = answers
+        it["explanations"] = exps
+    return fixes
+
+
 def _validate_session_quiz_block_answer_distinctness(items: list[Any]) -> None:
     """4 đáp án phải khác hẳn — không chỉ khác dấu nháy / bọc print()."""
     for i, it in enumerate(items):
@@ -734,10 +806,10 @@ def _session_quiz_items_per_call(qkind: str) -> int:
 def _session_quiz_brevity_limits(attempt: int) -> tuple[int, int]:
     """Giới hạn độ dài theo lần retry — block lớn hay bị cắt JSON nếu câu dài."""
     if attempt >= 4:
-        return 100, 55
+        return 90, 48
     if attempt >= 2:
-        return 120, 65
-    return 160, 90
+        return 110, 58
+    return 130, 65
 
 
 def _session_quiz_validation_retry_extra(hint: str) -> str:
@@ -748,6 +820,8 @@ def _session_quiz_validation_retry_extra(hint: str) -> str:
         return (
             "\nSửa đáp án: 4 phương án phải khác hẳn khi đọc trên LMS — "
             "CẤM cặp chỉ khác HOA/thường (vd. «Lam Tung Duong» vs «lam tung duong»). "
+            "CẤM đáp án sai là .upper()/.title() của output đúng "
+            "(vd. đúng «python core_2026» thì sai phải là SyntaxError, print(...), None, số khác…). "
             "Đáp án sai nên là SyntaxError, in cả lệnh print(...), giá trị khác, None, kiểu sai…\n"
         )
     if "Mảng JSON chưa đóng" in h or "Không parse được JSON" in h:
@@ -2115,6 +2189,7 @@ def run_quiz_generation(params: QuizGenParams) -> tuple[bool, str]:
                     )
                     _validate_session_quiz_block_wording(arr_block)
                     _validate_session_quiz_block_topics_in_corpus(arr_block, validation_corpus)
+                    _remediate_session_quiz_block_answer_distinctness(arr_block)
                     _validate_session_quiz_block_answer_distinctness(arr_block)
                     _validate_session_quiz_block_duplicate_code_snippets(arr_block, all_items)
                     _validate_session_quiz_block_forbidden_question_styles(arr_block, all_items)
